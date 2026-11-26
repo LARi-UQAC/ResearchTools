@@ -379,5 +379,66 @@ class TestSpellingGuard(unittest.TestCase):
         self.assertEqual(spelling_code(), "SP")
 
 
+class TestCommentLanguage(unittest.TestCase):
+    """Plan 22 task 1 (R01 case 3): a comment written in another language than the report is replaced by the label of
+    its code in the report language; a short or undecidable comment is kept as written. Fictitious text only (R34)."""
+
+    CODES = {"SP"}
+    LABELS = {"SP": "Orthographe"}
+    PAGE = "Le chat dort sur le tapis de la maison. Le chien mange."
+
+    @classmethod
+    def setUpClass(cls):
+        from ugs_text import load_hints
+        cls.hints = load_hints(ugs_language.ASSETS_DIR / "language_hints.json")
+
+    def _record(self, findings, report="fr", min_words=6, hints=None):
+        return ugs_language._answer_record({"findings": findings}, 1, self.PAGE, self.CODES, None, None,
+                                           report_language=report, labels=self.LABELS,
+                                           hints=hints or self.hints, min_words=min_words)
+
+    @staticmethod
+    def _finding(quote, proposed, reason):
+        return {"code": "SP", "quote": quote, "proposed": proposed, "reason": reason}
+
+    def test_an_english_comment_in_a_french_report_is_replaced_by_the_label(self):
+        record = self._record([self._finding("chat", "chats",
+                                             "The plural form is wrong in this sentence of the report.")])
+        self.assertEqual(record["annotations"][0]["comment"], "Orthographe")
+        self.assertEqual(record["comment_language_replaced"], 1)
+
+    def test_a_french_comment_is_kept(self):
+        reason = "Le pluriel est faux dans cette phrase du rapport."
+        record = self._record([self._finding("chat", "chats", reason)])
+        self.assertEqual(record["annotations"][0]["comment"], f"chats - {reason}")
+        self.assertEqual(record["comment_language_replaced"], 0)
+
+    def test_a_short_comment_is_kept(self):
+        record = self._record([self._finding("chat", "chats", "Wrong plural form")], min_words=6)
+        self.assertEqual(record["annotations"][0]["comment"], "chats - Wrong plural form")
+        self.assertEqual(record["comment_language_replaced"], 0)
+
+    def test_an_undecidable_comment_is_kept(self):
+        record = self._record([self._finding("chat", "chats", "xq zv wk pj tn bb cc dd")])
+        self.assertEqual(record["annotations"][0]["comment"], "chats - xq zv wk pj tn bb cc dd")
+        self.assertEqual(record["comment_language_replaced"], 0)
+
+    def test_the_replacements_are_counted(self):
+        record = self._record([
+            self._finding("chat", "chats", "The plural form is wrong in this sentence of the report."),
+            self._finding("dort", "dorment", "The verb agreement is wrong in this sentence of the report."),
+        ])
+        self.assertEqual(record["comment_language_replaced"], 2)
+        self.assertEqual([a["comment"] for a in record["annotations"]], ["Orthographe", "Orthographe"])
+
+    def test_without_a_report_language_nothing_is_checked(self):
+        record = ugs_language._answer_record(
+            {"findings": [self._finding("chat", "chats", "The plural form is wrong in this sentence.")]},
+            1, self.PAGE, self.CODES, None, None)
+        self.assertEqual(record["annotations"][0]["comment"],
+                         "chats - The plural form is wrong in this sentence.")
+        self.assertEqual(record["comment_language_replaced"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -13,11 +13,14 @@ if str(_LOOP_ENGINEER_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LOOP_ENGINEER_SCRIPTS))
 
 from ugs_bridge import NotRun
-from ugs_text import StepContext, fill
+from ugs_text import LanguageUndecidable, StepContext, detect_language, fill, load_hints
 from pdf_annotate import normalize
+import ugs_config
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 ACCEPTED_SPELLINGS_PATH = ASSETS_DIR / "accepted_spellings.json"
+LANGUAGE_HINTS_PATH = ASSETS_DIR / "language_hints.json"
+COMMENT_MIN_WORDS_KEY = "language.comment_min_words"
 # The categories table is owned by language-review (R1.x and codes); the spelling code is read from it, never written here.
 CATEGORIES_PATH = Path(__file__).resolve().parent.parent.parent / "language-review" / "assets" / "language_categories.json"
 SPELLING_LABEL = "Spelling"
@@ -193,6 +196,7 @@ def _result(records: Dict[int, dict]) -> Dict[str, Any]:
         "rejected": sum(records[number]["rejected"] for number in records),
         "rejected_correct": sum(records[number].get("rejected_correct", 0) for number in records),
         "dropped_scope": sum(records[number].get("dropped_scope", 0) for number in records),
+        "comment_language_replaced": sum(records[number].get("comment_language_replaced", 0) for number in records),
         "not_run": [number for number in sorted(records) if records[number]["not_run"]],
     }
 
@@ -248,6 +252,10 @@ def language_report(
     accepted = load_accepted(language)
     
     table_txt = table_text(entries, language)
+    # Plan 22 task 1: a comment in the other language takes the label of its code in the report language
+    label_map = {e["code"]: e.get(f"label_{language}") or e.get("label_en", "") for e in entries}
+    hints = load_hints(LANGUAGE_HINTS_PATH)
+    min_words = int(ugs_config.load(ugs_config.default_path())[COMMENT_MIN_WORDS_KEY])
     
     for i, page_text in enumerate(pages):
         page_num = i + 1
@@ -285,7 +293,9 @@ def language_report(
         if answer is None:
             records[page_num] = {"annotations": [], "rejected": 0, "not_run": True}
         else:
-            records[page_num] = _answer_record(answer, page_num, page_text, valid_codes, spelling_value, accepted)
+            records[page_num] = _answer_record(answer, page_num, page_text, valid_codes, spelling_value, accepted,
+                                               report_language=language, labels=label_map, hints=hints,
+                                               min_words=min_words)
             if mode == SPELLING_ONLY_PAGE_MODE:
                 kept = [a for a in records[page_num]["annotations"] if a["code"] == spelling_value]
                 # M1: the findings of another code are dropped by the page's scope, and the count is kept.
@@ -297,8 +307,40 @@ def language_report(
     return _result(records)
 
 
+def _comment_in_report_language(comment: str, report_language: str, hints: Dict[str, List[str]],
+                                min_words: int) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether a finding's comment is kept as written: it is kept when it is too short to judge, when the
+        detector cannot decide its language, or when it is in the report language (plan 22, R01 case 3).
+
+    Inputs:
+        comment (str): the comment as the model wrote it (proposal and reason).
+        report_language (str): the language of the report, 'fr' or 'en'.
+        hints (dict): the detector's common-word lists, from language_hints.json.
+        min_words (int): comments with fewer words are kept, never judged on a guess.
+
+    Outputs:
+        bool: True when the comment is kept.
+
+    Raises:
+        None. A comment the detector cannot decide is kept (LanguageUndecidable is caught here).
+    --------------------------------------------------------------------------
+    """
+    if len(re.findall(r"\w+", comment)) < min_words:
+        return True
+    try:
+        detected = detect_language([comment], hints)
+    except LanguageUndecidable:
+        return True
+    return detected == report_language
+
+
 def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set,
-                   spelling_code_value: Optional[str] = None, accepted: Optional[set] = None) -> dict:
+                   spelling_code_value: Optional[str] = None, accepted: Optional[set] = None,
+                   report_language: Optional[str] = None, labels: Optional[Dict[str, str]] = None,
+                   hints: Optional[Dict[str, List[str]]] = None, min_words: int = 0) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -321,6 +363,7 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
     findings = answer.get("findings", [])
     rejected = 0
     rejected_correct = 0
+    replaced = 0
     seen = set()
     # N1: a spelling finding is refused only when it is a variant of the same word (see _variant_only). A dict is
     # load_accepted's output; a plain set is read as one reform pair per two members.
@@ -368,7 +411,14 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
             comment = f"{proposed} - {reason}" if reason else proposed
         else:
             comment = reason
-            
+        # Plan 22 task 1 (R01 case 3): a comment in the other language is replaced by the label of its code
+        if report_language is not None and comment and not _comment_in_report_language(
+                comment, report_language, hints or {}, min_words):
+            if not (labels or {}).get(code):
+                raise LanguageDataError(f"no label for code '{code}' in the report language")
+            comment = labels[code]
+            replaced += 1
+
         page_annotations.append({
             "page": page_num,
             "kind": "language",
@@ -378,4 +428,4 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
             "comment": comment
         })
     return {"annotations": page_annotations, "rejected": rejected, "rejected_correct": rejected_correct,
-            "not_run": False}
+            "comment_language_replaced": replaced, "not_run": False}

@@ -173,6 +173,10 @@
     "value": 4,
     "provenance": "chosen 2026-11-15: a rubric line shorter than four words is a heading or a label, so only longer lines are checked against the text a model rebuilt; adjustable by the professor"
   },
+  "language.comment_min_words": {
+    "value": 6,
+    "provenance": "chosen by the session 2026-11-26 under the owner's delegation: a shorter comment is too short for detect_language and is kept as written (words of a comment, R01 case 3)"
+  },
   "vision.min_word_share": {
     "value": 0.8,
     "provenance": "chosen 2026-11-15: a figure of a report is read when four words out of five of the text printed on it are found, so one misread word does not stop the step; adjustable by the professor (a number above 0 and at most 1)"

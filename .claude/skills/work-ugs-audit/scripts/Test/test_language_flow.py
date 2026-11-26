@@ -225,7 +225,9 @@ class TestLanguageResume(unittest.TestCase):
         self.assertEqual(sorted({annotation["page"] for annotation in final["annotations"]}), [1, 2, 3])
         self.assertEqual(final["not_run"], [])
         # N1: the result also counts the spelling findings refused as correct words (rejected_correct).
-        self.assertEqual(set(final), {"annotations", "rejected", "rejected_correct", "dropped_scope", "not_run"})
+        # Plan 22 task 1: comment_language_replaced counts the comments replaced for their language
+        self.assertEqual(set(final), {"annotations", "rejected", "rejected_correct", "dropped_scope",
+                                      "comment_language_replaced", "not_run"})
         self.assertIn("- [x] language", self.ledger_path.read_text(encoding="utf-8"))
 
     def test_language_partial_is_saved_per_page(self):

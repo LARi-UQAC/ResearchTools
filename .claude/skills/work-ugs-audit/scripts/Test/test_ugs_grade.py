@@ -539,5 +539,54 @@ class TestMissingLimitFromConfig(unittest.TestCase):
         self.assertEqual(read_missing_max_chars(default_path()), 300)
 
 
+class RealR01GradeTest(unittest.TestCase):
+    """Plan 25 Task 3, pre-batch acceptance on the owner's R01 report (grade step only). Skipped unless UGS_REAL_WORK
+    names the check work folder holding R01/grade.json (R11). Only ids, levels, scores, pages and codes are asserted,
+    never report text (R34)."""
+
+    def setUp(self):
+        """
+        Purpose: Locate the R01 grade of the real-data work folder, or skip the class.
+        Inputs:
+            None.
+        Outputs:
+            None. Sets self.grade and self.pages.
+        Raises:
+            unittest.SkipTest: when UGS_REAL_WORK is not set or holds no grade of R01.
+        """
+        import os
+        from ugs_text import read_pages
+        work = os.environ.get("UGS_REAL_WORK", "")
+        if not work:
+            self.skipTest("UGS_REAL_WORK is not set (owner's real-data check)")
+        grade_path = Path(work) / "loop-1" / "R01" / "grade.json"
+        if not grade_path.exists():
+            self.skipTest("no grade.json for R01 in UGS_REAL_WORK yet")
+        self.grade = json.loads(grade_path.read_text(encoding="utf-8"))
+        self.pages = read_pages(Path(work), "R01")
+
+    def test_every_item_is_rated_with_a_level_and_no_score_above_its_maximum(self):
+        items = self.grade["items"]
+        self.assertTrue(items)
+        self.assertEqual([item["item_id"] for item in items if item["status"] != "rated"], [])
+        self.assertEqual([item["item_id"] for item in items if item["validation"] not in ("ok", "quote_not_found",
+                         "evidence_missing", "evidence_incomplete", "evidence_page_out_of_range")], [])
+        self.assertEqual([item["item_id"] for item in items if item["score"] is None], [])
+
+    def test_the_levels_are_not_all_the_same_fraction(self):
+        fractions = {item["model_score"] for item in self.grade["items"]}
+        self.assertGreater(len(fractions), 1, "every item carries one level: check the grader's answers")
+
+    def test_the_timesheet_item_is_graded_on_an_appendix_page(self):
+        from ugs_text import _is_appendix_heading
+        appendix_pages = [number for number, text in enumerate(self.pages, start=1)
+                          if any(_is_appendix_heading(line) for line in text.split("\n"))]
+        self.assertTrue(appendix_pages, "no appendix page found in the report")
+        item = next(item for item in self.grade["items"] if item["item_id"] == "I07")
+        self.assertEqual(item["status"], "rated")
+        self.assertTrue(any(entry["page"] >= min(appendix_pages) for entry in item["evidence"]),
+                        "I07 has no evidence on an appendix page")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -294,6 +294,11 @@ class TestSectionTermsAndAppendices(unittest.TestCase):
         self.assertIn("Bilan fictif des heures.", body)
         self.assertEqual([ref["text"] for ref in refs], ["[1] Fictitious Author, 2020."])
 
+    def test_an_appendix_heading_may_follow_a_title_but_a_body_mention_is_not_one(self):
+        from ugs_text import _is_appendix_heading
+        self.assertTrue(_is_appendix_heading("## Bilan Annexe A : fiche fictive"))
+        self.assertFalse(_is_appendix_heading("Voir l'Annexe A pour la fiche fictive."))
+
     def test_a_section_term_selects_its_page(self):
         long_page = "## Introduction\n" + " ".join(["mot"] * 60)
         pages = [long_page, "## Bilan heures\nFiche fictive."]

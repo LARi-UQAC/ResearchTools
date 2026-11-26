@@ -222,8 +222,8 @@ def _expand_with_terms(keywords: set, terms: List[List[str]], min_word_len: int)
 
 def _is_appendix_heading(line: str) -> bool:
     """
-    Purpose: Tell whether a line opens an appendix (plan 25, Task 2): an appendix word of front_matter.json at the
-        start of a line, with or without markdown hashes, followed by an id.
+    Purpose: Tell whether a line is an appendix heading (plan 25, Task 2): a markdown heading that holds an appendix
+        word of front_matter.json followed by its id. A body line that only mentions an appendix is not a heading.
     Inputs:
         line: str - One line of the report text.
     Outputs:
@@ -233,8 +233,10 @@ def _is_appendix_heading(line: str) -> bool:
     """
     from front_matter import load_appendix_settings  # read only when the report has references
     words = load_appendix_settings()["markers"]
-    stripped = re.sub(r"^#{1,6}\s*", "", line.strip())
-    return any(re.match(r"(?i)" + re.escape(word) + r"\s+\S", stripped) for word in words)
+    stripped = line.strip()
+    if not stripped.startswith("#"):  # R01 page 49: the appendix word sits inside a markdown heading, after a title
+        return False
+    return any(re.search(r"(?<![\w])" + re.escape(word) + r"\s+\S", stripped, re.IGNORECASE) for word in words)
 
 
 def select_pages(item: Dict[str, Any], pages: List[str], budget_tokens: int, count: Callable[[str], int], min_word_len: int, section_terms: Optional[List[List[str]]] = None) -> List[int]:

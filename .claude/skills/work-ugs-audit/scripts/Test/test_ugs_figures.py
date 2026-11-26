@@ -327,6 +327,26 @@ class TestUgsFigures(unittest.TestCase):
         record = next(f for f in result["figures"] if f["figure_id"] == "T-i01")
         self.assertIsNone(record["title_kind_mismatch"])
 
+    def test_an_untitled_table_image_is_never_flagged(self):
+        # Review 2.1: a table_image without a printed title is never flagged, whatever the vision kind.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements.append(self.table_image_record("T-i02", title=None, title_grid=False))
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        record = next(f for f in result["figures"] if f["figure_id"] == "T-i02")
+        self.assertIsNone(record["title_kind_mismatch"])
+        self.assertIsNone(record["title_kind_source"])
+
+    def test_an_existing_table_image_record_gets_on_figure_again(self):
+        # Review minor: a resumed run reports each saved table image through on_figure, as it does for figures.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements.append(self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=True))
+        saved = {"T-i01": {"figure_id": "T-i01", "element_type": "table_image", "kind": "table", "criteria": {},
+                           "title_kind_mismatch": None, "title_kind_source": None}}
+        seen = []
+        self.report(FakeModel(kind="table"), elements=elements, existing=saved,
+                    on_figure=lambda figure_id, record: seen.append(figure_id))
+        self.assertIn("T-i01", seen)
+
     def test_a_table_image_judged_as_a_table_is_not_flagged(self):
         elements = self.element_records(["Figure 1 - The plant.", None])
         elements.append(self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=False))
@@ -348,7 +368,7 @@ class TestUgsFigures(unittest.TestCase):
         pixmap.clear_with(200)
         pixmap.save(str(figures / f"{element_id}.png"))
         return {"element_id": element_id, "element_type": "table_image", "page": 1, "rect": [50, 400, 400, 500],
-                "file": f"{element_id}.png", "title": {"text": title}, "title_grid": title_grid,
+                "file": f"{element_id}.png", "title": {"text": title} if title else None, "title_grid": title_grid,
                 "title_kind_mismatch": None, "title_kind_source": None, "legend": "", "notes": [],
                 "caption": title, "source": "vector"}
 

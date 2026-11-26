@@ -267,7 +267,7 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
     if record.get("title_kind_source") != "script":  # N7: a script verdict on the title is never overwritten
         mismatch = title_kind_from_answer(record.get("element_type") or "figure", answer["kind"])
         if record.get("element_type") == TABLE_IMAGE_TYPE:  # C: flagged by vision unless the grid rule reads a grid
-            if mismatch and record.get("title_grid") is not True:
+            if mismatch and record.get("titled") and record.get("title_grid") is not True:
                 record["title_kind_mismatch"] = mismatch
                 record["title_kind_source"] = "vision"
         elif mismatch and record.get("titled"):  # B: a vision table is a candidate only, the script flags it
@@ -417,6 +417,8 @@ def figures_report(
         element_id = element["element_id"]
         if element_id in existing:
             figures.append(existing[element_id])
+            if on_figure:
+                on_figure(element_id, existing[element_id])
             continue
         record = {
             "figure_id": element_id, "page": element["page"], "rect": element["rect"], "file": element["file"],

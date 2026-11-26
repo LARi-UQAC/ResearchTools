@@ -486,7 +486,11 @@ def write_run_done(work: Path, record: Dict[str, Any]) -> Path:
     target = work / RUN_DONE_NAME
     temporary = work / (RUN_DONE_NAME + ".tmp")
     temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(temporary, target)
+    try:
+        os.replace(temporary, target)
+    except OSError:
+        temporary.unlink(missing_ok=True)  # G: no half-written marker and no temporary file left behind
+        raise
     return target
 
 
@@ -595,8 +599,6 @@ def cmd_run(args, call, fetch, window, count) -> int:
         report_prepare._check_work_dir(reports, work)
     except report_prepare.PrepareError as error:
         raise DriverError(str(error)) from None
-    if not args.dry_run:  # a marker present means this run ended: the previous one is removed before anything else
-        (work / RUN_DONE_NAME).unlink(missing_ok=True)
     current = _current_loop(work)
     if args.loop != current:
         raise DriverError(f"loop {args.loop} is not the current loop")
@@ -639,9 +641,12 @@ def cmd_run(args, call, fetch, window, count) -> int:
             if "reason" in result:  # a report refused by its own pages or language: named, the batch goes on
                 line["reason"] = result["reason"]
             _emit(line)
-    except Exception:  # an ordinary error ends the run too: the marker still says so, then the error propagates
-        record["exit_code"] = EXIT_NOT_RUN
-        _finish_run(work, record)
+    except Exception as error:  # the marker records the code main returns; its own failure never masks the error
+        record["exit_code"] = EXIT_REFUSAL if isinstance(error, DriverError) else EXIT_NOT_RUN
+        try:
+            _finish_run(work, record)
+        except Exception:  # noqa: BLE001 - the original error is the one the caller must see
+            pass
         raise
     _finish_run(work, record)
     return record["exit_code"]
@@ -760,6 +765,10 @@ def main(argv: Optional[List[str]] = None, *, call: Optional[Callable] = None, f
     if not args.command:
         _parser().print_help()
         return EXIT_REFUSAL
+    if args.command == "run" and not args.dry_run:
+        # G: a marker present means this run ended. It is removed before any refusal can be raised, so no refused
+        # run leaves the outcome of an earlier one behind.
+        (Path(args.work).resolve() / RUN_DONE_NAME).unlink(missing_ok=True)
     try:
         if args.command == "prepare":
             return cmd_prepare(args, call, window, count)

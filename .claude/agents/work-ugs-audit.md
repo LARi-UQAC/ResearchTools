@@ -58,7 +58,7 @@ reason `vision_not_validated`, and count them in the checklist.
 mode of your Bash tool (`run_in_background`), because a call of yours ends at ten minutes and the run takes hours. Then end your turn
 with one line `RUN STARTED @ loop 1`. Do not call `status`, do not wait in a loop, do not check the process while the run
 is alive: the exit notification of the background task wakes you, and a call made before it only spends tokens.
-When it arrives, read `WORK/run_done.json` once. It holds the loop, `exit_code`, the report ids, `open_steps`,
+A dead background process is detected by its exit notification only. When it arrives, read `WORK/run_done.json` once. It holds the loop, `exit_code`, the report ids, `open_steps`,
 `blocked_steps` and `stopped_at` (report id, step label and kind, null on a clean end). Exit 0 with no open step is a
 finished run. Exit 1 means a model could not run (daemon unreachable, role not adopted, over budget): tell the
 professor the role and the kind from `stopped_at`, never guess, and resume with `run --resume` once he has fixed it.

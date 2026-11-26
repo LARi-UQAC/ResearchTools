@@ -607,6 +607,55 @@ class TestUgsDriver(unittest.TestCase):
         self.assertEqual(record["exit_code"], 1)
         self.assertNotIn("planted", record)
 
+    def test_a_refusal_before_any_work_folder_work_removes_a_planted_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        self.marker_path().write_text(json.dumps({"exit_code": 0, "planted": True}), encoding="utf-8")
+        code, _, _ = self.run_loop(extra=["--steps", "unknown_step"])
+        self.assertEqual(code, 2)
+        self.assertFalse(self.marker_path().exists())
+
+    def test_a_refused_loop_removes_a_planted_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        self.marker_path().write_text(json.dumps({"exit_code": 0, "planted": True}), encoding="utf-8")
+        code, _, _ = self.run_loop(loop=2)
+        self.assertEqual(code, 2)
+        self.assertFalse(self.marker_path().exists())
+
+    def test_a_driver_refusal_inside_the_loop_writes_exit_2_in_the_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        with patch("ugs_driver.run_report", side_effect=ugs_driver.DriverError("planted refusal")):
+            code, _, _ = self.run_loop()
+        self.assertEqual(code, 2)
+        self.assertEqual(self.marker()["exit_code"], 2)
+
+    def test_an_ordinary_error_inside_the_loop_writes_exit_1_and_propagates_to_main(self):
+        self.add_reports([9])
+        self.prepare()
+        with patch("ugs_driver.run_report", side_effect=RuntimeError("planted")):
+            code, lines, _ = self.run_loop()
+        self.assertEqual(code, 1)
+        self.assertEqual(self.marker()["exit_code"], 1)
+        self.assertEqual(lines[-1], {"status": "failed", "error": "RuntimeError"})
+
+    def test_a_marker_write_failure_never_masks_the_original_error(self):
+        self.add_reports([9])
+        self.prepare()
+        with patch("ugs_driver.run_report", side_effect=RuntimeError("planted")),                 patch("ugs_driver.write_run_done", side_effect=OSError("planted write failure")):
+            code, lines, _ = self.run_loop()
+        self.assertEqual(code, 1)
+        self.assertEqual(lines[-1], {"status": "failed", "error": "RuntimeError"})
+
+    def test_a_failed_replace_removes_the_temporary_marker(self):
+        work = self.tmp / "w"
+        work.mkdir()
+        with patch("ugs_driver.os.replace", side_effect=OSError("planted replace failure")):
+            with self.assertRaises(OSError):
+                ugs_driver.write_run_done(work, {key: 0 for key in ugs_driver.RUN_DONE_KEYS})
+        self.assertEqual(sorted(p.name for p in work.iterdir()), [])
+
     def test_a_dry_run_writes_no_marker(self):
         self.add_reports([9])
         self.prepare()

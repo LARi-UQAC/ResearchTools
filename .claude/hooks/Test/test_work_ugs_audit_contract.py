@@ -38,6 +38,14 @@ def missing_names(text: str, names) -> list:
     return [name for name in names if name not in text]
 
 
+POLLING_WORDS = re.compile(r"(?i)\bpoll\w*|sleep loop|periodic status")
+
+
+def polling_mentions(text: str) -> list:
+    """Every word of the polling rule found in a text: an empty list means the text never asks for a poll."""
+    return [match.group(0) for match in POLLING_WORDS.finditer(text)]
+
+
 def first_sentence(description: str) -> str:
     return re.split(r"(?<=[a-z)])\.\s", description, maxsplit=1)[0] + "."
 
@@ -69,8 +77,11 @@ class TestWorkUgsAuditContract(unittest.TestCase):
         self.assertRegex(self.agent, r"(?i)detached")
 
     def test_the_agent_never_polls_the_run(self):
-        self.assertNotIn("poll", self.agent.lower())
+        self.assertEqual(polling_mentions(self.agent), [])
         self.assertNotIn("sleep", self.agent.lower())  # no sleep-loop either
+
+    def test_the_agent_detects_a_dead_background_process_by_its_exit_notification_only(self):
+        self.assertIn("A dead background process is detected by its exit notification only.", self.agent)
 
     def test_the_agent_ends_its_turn_and_reads_the_marker_once(self):
         self.assertIn("run_in_background", self.agent)
@@ -136,8 +147,10 @@ class TestWorkUgsAuditContract(unittest.TestCase):
 
     # --- negative controls: the finders can fail ---
 
-    def test_poll_finder_reports_a_planted_polling_instruction(self):
-        self.assertIn("poll", "Poll status every minute until the run ends.".lower())
+    def test_polling_finder_reports_a_planted_instruction_and_nothing_in_a_clean_text(self):
+        planted = "Poll status every minute until the run ends, then run a sleep loop."
+        self.assertEqual(polling_mentions(planted), ["Poll", "sleep loop"])
+        self.assertEqual(polling_mentions("The exit notification wakes the agent once."), [])
 
     def test_forbidden_target_finder_detects_a_planted_read(self):
         fictitious = "Read `R01/grade.json` and the pages/ folder to explain the grade."

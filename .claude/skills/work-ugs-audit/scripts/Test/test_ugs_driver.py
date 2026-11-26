@@ -813,8 +813,8 @@ class TestVisionProbeByRun(unittest.TestCase):
         shutil.rmtree(self.work, ignore_errors=True)
 
     def test_run_probes_vision_when_no_verdict_exists(self):
-        status = ugs_driver.run_vision_probe(self.work, call_usage=_probe_call(FIXTURE_EXPECTED["words"]))
-        self.assertEqual(status, "ran")
+        status, reason = ugs_driver.run_vision_probe(self.work, call_usage=_probe_call(FIXTURE_EXPECTED["words"]))
+        self.assertEqual((status, reason), ("ran", ""))
         verdict = json.loads((self.work / "vision_probe.json").read_text(encoding="utf-8"))
         self.assertIs(verdict["ok"], True)
 
@@ -823,14 +823,28 @@ class TestVisionProbeByRun(unittest.TestCase):
 
         def must_not_be_called(prompt, schema, images=None):
             raise AssertionError("the model was called although a verdict exists")
-        status = ugs_driver.run_vision_probe(self.work, call_usage=must_not_be_called)
+        status, _reason = ugs_driver.run_vision_probe(self.work, call_usage=must_not_be_called)
         self.assertEqual(status, "present")
+
+    def test_a_not_ok_verdict_is_probed_again(self):
+        # Review round 1, decision 5: a verdict that is not ok is no reason to skip the probe.
+        (self.work / "vision_probe.json").write_text(json.dumps({"ok": False}), encoding="utf-8")
+        status, _reason = ugs_driver.run_vision_probe(self.work, call_usage=_probe_call(FIXTURE_EXPECTED["words"]))
+        self.assertEqual(status, "ran")
+        self.assertIs(json.loads((self.work / "vision_probe.json").read_text(encoding="utf-8"))["ok"], True)
+
+    def test_an_exception_of_the_probe_is_reported_by_its_type(self):
+        with patch.object(ugs_driver.vision_probe, "main", side_effect=ValueError("secret detail")):
+            status, reason = ugs_driver.run_vision_probe(self.work, call_usage=None)
+        self.assertEqual((status, reason), ("failed", "ValueError"))
+        self.assertNotIn("secret", reason)
 
     def test_a_failed_probe_is_recorded_as_not_validated_and_the_run_goes_on(self):
         # The probe writes ok false when the model does not answer; the figures step then runs with vision not
         # validated, so the status is "ran" and the verdict says ok false.
-        status = ugs_driver.run_vision_probe(self.work, call_usage=_probe_call([], fail=True))
-        self.assertEqual(status, "ran")
+        status, reason = ugs_driver.run_vision_probe(self.work, call_usage=_probe_call([], fail=True))
+        self.assertEqual(status, "failed")
+        self.assertTrue(reason)
         verdict = json.loads((self.work / "vision_probe.json").read_text(encoding="utf-8"))
         self.assertIs(verdict["ok"], False)
 

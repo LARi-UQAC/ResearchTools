@@ -18,7 +18,7 @@ import batch_stats
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 _SKILLS = Path(__file__).resolve().parent.parent.parent
 for _folder in (_SKILLS / "figure-review" / "scripts",):
@@ -575,7 +575,7 @@ VISION_FIXTURE_IMAGE = ASSETS / "vision_probe_fixture.png"
 VISION_FIXTURE_EXPECTED = ASSETS / "vision_probe_fixture.json"
 
 
-def run_vision_probe(work: Path, call_usage=None) -> str:
+def run_vision_probe(work: Path, call_usage=None) -> Tuple[str, str]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -592,8 +592,9 @@ def run_vision_probe(work: Path, call_usage=None) -> str:
         call_usage (callable or None): the model call of vision_probe.main; None means the real vision role.
 
     Outputs:
-        str: "present" when the verdict already existed, "ran" when the probe wrote one, "failed" when no verdict was
-            written.
+        Tuple[str, str]: (status, reason). The status is "present" when an ok verdict already existed, "ran" when the
+            probe answered ok, and "failed" otherwise; the reason is empty unless the probe failed, and then names the
+            failure: the verdict's kind, the exit code, or the exception type (never its message).
 
     Raises:
         DriverError: the fixture files are missing from the skill (R3).
@@ -601,7 +602,11 @@ def run_vision_probe(work: Path, call_usage=None) -> str:
     """
     verdict = work / VISION_VERDICT_NAME
     if verdict.is_file():
-        return "present"
+        try:
+            if json.loads(verdict.read_text(encoding="utf-8")).get("ok") is True:
+                return "present", ""
+        except (OSError, ValueError, AttributeError):
+            pass  # an unreadable or not-ok verdict is probed again (review round 1, decision 5)
     for source in (VISION_FIXTURE_IMAGE, VISION_FIXTURE_EXPECTED):
         if not source.is_file():
             raise DriverError(f"the vision probe fixture is missing: {source.name}")
@@ -612,11 +617,19 @@ def run_vision_probe(work: Path, call_usage=None) -> str:
     shutil.copyfile(VISION_FIXTURE_IMAGE, image)
     shutil.copyfile(VISION_FIXTURE_EXPECTED, expected)
     try:
-        vision_probe.main(["--work", str(work), "--image", str(image), "--expected", str(expected)],
-                          call_usage=call_usage)
-    except Exception:  # noqa: BLE001 - a probe that raises is one failed probe; the figures step still runs
-        return "failed"
-    return "ran" if verdict.is_file() else "failed"
+        code = vision_probe.main(["--work", str(work), "--image", str(image), "--expected", str(expected)],
+                                 call_usage=call_usage)
+    except Exception as error:  # noqa: BLE001 - reported by name: a probe that raises is one failed probe
+        return "failed", type(error).__name__
+    if code != 0 or not verdict.is_file():
+        return "failed", f"exit {code}"
+    try:
+        answer = json.loads(verdict.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        return "failed", f"verdict unreadable: {type(error).__name__}"
+    if answer.get("ok") is True:
+        return "ran", ""
+    return "failed", str(answer.get("kind") or "not_ok")
 
 
 def cmd_run(args, call, fetch, window, count) -> int:
@@ -664,7 +677,12 @@ def cmd_run(args, call, fetch, window, count) -> int:
     # Plan 22 task 3: the real run probes the vision role itself before the figures step; injected calls (tests)
     # never reach a model, and a verdict that exists is kept.
     if call is None and (only_steps is None or "figures" in only_steps):
-        run_vision_probe(work)
+        probe_status, probe_reason = run_vision_probe(work)
+        record_probe = {"vision_probe": probe_status}
+        if probe_status == "failed":  # review round 1, decision 5: reported on the report path, never silent
+            _emit({"step": "vision_probe", "status": "failed", "reason": probe_reason})
+    else:
+        record_probe = {}
     model_call, model_window, model_count = _inputs(call, window, count, config, work)
     # The actions are recorded only on the real run: an injected call (tests) writes nothing to the machine's log.
     active: Dict[str, Optional[str]] = {"step": None}  # the step running now, set by on_step; None before any
@@ -679,7 +697,7 @@ def cmd_run(args, call, fetch, window, count) -> int:
     calls = {step: (lambda prompt, schema, images=None, kind=kind: model_call(kind, prompt, schema, images))
              for step, kind in STEP_KIND.items()}
     record = {"loop": current, "exit_code": EXIT_OK, "reports": list(wanted), "open_steps": 0,
-              "blocked_steps": 0, "stopped_at": None}
+              "blocked_steps": 0, "stopped_at": None, **record_probe}
     try:
         for report_id in wanted:
             try:

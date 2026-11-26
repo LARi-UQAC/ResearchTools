@@ -91,6 +91,18 @@ class TestAuditItem(unittest.TestCase):
             audit_item(self.item, self.record, self.pages, call, self.ctx)
         self.assertEqual(ctx.exception.kind, "unreachable")
 
+    def test_the_prompt_carries_the_level_and_the_element_verdicts(self):
+        # Review round 1, decision 4: the auditor checks the level and the verdicts, not a summary of them.
+        record = dict(self.record, level="partial", model_score="present 1, partial 0, absent 1",
+                      elements=[{"element": "a", "verdict": "present", "page": 1},
+                                {"element": "b", "verdict": "absent", "page": None}])
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        audit_item(self.item, record, self.pages, call, self.ctx)
+        prompt = call.prompts[0]
+        self.assertIn('"level": "partial"', prompt)
+        self.assertIn('"verdict": "absent"', prompt)
+        self.assertNotIn("present 1, partial 0", prompt)
+
     def test_evidence_pages_are_the_pages_named_by_the_evidence(self):
         call = FakeCall([{"verdict": "agree", "reason": "ok"}])
         audit_item(self.item, self.record, self.pages, call, self.ctx)

@@ -1073,9 +1073,18 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                 if item["kind"] == "table":
                     item["title"] = _take_title(available, item["rect"], "table", markers)
                     item["notes"] = element_labels.find_notes(scan["blocks"], item["rect"], markers)
+                    # Review R1 (R01 pages 42 and 44): a ruled grid with no table title but an unclaimed figure
+                    # title within reach is a figure, and takes that title.
+                    if item["title"] is None:
+                        figure_title = _take_title(available, item["rect"], "figure", markers)
+                        if figure_title is not None:
+                            item["kind"] = "figure"
+                            item["title"] = figure_title
+                            item["notes"] = []
             for item in items:
                 if item["kind"] == "figure":
-                    item["title"] = _take_title(available, item["rect"], "figure", markers)
+                    if item["title"] is None:
+                        item["title"] = _take_title(available, item["rect"], "figure", markers)
                     # Plan 7 (E4) and review I1: a region with no figure title becomes a table_image only when it
                     # is a raster or tall enough to hold text lines; a thin vector band stays a figure.
                     if item["title"] is None and (item["raster"] or item["rect"].height >= settings["table_image_min_height_pt"]):

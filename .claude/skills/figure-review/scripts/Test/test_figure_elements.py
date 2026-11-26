@@ -561,6 +561,20 @@ class TestExtractElements(unittest.TestCase):
         figures = [r for r in self._extract() if r["element_type"] == "figure"]
         self.assertEqual(len(figures), 2)
 
+    def test_untitled_ruled_table_with_a_figure_title_is_a_figure(self):
+        # Review R1 (R01 pages 42 and 44): a big ruled grid with no table title, and a "Figure 16" title under it.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur", "Unite"],
+                                               ["Masse", "12.5", "kg"],
+                                               ["Longueur", "3.2", "m"]])
+        _centred_text(page, 200, 290, "Figure 16: Schema du montage")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["figure"])
+        self.assertEqual(records[0]["element_id"], "F16")
+        self.assertEqual(records[0]["title"]["text"], "Figure 16: Schema du montage")
+
     def test_extraction_block_holds_the_element_settings(self):
         block = json.loads(CRITERIA_PATH.read_text(encoding="utf-8"))["extraction"]
         for key in ELEMENT_SETTING_KEYS:

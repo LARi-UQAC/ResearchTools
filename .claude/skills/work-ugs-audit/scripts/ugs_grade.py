@@ -15,7 +15,7 @@ for _p in (_LOOP_ENGINEER_SCRIPTS, _LOOP_ENGINEER_ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from ugs_text import StepContext, fill, page_blocks, select_pages
+from ugs_text import StepContext, fill, page_blocks, prompt_section, select_pages
 from ugs_events import page_range
 from ugs_bridge import NotRun
 from ugs_config import default_path
@@ -40,7 +40,15 @@ GRADE_CODES = (
     "no_fit",
     "over_budget",
     "timeout",
+    "not_applicable_not_allowed",
 )
+
+# The refusals asked again with a template of the prompts folder (plan 22 task 2, R01 case 4): the maximum is named,
+# in the report language, from retry_grade_item.md. Each code names its section of that file.
+RETRY_SECTION_BY_CODE = {
+    "score_above_max": "score",
+    "not_applicable_not_allowed": "not_applicable",
+}
 
 # A refused proof keeps the score the model gave: the number is usable, only the evidence is not.
 PROOF_REFUSAL_CODES = (
@@ -190,6 +198,8 @@ def check_grade_answer(
     if status == "not_applicable":
         if score is not None:
             return "not_applicable_with_score", "not_applicable must have a null score"
+        if not item.get("optional"):
+            return "not_applicable_not_allowed", "not_applicable is allowed only for an optional item"
         return "ok", ""
 
     max_points = item.get("max_points", 0)
@@ -366,6 +376,35 @@ def _no_answer_record(
     }
 
 
+def _retry_note(ctx: StepContext, code: str, item: dict, answer: dict, language: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the note that asks the model again after a score above the maximum, or a not_applicable on a required
+        item. The wording lives in the retry_grade_item prompt file, never in code (R6).
+
+    Inputs:
+        ctx (StepContext): the step context; its prompts hold retry_grade_item.
+        code (str): the refusal code, a key of RETRY_SECTION_BY_CODE.
+        item (dict): the rubric item, its max_points is named in the note.
+        answer (dict): the refused answer, its score is named in the note.
+        language (str): the report language, fr or en; it selects the section.
+
+    Outputs:
+        str: the note, stripped.
+
+    Raises:
+        PromptError: when the template or its section for this language is missing (R3).
+    --------------------------------------------------------------------------
+    """
+    section = RETRY_SECTION_BY_CODE[code]
+    template = prompt_section(ctx.prompts["retry_grade_item"], f"{language}_{section}")
+    values = {"MAX": str(item.get("max_points", 0))}
+    if section == "score":  # the not_applicable template has no SCORE slot, and fill refuses a value with no slot
+        values["SCORE"] = str(answer.get("score"))
+    return fill(template, values).strip()
+
+
 def grade_item(
     item: dict,
     pages: List[str],
@@ -433,11 +472,14 @@ def grade_item(
     schema = ctx.schemas["grade_item"]
 
     last_error_reason = None
+    last_retry_note = ""
     code = "schema_invalid"
     last_answer = None
     for attempt in range(ctx.grade_retries + 1):
         current_note = calibration_note
-        if last_error_reason:
+        if last_retry_note:
+            current_note = f"{calibration_note}\n{last_retry_note}" if calibration_note else last_retry_note
+        elif last_error_reason:
             current_note = f"{calibration_note}\nPrevious refusal: {last_error_reason}" if calibration_note else f"Previous refusal: {last_error_reason}"
 
         prompt = fill(prompt_template, {
@@ -458,6 +500,7 @@ def grade_item(
             if not e.retryable:
                 raise
             last_error_reason = e.reason
+            last_retry_note = ""
             code = NO_ANSWER_CODES.get(e.kind, "schema_invalid")
             last_answer = None
             continue
@@ -466,6 +509,7 @@ def grade_item(
         if code == "ok":
             return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0), missing_max_chars)
         last_error_reason = message
+        last_retry_note = _retry_note(ctx, code, item, answer, language) if code in RETRY_SECTION_BY_CODE else ""
         last_answer = answer
 
     attempts = ctx.grade_retries + 1

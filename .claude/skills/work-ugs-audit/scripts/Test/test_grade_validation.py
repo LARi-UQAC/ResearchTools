@@ -49,6 +49,12 @@ def make_ctx():
         prompts={
             "grade_item": "Grade {{ITEM}} on {{SECTIONS}}. Levels: {{LEVELS}}. Lang: {{LANGUAGE_OF_REPORT}}. Note: {{CALIBRATION_NOTE}}",
             "rubric_normalize": "Normalize {{RUBRIC_TEXT}} for {{ASSESSMENT_TYPE}}",
+            "retry_grade_item": (
+                "## fr_score\nLe score {{SCORE}} dépasse le maximum {{MAX}}. Réponds à nouveau avec un score entre 0 et {{MAX}}.\n\n"
+                "## en_score\nThe score {{SCORE}} is above the maximum {{MAX}}. Answer again with a score between 0 and {{MAX}}.\n\n"
+                "## fr_not_applicable\nCet élément n'est pas facultatif : réponds avec un score entre 0 et {{MAX}}.\n\n"
+                "## en_not_applicable\nThis item is not optional: answer with a score between 0 and {{MAX}}.\n"
+            ),
         },
         schemas={"grade_item": {"type": "object"}, "rubric": {"type": "object"}},
         levels={"absent": 0, "attempted": 0.5, "partial": 0.75, "complete": 0.88, "exemplary": 1.0},
@@ -90,8 +96,14 @@ class TestCheckGradeAnswer(unittest.TestCase):
     def test_a_partial_score_with_a_found_quote_is_ok(self):
         self.assertEqual(self._check(_rated(5, [_quote(1, "Page 1 text")]))[0], "ok")
 
-    def test_a_not_applicable_without_score_is_ok(self):
+    def test_a_not_applicable_without_score_is_ok_on_an_optional_item(self):
+        self.item = dict(self.item, optional=True)
         self.assertEqual(self._check({"status": "not_applicable", "score": None, "comment": "", "evidence": []})[0], "ok")
+
+    def test_a_not_applicable_on_a_required_item_is_refused(self):
+        # Plan 22 task 2 (R01 case 4): not_applicable is an answer only when the rubric item allows it
+        self.assertEqual(self._check({"status": "not_applicable", "score": None, "comment": "", "evidence": []}),
+                         ("not_applicable_not_allowed", "not_applicable is allowed only for an optional item"))
 
     def test_score_above_max(self):
         self.assertEqual(self._check(_rated(11))[0], "score_above_max")
@@ -149,6 +161,59 @@ class TestCheckGradeAnswer(unittest.TestCase):
         self.assertTrue(message)
         self.assertNotIn("SECRET", message)
         self.assertNotIn("PHRASE", message)
+
+
+class TestScoreRetry(unittest.TestCase):
+    """Plan 22 task 2 (R01 case 4): a score above the maximum is asked again with the maximum named, in the report
+    language, from a template of the prompts folder; not_applicable on a required item is refused and asked again.
+    Fictitious items and answers (R34)."""
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.pages = ["Page 1 text", "Page 2 text"]
+
+    def test_score_above_max_is_asked_again_and_the_repeat_is_kept(self):
+        item = {"id": "I01", "title": "Intro", "max_points": 0.5}
+        record = grade_item(item, self.pages, FakeCall([_rated(0.88), _rated(0.5)]), self.ctx, "en", "")
+        self.assertEqual(record.get("status"), "rated")
+        self.assertEqual(record.get("score"), 0.5)
+        self.assertEqual(record.get("validation"), "ok")
+        self.assertEqual(record.get("attempts"), 2)
+
+    def test_the_retry_prompt_names_the_maximum_in_the_report_language(self):
+        item = {"id": "I01", "title": "Intro", "max_points": 0.5}
+        call = FakeCall([_rated(0.88), _rated(0.5)])
+        grade_item(item, self.pages, call, self.ctx, "fr", "")
+        self.assertIn("0.88", call.calls[1])
+        self.assertIn("dépasse le maximum 0.5", call.calls[1])
+        self.assertNotIn("The score 0.88", call.calls[1])
+
+    def test_a_required_item_answered_not_applicable_is_refused_and_asked_once_more(self):
+        item = {"id": "I01", "title": "Intro", "max_points": 10}
+        na = {"status": "not_applicable", "score": None, "comment": "", "evidence": []}
+        call = FakeCall([na, na])
+        record = grade_item(item, self.pages, call, self.ctx, "en", "")
+        self.assertEqual(record.get("validation"), "not_applicable_not_allowed")
+        self.assertEqual(record.get("status"), "not_run")
+        self.assertEqual(record.get("attempts"), 2)
+        self.assertIn("This item is not optional", call.calls[1])
+
+    def test_an_optional_item_answered_not_applicable_is_accepted(self):
+        item = {"id": "I01", "title": "Intro", "max_points": 10, "optional": True}
+        na = {"status": "not_applicable", "score": None, "comment": "", "evidence": []}
+        call = FakeCall([na])
+        record = grade_item(item, self.pages, call, self.ctx, "en", "")
+        self.assertEqual(record.get("status"), "not_applicable")
+        self.assertEqual(record.get("validation"), "ok")
+        self.assertEqual(len(call.calls), 1)
+
+    def test_still_above_max_after_the_retry_stays_not_run(self):
+        item = {"id": "I01", "title": "Intro", "max_points": 0.5}
+        record = grade_item(item, self.pages, FakeCall([_rated(0.88), _rated(0.8)]), self.ctx, "en", "")
+        self.assertEqual(record.get("validation"), "score_above_max")
+        self.assertEqual(record.get("status"), "not_run")
+        self.assertIsNone(record.get("score"))
+        self.assertEqual(record.get("attempts"), 2)
 
 
 class TestGradeRecord(unittest.TestCase):

@@ -17,6 +17,7 @@
           "id": {"type": "string", "pattern": "^I[0-9]{2}$"},
           "title": {"type": "string", "minLength": 1},
           "max_points": {"type": "number", "exclusiveMinimum": 0},
+          "optional": {"type": "boolean"},
           "criteria": {"type": "array", "items": {"type": "string", "minLength": 1}},
           "checklist": {"type": "array", "items": {"type": "string", "minLength": 1}}
         },

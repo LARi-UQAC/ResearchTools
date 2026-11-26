@@ -37,6 +37,12 @@ def make_ctx():
         prompts={
             "grade_item": "Grade {{ITEM}} on {{SECTIONS}}. Levels: {{LEVELS}}. Lang: {{LANGUAGE_OF_REPORT}}. Note: {{CALIBRATION_NOTE}}",
             "rubric_normalize": "Normalize {{RUBRIC_TEXT}} for {{ASSESSMENT_TYPE}}",
+            "retry_grade_item": (
+                "## fr_score\nScore {{SCORE}} au-dessus de {{MAX}}.\n\n"
+                "## en_score\nScore {{SCORE}} above {{MAX}}.\n\n"
+                "## fr_not_applicable\nNon facultatif : {{MAX}}.\n\n"
+                "## en_not_applicable\nNot optional: {{MAX}}.\n"
+            ),
         },
         schemas={
             "grade_item": {"type": "object"},
@@ -101,7 +107,9 @@ class TestGradeItem(unittest.TestCase):
             "evidence": []
         }
         call = FakeCall([answer])
-        result = grade_item(self.item, self.pages, call, self.ctx, self.language, self.calibration_note)
+        # Plan 22 task 2: not_applicable is an answer only for an optional item
+        result = grade_item(dict(self.item, optional=True), self.pages, call, self.ctx, self.language,
+                            self.calibration_note)
         self.assertEqual(result["status"], "not_applicable")
         self.assertIsNone(result["score"])
 

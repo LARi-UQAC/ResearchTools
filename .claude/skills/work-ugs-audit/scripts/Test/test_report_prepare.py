@@ -1,4 +1,4 @@
-﻿"""
+"""
 Offline tests of report_prepare.py. The reports are fictitious PDFs built in a temporary folder.
 """
 import io

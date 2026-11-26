@@ -15,7 +15,12 @@
     "header_band_pt": {"value": 70, "provenance": "proposal 2026-11-16 (points from the top or bottom edge of a page that form the header or footer band), tune on counts of the real reports"},
     "table_image_min_height_pt": {"value": 24, "provenance": "proposal 2026-11-25 (review I1): a region with no figure title is a table drawn as an image only when it is a raster or at least this tall, two text lines of 12 points, the minimum of tables.image_min_rows (2) in work-ugs-audit; a thinner vector band is a figure, never a table. Tune on the real reports"},
     "repeat_min_pages": {"value": 3, "provenance": "proposal 2026-11-16 (pages on which a region of the same size must recur to be a logo), tune on counts of the real reports"},
-    "logo_size_tolerance_pt": {"value": 1.0, "provenance": "proposal 2026-11-16 (points of tolerance when comparing the size of two regions to decide a repeated logo; the plan's one point, not measured)"}
+    "logo_size_tolerance_pt": {"value": 1.0, "provenance": "proposal 2026-11-16 (points of tolerance when comparing the size of two regions to decide a repeated logo; the plan's one point, not measured)"},
+    "merge_max_text_words": {"value": 12, "provenance": "proposal 2026-11-25 (plan 12 E6): a text block of more words than this is running text and separates two figures; a short label inside a diagram is not a barrier. Tune on the real reports"},
+    "text_box_min_area_ratio": {"value": 0.95, "provenance": "proposal 2026-11-25 (series B review, R02 page 2): share of an untitled vector region drawn (background_threshold) from which it is a text box, not a figure. Tune on the real reports"},
+    "text_box_min_spans": {"value": 6, "provenance": "proposal 2026-11-25 (series B review): words an untitled drawn region must hold to be a text box. Tune on the real reports"},
+    "group_max_gap_pt": {"value": 150, "provenance": "proposal 2026-11-25 (plan 12 E6): largest gap in points between two regions that may still form one figure when no title or paragraph lies between them; a logo at the top of a page stays apart from a figure below it. Tune on the real reports"},
+    "running_band_pt": {"value": 80, "provenance": "proposal 2026-11-25 (series B review, R02: a footer frame of about 437 by 65 points on 22 pages): points from the top or bottom edge within which a repeated untitled region of any size is a running element, not an element"}
   },
   "criteria": [
     {"id": "cited_with_content", "level": "figure", "scope": "undergraduate", "judged_by": "model", "applies_to": ["all"], "needs": "either", "threshold": null,

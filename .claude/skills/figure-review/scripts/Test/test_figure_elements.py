@@ -28,6 +28,11 @@ SETTINGS = {
     "repeat_min_pages": 3,
     "table_image_min_height_pt": 24,
     "logo_size_tolerance_pt": 1.0,
+    "merge_max_text_words": 12,
+    "text_box_min_area_ratio": 0.95,
+    "text_box_min_spans": 6,
+    "running_band_pt": 80,
+    "group_max_gap_pt": 150,
 }
 ELEMENT_SETTING_KEYS = tuple(SETTINGS)
 
@@ -354,6 +359,95 @@ class TestExtractElements(unittest.TestCase):
             {"figure_id", "page", "rect", "file", "source", "drawing_area_ratio", "caption", "text_sizes"},
         )
         self.assertEqual(records[0]["caption"], "Figure 1: Ancien")
+
+    def test_uml_fragments_with_short_labels_are_one_figure(self):
+        # Plan 12 Task 1: six boxes 40 points apart, short labels between them, one title below the union.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        for x in (100, 220, 340):
+            for y in (100, 200):
+                _filled(page, x, y, x + 80, y + 40, 0.85)
+        for x in (180, 300):
+            for y in (120, 220):
+                page.draw_line((x, y), (x + 40, y))
+        page.insert_text((190, 118), "in", fontsize=8, fontname="helv")
+        _centred_text(page, 260, 262, "Figure 1: Diagramme de classes")
+        self._save(doc)
+        figures = [r for r in self._extract() if r["element_type"] == "figure"]
+        self.assertEqual(len(figures), 1)
+        self.assertEqual(figures[0]["title"]["text"], "Figure 1: Diagramme de classes")
+
+    def test_side_by_side_figures_with_titles_below_are_two_figures(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 290, 200)
+        _centred_text(page, 195, 216, "Figure 1: Premier")
+        _filled(page, 300, 100, 490, 200)
+        _centred_text(page, 395, 216, "Figure 2: Second")
+        self._save(doc)
+        figures = [r for r in self._extract() if r["element_type"] == "figure"]
+        self.assertEqual(len(figures), 2)
+        self.assertEqual([f["element_id"] for f in figures], ["F01", "F02"])
+
+    def test_long_paragraph_between_figures_separates_them(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 200)
+        _centred_text(page, 200, 240, "Le texte courant de ce paragraphe decrit la figure precedente en detail complet ici.")
+        _filled(page, 100, 290, 300, 390)
+        self._save(doc)
+        figures = [r for r in self._extract() if r["element_type"] == "figure"]
+        self.assertEqual(len(figures), 2)
+
+    def test_untitled_text_box_is_not_a_figure(self):
+        # Series B review: a full-width untitled band that holds running text is a text box.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 400, 500, 465, 0.75)
+        page.insert_text((110, 420), "Lorem ipsum dolor sit amet consectetur", fontsize=10, fontname="helv")
+        page.insert_text((110, 440), "adipiscing elit sed do eiusmod tempor", fontsize=10, fontname="helv")
+        self._save(doc)
+        self.assertEqual(self._extract(), [])
+
+    def test_repeated_footer_frame_is_nothing(self):
+        # Series B review: an untitled frame of 470 by 60 points at the same place on three pages is no element.
+        doc = fitz.open()
+        for _ in range(3):
+            page = doc.new_page(width=612, height=792)
+            _filled(page, 70, 722, 540, 782)
+        self._save(doc)
+        self.assertEqual(self._extract(), [])
+
+    def test_repeated_footer_ruled_table_is_nothing(self):
+        doc = fitz.open()
+        for _ in range(3):
+            page = doc.new_page(width=612, height=792)
+            _ruled_table(page, 72, 735, 120, 15, [["Pied", "de page"], ["Cadre", "fixe"]])
+        self._save(doc)
+        self.assertEqual(self._extract(), [])
+
+    def test_untitled_table_next_to_titled_one_is_its_continuation(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _centred_text(page, 200, 186, "Tableau 1 : Mesures")
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur"], ["Masse", "12.5"]])
+        _ruled_table(page, 72, 262, 120, 25, [["Longueur", "3.2"], ["Largeur", "4.1"]])
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["table"])
+        self.assertIn("Masse", records[0]["markdown"])
+        self.assertIn("Largeur", records[0]["markdown"])
+        self.assertEqual(records[0]["title"]["text"], "Tableau 1 : Mesures")
+
+    def test_thin_band_above_a_table_is_part_of_the_table(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 72, 300, 522, 319, 0.75)
+        _ruled_table(page, 72, 321, 120, 25, [["Mesure", "Valeur"], ["Masse", "12.5"]])
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["table"])
+        self.assertLessEqual(records[0]["rect"][1], 301)
 
     def test_extraction_block_holds_the_element_settings(self):
         block = json.loads(CRITERIA_PATH.read_text(encoding="utf-8"))["extraction"]

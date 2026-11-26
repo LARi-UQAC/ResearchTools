@@ -24,6 +24,11 @@ ELEMENT_SETTING_KEYS = (
     "repeat_min_pages",
     "logo_size_tolerance_pt",
     "table_image_min_height_pt",
+    "merge_max_text_words",
+    "text_box_min_area_ratio",
+    "text_box_min_spans",
+    "running_band_pt",
+    "group_max_gap_pt",
 )
 # Element id prefix per element type: F01 figures, T01 tables, L01 logos.
 ELEMENT_ID_PREFIX = {"figure": "F", "table": "T", "table_image": "T", "logo": "L"}
@@ -443,6 +448,185 @@ def _merge_blocked(items: List[Tuple["fitz.Rect", bool]], gap: float,
     return clusters
 
 
+def _paragraph_barriers(blocks: List[tuple], max_text_words: int) -> List["fitz.Rect"]:
+    """
+    Purpose: Collect the rectangles of the text blocks long enough to be running text (a paragraph).
+    Details: A short label inside a diagram is not a barrier; a block of more than max_text_words words is.
+    Inputs:
+        blocks: List[tuple] - the tuples of page.get_text("blocks").
+        max_text_words: int - a block with more words than this is a barrier.
+    Outputs:
+        List[fitz.Rect] - one rectangle per paragraph-like text block.
+    Raises:
+        None.
+    """
+    barriers = []
+    for block in blocks:
+        if len(block) < 7 or block[6] != TEXT_BLOCK_TYPE:
+            continue
+        if len(str(block[4]).split()) > max_text_words:
+            barriers.append(fitz.Rect(block[:4]))
+    return barriers
+
+
+def _splits_side_by_side(a: "fitz.Rect", b: "fitz.Rect", title: "fitz.Rect") -> bool:
+    """
+    Purpose: Tell whether a title lying beyond two side-by-side regions belongs to exactly one of them.
+    Details: Two figures side by side, each with its title below, are two figures: a title fully inside the
+        horizontal range of one region and not of the other splits them.
+    Inputs:
+        a: fitz.Rect - first region.
+        b: fitz.Rect - second region.
+        title: fitz.Rect - a title block of the page.
+    Outputs:
+        bool - True when the regions share a vertical span and the title splits them.
+    Raises:
+        None.
+    """
+    if max(a.y0, b.y0) >= min(a.y1, b.y1):
+        return False
+    if min(a.x1, b.x1) > max(a.x0, b.x0):  # overlapping horizontally: one region holds the other, no side-by-side
+        return False
+    if not (title.y0 >= max(a.y1, b.y1) or title.y1 <= min(a.y0, b.y0)):
+        return False
+    inside_a = title.x0 >= a.x0 and title.x1 <= a.x1
+    inside_b = title.x0 >= b.x0 and title.x1 <= b.x1
+    return inside_a != inside_b
+
+
+def _separated(a: "fitz.Rect", b: "fitz.Rect", barriers: List["fitz.Rect"]) -> bool:
+    """
+    Purpose: Tell whether a barrier keeps two regions apart, between them or beside them.
+    Inputs:
+        a: fitz.Rect - first region.
+        b: fitz.Rect - second region.
+        barriers: List[fitz.Rect] - titles and paragraphs of the page.
+    Outputs:
+        bool - True when a barrier lies between the two regions, or splits them side by side.
+    Raises:
+        None.
+    """
+    if _blocked_by_title(a, b, barriers):
+        return True
+    return any(_splits_side_by_side(a, b, barrier) for barrier in barriers)
+
+
+def _title_barriers(page: "fitz.Page", markers: Dict[str, Any]) -> List["fitz.Rect"]:
+    """
+    Purpose: Collect the rectangles of the title lines of a page, one per text span that opens with a marker.
+    Details: Spans, not blocks: two titles side by side on one baseline form one block for PyMuPDF, which
+        would hide the gap between them.
+    Inputs:
+        page: fitz.Page - the page.
+        markers: Dict[str, Any] - the data returned by element_labels.load_markers.
+    Outputs:
+        List[fitz.Rect] - one rectangle per title span.
+    Raises:
+        MarkerError: If the markers are incomplete.
+    """
+    prefixes = (list(element_labels._marker_prefixes(markers, "figure_prefixes"))
+                + list(element_labels._marker_prefixes(markers, "table_prefixes")))
+    barriers = []
+    for block in page.get_text("dict")["blocks"]:
+        if block.get("type") != TEXT_BLOCK_TYPE:
+            continue
+        for line in block["lines"]:
+            for span in line["spans"]:
+                if element_labels._starts_with_marker(element_labels._clean(span["text"]), prefixes):
+                    barriers.append(fitz.Rect(span["bbox"]))
+    return barriers
+
+
+def _group_by_barriers(regions: List[Tuple["fitz.Rect", bool]], barriers: List["fitz.Rect"],
+                       gap: float) -> List[Tuple["fitz.Rect", bool]]:
+    """
+    Purpose: Group the figure regions of a page: regions within gap of each other form one figure unless a
+        barrier (a title or a paragraph) lies between them or splits them side by side (plan 12 E6, review
+        series D). A short label inside a diagram is not a barrier, so the fragments of one diagram join.
+    Inputs:
+        regions: List[Tuple[fitz.Rect, bool]] - each region with True when it is a raster image.
+        barriers: List[fitz.Rect] - the title spans and paragraph blocks of the page.
+        gap: float - largest gap in points that still counts as touching (fragment_gap_pt).
+    Outputs:
+        List[Tuple[fitz.Rect, bool]] - one bounding region per group, raster when any member is.
+    Raises:
+        None.
+    """
+    groups = list(regions)
+    changed = True
+    while changed:
+        changed = False
+        merged: List[Tuple["fitz.Rect", bool]] = []
+        for rect, raster in groups:
+            for i, (other, other_raster) in enumerate(merged):
+                if _touch(rect, other, gap) and not _separated(rect, other, barriers):
+                    merged[i] = (_union(other, rect), raster or other_raster)
+                    changed = True
+                    break
+            else:
+                merged.append((rect, raster))
+        groups = merged
+    return groups
+
+
+def _words_inside(words: List[tuple], rect: "fitz.Rect") -> int:
+    """
+    Purpose: Count the words of a page whose centre lies inside a rectangle.
+    Inputs:
+        words: List[tuple] - the tuples of page.get_text("words").
+        rect: fitz.Rect - the rectangle.
+    Outputs:
+        int - the number of words inside.
+    Raises:
+        None.
+    """
+    count = 0
+    for word in words:
+        centre = fitz.Point((word[0] + word[2]) / 2, (word[1] + word[3]) / 2)
+        if rect.contains(centre):
+            count += 1
+    return count
+
+
+def _stacked_next_to(a: "fitz.Rect", b: "fitz.Rect", gap: float) -> bool:
+    """
+    Purpose: Tell whether two rectangles overlap horizontally and lie within gap points vertically.
+    Inputs:
+        a: fitz.Rect - first rectangle.
+        b: fitz.Rect - second rectangle.
+        gap: float - largest vertical gap in points.
+    Outputs:
+        bool - True when a and b share a horizontal extent and are stacked within gap.
+    Raises:
+        None.
+    """
+    if min(a.x1, b.x1) <= max(a.x0, b.x0):
+        return False
+    return max(a.y0 - b.y1, b.y0 - a.y1) <= gap
+
+
+def _is_text_box(item: Dict[str, Any], words: List[tuple], settings: Dict[str, Any]) -> bool:
+    """
+    Purpose: Tell whether an untitled vector region is a text box: nearly all of it drawn, holding running text
+        (series B review, R02 page 2). Such a region is no figure.
+    Inputs:
+        item: Dict[str, Any] - the candidate item with its page under scan.
+        words: List[tuple] - the words of the page.
+        settings: Dict[str, Any] - text_box_min_spans, text_box_min_area_ratio, background_threshold.
+    Outputs:
+        bool - True when the region holds at least text_box_min_spans words and its drawing area ratio
+            reaches text_box_min_area_ratio.
+    Raises:
+        None.
+    """
+    rect = item["rect"]
+    if _words_inside(words, rect) < settings["text_box_min_spans"]:
+        return False
+    pix = item["scan"]["page"].get_pixmap(clip=rect)
+    ratio = drawing_area_ratio(pix.samples, pix.width, pix.height, pix.n, settings["background_threshold"])
+    return ratio >= settings["text_box_min_area_ratio"]
+
+
 def _vector_text_sizes(page: "fitz.Page", rect: "fitz.Rect") -> List[float]:
     """
     Purpose: Collect the font sizes of the labels around a vector drawing, caption lines excluded.
@@ -527,7 +711,8 @@ def _scan_page(page: "fitz.Page", page_no: int, settings: Dict[str, Any],
 
     regions = [(rect, is_raster) for rect, is_raster in raster + vector
                if _table_overlap_ratio(rect, table_boxes) < settings["table_overlap_ratio"]]
-    merged = _merge_blocked(regions, settings["fragment_gap_pt"], _marker_barriers(blocks, markers))
+    barriers = _title_barriers(page, markers) + _paragraph_barriers(blocks, settings["merge_max_text_words"])
+    merged = _group_by_barriers(regions, barriers, settings["group_max_gap_pt"])
     min_area = settings["min_area_pt2"]
     figures = [(rect, is_raster) for rect, is_raster in merged if rect.width * rect.height >= min_area]
 
@@ -536,6 +721,7 @@ def _scan_page(page: "fitz.Page", page_no: int, settings: Dict[str, Any],
         "page": page,
         "height": page.rect.height,
         "blocks": blocks,
+        "barriers": barriers,
         "words": words,
         "tables": tables,
         "tables_dropped": tables_dropped,
@@ -573,15 +759,40 @@ def _is_repeated_logo(rect: "fitz.Rect", own_height: float, scans: List[Dict[str
     Raises:
         None.
     """
-    if rect.width * rect.height > settings["logo_max_area_pt2"]:
+    return _repeated_in_band(rect, own_height, scans, settings["header_band_pt"], settings,
+                             settings["logo_max_area_pt2"], with_tables=False)
+
+
+def _repeated_in_band(rect: "fitz.Rect", own_height: float, scans: List[Dict[str, Any]], band: float,
+                      settings: Dict[str, Any], max_area: Optional[float], with_tables: bool) -> bool:
+    """
+    Purpose: Tell whether a region of the same size recurs in the header or footer band on enough pages.
+    Details: Shared by the logo rule (small regions, header band) and the running-frame rule (any size, the
+        running band, tables included), so the size comparison is written once.
+    Inputs:
+        rect: fitz.Rect - the candidate region.
+        own_height: float - the height of the page holding the candidate.
+        scans: List[Dict[str, Any]] - the first-pass results of every page kept.
+        band: float - the band height in points.
+        settings: Dict[str, Any] - the extraction settings (logo_size_tolerance_pt, repeat_min_pages).
+        max_area: Optional[float] - the largest area allowed, None for no limit.
+        with_tables: bool - True when the ruled tables of each page count as candidates too.
+    Outputs:
+        bool - True when the region recurs on at least repeat_min_pages pages.
+    Raises:
+        None.
+    """
+    if max_area is not None and rect.width * rect.height > max_area:
         return False
-    band = settings["header_band_pt"]
     if not _in_band(rect, own_height, band):
         return False
     tolerance = settings["logo_size_tolerance_pt"]
     pages_with_it = set()
     for scan in scans:
-        for other, _ in scan["regions"]:
+        others = [other for other, _ in scan["regions"]]
+        if with_tables:
+            others += [other for other, _ in scan["tables"]]
+        for other in others:
             same_size = (abs(other.width - rect.width) <= tolerance
                          and abs(other.height - rect.height) <= tolerance)
             if same_size and _in_band(other, scan["height"], band):
@@ -705,6 +916,19 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                 item["notes"] = []
                 item["legend"] = ""
 
+            # Series C review (R01 page 34): a thin vector band stacked against a ruled table, with no title
+            # between them, is that table's header band: it joins the table rectangle, it is no figure.
+            barriers = scan["barriers"]
+            for item in items:
+                if item["kind"] != "figure" or item["raster"] or item["rect"].height >= settings["table_image_min_height_pt"]:
+                    continue
+                for table in [t for t in items if t["kind"] == "table"]:
+                    if (_stacked_next_to(item["rect"], table["rect"], settings["fragment_gap_pt"])
+                            and not _blocked_by_title(item["rect"], table["rect"], barriers)):
+                        table["rect"] = _union(table["rect"], item["rect"])
+                        item["kind"] = "merged"
+                        break
+
             # Review I1 (series C): ruled tables claim their titles first, so no region can take the title of a
             # table that lies beside it on the page.
             available = list(scan["blocks"])
@@ -726,7 +950,29 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                     if item["kind"] == "figure":
                         title_text = item["title"]["text"] if item["title"] else None
                         item["legend"] = element_labels.find_legend(scan["words"], item["rect"], title_text)
-            pending.extend(items)
+
+            # Untitled regions: a text box is no figure; a running frame (same size in the running band on
+            # enough pages, any type) is no element; an untitled table stacked on a titled one continues it.
+            for item in items:
+                if item["kind"] == "figure" and item["title"] is None and not item["raster"]:
+                    if _is_text_box(item, scan["words"], settings):
+                        item["kind"] = "text_box"
+            for item in items:
+                if item["kind"] in ("figure", "table") and item["title"] is None:
+                    if _repeated_in_band(item["rect"], scan["height"], scans, settings["running_band_pt"],
+                                         settings, None, with_tables=True):
+                        item["kind"] = "frame"
+            for item in items:
+                if item["kind"] != "table" or item["title"] is not None:
+                    continue
+                for host in [t for t in items if t["kind"] == "table" and t["title"] is not None]:
+                    if (_stacked_next_to(item["rect"], host["rect"], settings["fragment_gap_pt"])
+                            and not _blocked_by_title(item["rect"], host["rect"], barriers)):
+                        host["rect"] = _union(host["rect"], item["rect"])
+                        host["markdown"] = f'{host["markdown"]}\n\n{item["markdown"]}'
+                        item["kind"] = "merged"
+                        break
+            pending.extend(item for item in items if item["kind"] in ("figure", "table", "table_image", "logo"))
 
         counters = {prefix: 0 for prefix in ELEMENT_ID_PREFIX.values()}
         threshold = settings["background_threshold"]

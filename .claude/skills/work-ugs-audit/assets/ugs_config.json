@@ -73,6 +73,14 @@
     "value": 2,
     "provenance": "proposal 2026-11-25, a table drawn as an image needs at least this many rows of words to be taken as a table; tune on the real reports"
   },
+  "tables.untitled_min_rows": {
+    "value": 3,
+    "provenance": "proposal 2026-11-25 (plan 11 E5), an untitled region is a table drawn as an image only when its OCR rebuilds at least this many rows; tune on the real reports"
+  },
+  "tables.untitled_min_cols": {
+    "value": 2,
+    "provenance": "proposal 2026-11-25 (plan 11 E5), an untitled region is a table drawn as an image only when its OCR rebuilds at least this many columns; tune on the real reports"
+  },
   "tables.image_row_overlap_ratio": {
     "value": 0.5,
     "provenance": "proposal 2026-11-25 (review M2), two words join one row when their boxes overlap vertically by this share of the smaller box; tune on the real reports"

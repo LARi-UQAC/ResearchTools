@@ -7,12 +7,14 @@ Pipeline stage: work-ugs-audit, page text preparation (issue 126).
 """
 import json
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Sequence
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "assets" / "ugs_config.json"
 GAP_KEY = "tables.image_column_gap_pt"
 MIN_ROWS_KEY = "tables.image_min_rows"
 OVERLAP_KEY = "tables.image_row_overlap_ratio"
+UNTITLED_ROWS_KEY = "tables.untitled_min_rows"
+UNTITLED_COLS_KEY = "tables.untitled_min_cols"
 
 
 class ImageSettings(NamedTuple):
@@ -193,3 +195,58 @@ def words_to_markdown(words: Sequence[tuple], column_gap_pt: float, min_rows: in
     lines = ["| " + " | ".join(padded[0]) + " |", "| " + " | ".join(["---"] * width) + " |"]
     lines += ["| " + " | ".join(row) + " |" for row in padded[1:]]
     return "\n".join(lines)
+
+
+UNTITLED_FIGURE = "figure"
+UNTITLED_TABLE = "table_image"
+
+
+def classify_untitled(words: Sequence[tuple], column_gap_pt: float, min_rows: int, min_cols: int,
+                      row_overlap_ratio: float) -> str:
+    """
+    Purpose: Decide whether an untitled region is a table drawn as an image (plan 11, spec E5).
+    Details: The region is a table when its OCR words rebuild a grid of at least min_rows rows and min_cols columns,
+        the rows and columns being those words_to_rows gives. Otherwise, such as a diagram with a few labels, it
+        stays a figure. Nothing here runs OCR: the caller supplies the word boxes.
+    Inputs:
+        words: Sequence[tuple] - PyMuPDF word tuples of the region (x0, y0, x1, y1, text, ...).
+        column_gap_pt: float - the gap that starts a new column, in points.
+        min_rows: int - the fewest rows that make a table.
+        min_cols: int - the fewest columns that make a table (the widest row).
+        row_overlap_ratio: float - the vertical overlap that joins two words in one row.
+    Outputs:
+        str - "table_image" or "figure".
+    Raises:
+        None.
+    """
+    rows = words_to_rows(words, column_gap_pt, row_overlap_ratio)
+    if not rows:
+        return UNTITLED_FIGURE
+    widest = max(len(row) for row in rows)
+    if len(rows) >= min_rows and widest >= min_cols:
+        return UNTITLED_TABLE
+    return UNTITLED_FIGURE
+
+
+def load_untitled_settings(path: Optional[Path] = None) -> Tuple[int, int]:
+    """
+    Purpose: Read the minimum rows and columns of an untitled table drawn as an image (plan 11, spec E5).
+    Inputs:
+        path: Optional[Path] - the configuration file; None means the work-ugs-audit assets file.
+    Outputs:
+        Tuple[int, int] - the minimum rows and the minimum columns, both positive integers.
+    Raises:
+        TableImageError: If the file is unreadable, or a key is missing or not a positive integer (the key is named).
+    """
+    config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise TableImageError(f"configuration {config_path.name} is not readable JSON: {exc}") from None
+    values = []
+    for key in (UNTITLED_ROWS_KEY, UNTITLED_COLS_KEY):
+        value = _read_entry(raw, key, config_path)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise TableImageError(f"key '{key}' in {config_path.name} must be a positive integer")
+        values.append(value)
+    return values[0], values[1]

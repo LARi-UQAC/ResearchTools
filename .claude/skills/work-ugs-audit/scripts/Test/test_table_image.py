@@ -137,5 +137,50 @@ class TestSettings(unittest.TestCase):
             self.assertIn("tables.image_row_overlap_ratio", str(ctx.exception))
 
 
+
+
+class UntitledClassificationTests(unittest.TestCase):
+    """Plan 11 E5: an untitled region is a table_image only when its OCR rebuilds a grid of the configured size."""
+
+    GAP = 12
+    OVERLAP = 0.5
+
+    @staticmethod
+    def _grid(rows, cols):
+        """
+        Purpose: Build fictitious word boxes laid out as a grid of rows by cols words, 60 points apart per column.
+        Inputs:
+            rows: int - number of rows.
+            cols: int - number of columns.
+        Outputs:
+            list[tuple] - PyMuPDF-shaped word tuples.
+        Raises:
+            None.
+        """
+        words = []
+        for r in range(rows):
+            for c in range(cols):
+                x0 = 100 + c * 100
+                y0 = 100 + r * 15
+                words.append((x0, y0, x0 + 40, y0 + 10, f"w{r}{c}", 0, 0, 0))
+        return words
+
+    def test_untitled_grid_is_table_image(self):
+        self.assertEqual(table_image.classify_untitled(self._grid(3, 3), self.GAP, 2, 3, self.OVERLAP), "table_image")
+
+    def test_untitled_diagram_labels_stay_figure(self):
+        labels = self._grid(2, 2)
+        self.assertEqual(table_image.classify_untitled(labels, self.GAP, 2, 3, self.OVERLAP), "figure")
+
+    def test_no_words_is_figure(self):
+        self.assertEqual(table_image.classify_untitled([], self.GAP, 2, 3, self.OVERLAP), "figure")
+
+    def test_below_min_cols_is_figure(self):
+        self.assertEqual(table_image.classify_untitled(self._grid(3, 2), self.GAP, 2, 3, self.OVERLAP), "figure")
+
+    def test_below_min_rows_is_figure(self):
+        self.assertEqual(table_image.classify_untitled(self._grid(1, 3), self.GAP, 2, 3, self.OVERLAP), "figure")
+
+
 if __name__ == "__main__":
     unittest.main()

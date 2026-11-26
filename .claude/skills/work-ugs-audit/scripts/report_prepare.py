@@ -548,10 +548,16 @@ def _classify_untitled_records(records: List[Dict[str, Any]], folder: Path, pdf_
                                              image_settings.row_overlap_ratio)
         if kind != table_image.UNTITLED_TABLE:
             continue
-        new_id = "T" + element_id[1:]
+        # Review I1: a distinct prefix, so the id never collides with a ruled table's T-u<NN>; a target file that
+        # already exists is never overwritten, the record stays a figure with a fixed status.
+        new_id = "T-i" + element_id[len("F-u"):]
         old_file = folder / record["file"]
+        target = folder / f"{new_id}.png"
+        if target.exists():
+            record["status"] = "untitled_name_taken"
+            continue
         if old_file.exists():
-            old_file.rename(folder / f"{new_id}.png")
+            old_file.rename(target)
         record.update({"element_type": TABLE_IMAGE_TYPE, "element_id": new_id, "file": f"{new_id}.png"})
         record.pop("figure_id", None)
         record.pop("drawing_area_ratio", None)

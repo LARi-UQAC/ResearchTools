@@ -383,9 +383,29 @@ class PreparationTests(unittest.TestCase):
         self._prepare_with_ocr(lambda pdf, page, rect, lang: self._grid_words(3, 3))
         elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
         self.assertEqual([(e["element_type"], e["element_id"], e["file"]) for e in elements],
-                         [("table_image", "T-u01", "T-u01.png")])
-        self.assertTrue(self.report_file("figures", "T-u01.png").exists())
+                         [("table_image", "T-i01", "T-i01.png")])
+        self.assertTrue(self.report_file("figures", "T-i01.png").exists())
         self.assertFalse(self.report_file("figures", "F-u01.png").exists())
+
+    def test_renamed_table_image_never_collides_with_a_ruled_table_id(self):
+        """Review I1: an untitled ruled table T-u01 and an untitled figure turned table image keep distinct ids."""
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            (figures_dir / "F-u01.png").write_bytes(b"png")
+            return [{"element_id": "T-u01", "element_type": "table", "page": 1, "file": None,
+                     "rect": [60, 60, 500, 200], "title": None, "markdown": "| a |"},
+                    {"element_id": "F-u01", "element_type": "figure", "page": 2, "file": "F-u01.png",
+                     "rect": [100, 300, 400, 500], "title": None, "drawing_area_ratio": 1.0}]
+
+        hooks = report_prepare.PrepHooks(preflight=lambda languages: None, ocr_page=_no_ocr,
+                                         find_elements=finder, ocr_words=lambda pdf, page, rect, lang: self._grid_words(3, 3))
+        prepare(self.reports, self.work, hooks=hooks)
+        elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
+        ids = [e["element_id"] for e in elements]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertIn("T-u01", ids)
+        files = [e["file"] for e in elements if e.get("file")]
+        self.assertEqual(len(files), len(set(files)))
 
     def test_ocr_failure_keeps_figure_with_reason(self):
         """Plan 11 Task 2: when OCR cannot run, the untitled region stays a figure with a fixed status."""

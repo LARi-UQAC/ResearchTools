@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPTS.parent.parent / "figure-review" / "scripts" / "Te
 
 import fitz  # noqa: E402
 import report_prepare  # noqa: E402
+import table_image  # noqa: E402
 import ugs_tables  # noqa: E402
 import ugs_config  # noqa: E402
 from report_prepare import PrepareError, main, prepare, skipped_count  # noqa: E402
@@ -826,6 +827,89 @@ class PreparationTests(unittest.TestCase):
         source.close()
         text = REAL_OCR_PAGE(probe, 1, "eng", 300)
         self.assertIn("test", text.lower())
+
+
+class TitledGridSignalTests(unittest.TestCase):
+    """Review A (decision of the session): a titled figure whose region is a grid is a table, by the script."""
+
+    GRID = [(60, 130, "r1c1"), (200, 130, "r1c2"), (340, 130, "r1c3"),
+            (60, 160, "r2c1"), (200, 160, "r2c2"), (340, 160, "r2c3"),
+            (60, 190, "r3c1"), (200, 190, "r3c2"), (340, 190, "r3c3")]
+    CHART = [(60, 130, "Axis"), (300, 220, "Curve")]
+    RECT = [50, 110, 400, 210]
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.pdf = self.tmp / "fixture.pdf"
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        for x, y, text in self.GRID:
+            page.insert_text((x, y), text, fontsize=10)
+        for x, y, text in [(x + 0, y + 0, t) for x, y, t in self.CHART]:
+            page.insert_text((x, y + 300), text, fontsize=10)  # the chart sits lower on the same page
+        doc.save(str(self.pdf))
+        doc.close()
+        self.settings = table_image.ImageSettings(column_gap_pt=8.0, min_rows=3, row_overlap_ratio=0.5)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def record(self, element_id, rect, source="vector", title="Figure 3: x", **extra):
+        base = {"element_type": "figure", "element_id": element_id, "page": 1, "rect": rect,
+                "file": f"{element_id}.png", "source": source,
+                "title": {"text": title} if title else None, "figure_id": element_id}
+        base.update(extra)
+        return base
+
+    def decide(self, records, page_words=None):
+        return report_prepare._decide_title_kinds(records, self.pdf, page_words, lambda: "eng",
+                                                 self.settings, 3, 3)
+
+    def test_a_vector_grid_under_a_figure_title_is_flagged_by_the_script(self):
+        records = self.decide([self.record("F3", self.RECT)])
+        self.assertEqual(records[0]["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(records[0]["title_kind_source"], "script")
+        self.assertEqual((records[0]["element_id"], records[0]["file"]), ("F3", "F3.png"))
+
+    def test_a_chart_under_a_figure_title_is_not_flagged(self):
+        records = self.decide([self.record("F4", [50, 400, 400, 500])])
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+    def test_an_untitled_grid_is_never_flagged_by_this_rule(self):
+        records = self.decide([self.record("F-u01", self.RECT, title=None)])
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+    def test_an_existing_script_flag_is_kept(self):
+        records = self.decide([self.record("F5", [50, 400, 400, 500], title_kind_mismatch="table_titled_figure",
+                                           title_kind_source="script")])
+        self.assertEqual(records[0]["title_kind_mismatch"], "table_titled_figure")
+
+    def test_a_raster_grid_is_read_once_per_page_and_clipped_to_its_region(self):
+        calls = []
+
+        def page_words(pdf, page, rect, codes):  # the raw OCR hook: the memo reads the whole page once
+            calls.append(page)
+            words = [(x, y, x + 20, y + 10, t, 0, 0, 0) for x, y, t in self.GRID]
+            words.append((500, 500, 520, 510, "outside", 0, 0, 0))
+            return words
+
+        records = self.decide([self.record("F6", self.RECT, source="raster"),
+                               self.record("F7", [50, 110, 400, 210], source="raster")],
+                              report_prepare._memoized_page_ocr(page_words))
+        self.assertEqual([r.get("title_kind_mismatch") for r in records],
+                         ["table_titled_figure", "table_titled_figure"])
+        self.assertEqual(calls, [1])
+
+    def test_without_ocr_a_raster_is_left_unflagged(self):
+        records = self.decide([self.record("F8", self.RECT, source="raster")], page_words=None)
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+    def test_a_table_image_records_its_grid_reading_without_a_flag(self):
+        record = self.record("T-i01", self.RECT, source="raster", title="Tableau 1: x", element_type="table_image")
+        records = self.decide([record], page_words=lambda pdf, page, codes: [
+            (x, y, x + 20, y + 10, t, 0, 0, 0) for x, y, t in self.GRID])
+        self.assertIs(records[0]["title_grid"], True)
+        self.assertNotIn("title_kind_mismatch", records[0])
 
 
 if __name__ == "__main__":

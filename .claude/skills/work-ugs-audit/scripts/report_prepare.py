@@ -572,6 +572,147 @@ def _classify_untitled_records(records: List[Dict[str, Any]], folder: Path, pdf_
     return records
 
 
+def _memoized_page_ocr(ocr_words: Optional[Callable]) -> Optional[Callable]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Give a page-level word reader that OCRs each page once (review A): the titled-figure grid rule reads the
+        whole page, then keeps the words of each region.
+
+    Inputs:
+        ocr_words (Callable | None): the word-box OCR hook (pdf, page, rect, codes).
+
+    Outputs:
+        Callable | None: a reader (pdf, page_number, codes) -> list of word tuples, memoized per page and language;
+        None when no OCR hook is given. A failed OCR is remembered and raised again without a second OCR.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    if ocr_words is None:
+        return None
+    cache: Dict[tuple, tuple] = {}
+
+    def page_words(pdf_path: Path, page_number: int, tesseract_language: str) -> List[tuple]:
+        """
+        --------------------------------------------------------------------------
+        Purpose: Return the word boxes of one whole page, reading it through the hook only on the first call.
+        Inputs:
+            pdf_path (Path): the PDF.
+            page_number (int): the 1-based page.
+            tesseract_language (str): the Tesseract codes.
+        Outputs:
+            list[tuple]: the word boxes of the page.
+        Raises:
+            Exception: whatever the hook raised the first time, raised again without a second OCR.
+        --------------------------------------------------------------------------
+        """
+        key = (str(pdf_path), page_number, tesseract_language)
+        if key not in cache:
+            with fitz.open(str(pdf_path)) as doc:
+                rect = doc[page_number - 1].rect
+            try:
+                cache[key] = ("ok", ocr_words(pdf_path, page_number, [rect.x0, rect.y0, rect.x1, rect.y1],
+                                              tesseract_language))
+            except Exception as error:  # noqa: BLE001 - remembered, then raised again on each later read
+                cache[key] = ("error", error)
+        state, value = cache[key]
+        if state == "error":
+            raise value
+        return value
+
+    return page_words
+
+
+def _region_words(pdf_file: Path, record: Dict[str, Any], page_words: Optional[Callable],
+                  tesseract_language: Callable[[], str]) -> Optional[List[tuple]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Give the word boxes of one element region: its own text layer for a vector region, the clipped words of the
+        page OCR for a raster one (review A).
+
+    Inputs:
+        pdf_file (Path): the PDF of the report.
+        record (dict): an element record with page (1-based), rect and source.
+        page_words (Callable | None): the page-level reader, None when OCR is unavailable.
+        tesseract_language (Callable[[], str]): the Tesseract codes, computed only for a raster.
+
+    Outputs:
+        list[tuple] | None: the words, or None when a raster cannot be read.
+
+    Raises:
+        PrepareError: when the Tesseract codes of the language are unknown.
+    --------------------------------------------------------------------------
+    """
+    rect = fitz.Rect(record["rect"])
+    if record.get("source") == "vector":
+        with fitz.open(str(pdf_file)) as doc:
+            return list(doc[record["page"] - 1].get_text("words", clip=rect))
+    if page_words is None:
+        return None
+    codes = tesseract_language()
+    try:
+        words = page_words(pdf_file, record["page"], codes)
+    except (PrepareError, TextQualityError, OSError):
+        return None
+    inside = []
+    for word in words:
+        centre = fitz.Point((word[0] + word[2]) / 2, (word[1] + word[3]) / 2)
+        if rect.contains(centre):
+            inside.append(word)
+    return inside
+
+
+def _decide_title_kinds(records: List[Dict[str, Any]], pdf_file: Path, page_words: Optional[Callable],
+                        tesseract_language: Callable[[], str], image_settings: table_image.ImageSettings,
+                        min_rows: int, min_cols: int) -> List[Dict[str, Any]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Flag a titled figure whose region is a grid of text as a table printed under a figure title (review A, the
+        script signal of N7), and record the grid reading of every titled element as title_grid.
+
+    Details:
+        Runs on the FINAL kept records, after the count loop, so the decision never depends on an attempt. An
+        untitled element is never flagged (review B). A flag already set by the ruled-grid branch is kept. Only
+        the grid rule decides here; the vision answer is a candidate and is decided in ugs_figures.
+
+    Inputs:
+        records (list[dict]): the element records of the kept attempt, changed in place.
+        pdf_file (Path): the PDF of the report.
+        page_words (Callable | None): the page-level reader, None when OCR is unavailable.
+        tesseract_language (Callable[[], str]): the Tesseract codes of the report language.
+        image_settings (table_image.ImageSettings): the column gap and row overlap of the grid rule.
+        min_rows (int): the fewest rows of a grid.
+        min_cols (int): the fewest columns of a grid.
+
+    Outputs:
+        list[dict]: the same records. A flagged figure carries title_kind_mismatch and title_kind_source "script".
+
+    Raises:
+        PrepareError: when the Tesseract codes of the language are unknown.
+    --------------------------------------------------------------------------
+    """
+    for record in records:
+        if record.get("element_type") not in ("figure", "table_image") or record.get("title") is None:
+            continue
+        if "rect" not in record or "page" not in record:  # an element record from the finder always has both
+            continue
+        words = _region_words(pdf_file, record, page_words, tesseract_language)
+        if words is None:
+            record["title_grid"] = None
+            continue
+        grid = table_image.classify_untitled(words, image_settings.column_gap_pt, min_rows, min_cols,
+                                             image_settings.row_overlap_ratio) == table_image.UNTITLED_TABLE
+        record["title_grid"] = grid
+        if grid and record["element_type"] == "figure" and not record.get("title_kind_mismatch"):
+            record["title_kind_mismatch"] = "table_titled_figure"
+            record["title_kind_source"] = "script"
+    return records
+
+
 def _extract_elements_with_loop(pdf_file: Path, report_dir: Path, figures_name: str, skip_pages: List[int],
                                 hooks: PrepHooks, declared_figures: Optional[int],
                                 classify: Optional[Callable[[List[Dict[str, Any]], Path], List[Dict[str, Any]]]] = None,
@@ -908,6 +1049,8 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     elements, figure_attempts = _extract_elements_with_loop(pdf_file, report_dir, settings["reports.figures_folder"],
                                                             skip_pages, memo_hooks, declared["declared_figures"],
                                                             classify=classify, declared=declared)
+    elements = _decide_title_kinds(elements, pdf_file, _memoized_page_ocr(hooks.ocr_words), tesseract_language,
+                                   image_settings, untitled_rows, untitled_cols)  # review A: final records only
     elements = _read_table_images(elements, pdf_file, memo_hooks, language, context["ocr"]["language_codes"],
                                   image_settings)
     _write_atomic(report_dir / settings["reports.elements_file_name"],

@@ -699,6 +699,8 @@ def _decide_title_kinds(records: List[Dict[str, Any]], pdf_file: Path, page_word
     --------------------------------------------------------------------------
     """
     for record in records:
+        record.setdefault("title_kind_mismatch", None)  # every element record carries both keys (N7)
+        record.setdefault("title_kind_source", None)
         if record.get("element_type") not in ("figure", "table_image") or record.get("title") is None:
             continue
         if "rect" not in record or "page" not in record:  # an element record from the finder always has both

@@ -485,6 +485,37 @@ class PreparationTests(unittest.TestCase):
                 memo(self.pdf, 2, [1, 2, 3, 4], "fra")
         self.assertEqual(len(calls), 1)
 
+    def test_the_titled_grid_decision_reaches_elements_json_through_prepare(self):
+        """Review minor: the grid rule runs on the kept records of a real preparation and its flag is written."""
+        self._two_figures_declared()
+        doc = fitz.open(str(self.pdf))
+        page = doc[1]
+        # the shipped titled minimums are five columns and three rows (tables.titled_min_cols/rows)
+        index = 0
+        for y in (430, 455, 480, 505, 530):
+            for x in (60, 140, 220, 300, 380):
+                page.insert_text((x, y), f"c{index}", fontsize=10)
+                index += 1
+        page.insert_text((60, 650), "Axis", fontsize=10)
+        doc.saveIncr()
+        doc.close()
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for name, title, rect in (("F1.png", "Figure 1: A", [50, 420, 400, 560]),
+                                      ("F2.png", "Figure 2: B", [50, 640, 400, 700])):
+                (figures_dir / name).write_bytes(b"png")
+                records.append({"element_id": name[:-4], "element_type": "figure", "page": 2, "file": name,
+                                "rect": rect, "source": "vector", "title": {"text": title}})
+            return records
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        elements = {e["element_id"]: e for e in json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))}
+        self.assertEqual(elements["F1"]["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(elements["F1"]["title_kind_source"], "script")
+        self.assertIsNone(elements["F2"]["title_kind_mismatch"])
+
     def test_untitled_files_go_to_a_subfolder_and_are_recorded(self):
         """Owner N2: the figures folder holds only titled files; untitled ones go to figures/untitled, recorded."""
         self._two_figures_declared()
@@ -909,7 +940,7 @@ class TitledGridSignalTests(unittest.TestCase):
         records = self.decide([record], page_words=lambda pdf, page, codes: [
             (x, y, x + 20, y + 10, t, 0, 0, 0) for x, y, t in self.GRID])
         self.assertIs(records[0]["title_grid"], True)
-        self.assertNotIn("title_kind_mismatch", records[0])
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
 
 
 class TitledGridReadingTests(unittest.TestCase):
@@ -922,6 +953,19 @@ class TitledGridReadingTests(unittest.TestCase):
     tearDown = TitledGridSignalTests.tearDown
     record = TitledGridSignalTests.record
     decide = TitledGridSignalTests.decide
+
+    def test_a_raster_region_whose_ocr_fails_or_is_absent_gives_no_words(self):
+        # Review minor: an unavailable OCR is None, never an exception and never a grid reading.
+        record = self.record("F20", self.RECT, source="raster")
+        self.assertIsNone(report_prepare._region_words(self.pdf, record, None, lambda: "eng"))
+
+        def failing(pdf, page, codes):
+            raise report_prepare.PrepareError("planted OCR failure")
+
+        self.assertIsNone(report_prepare._region_words(self.pdf, record,
+                                                       report_prepare._memoized_page_ocr(
+                                                           lambda pdf, page, rect, codes: failing(pdf, page, codes)),
+                                                       lambda: "eng"))
 
     def test_a_region_with_too_few_words_is_unreadable(self):
         records = self.decide([self.record("F9", self.RECT)], min_words=100)

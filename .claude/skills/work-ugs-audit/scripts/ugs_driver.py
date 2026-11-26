@@ -759,6 +759,11 @@ def main(argv: Optional[List[str]] = None, *, call: Optional[Callable] = None, f
 
     Outputs:
         code (int): 0 done, 1 a model step could not run, 2 refusal, 3 batch out of band.
+
+    Details:
+        The previous completion marker of a `run` is removed once the arguments are parsed. An argument-parser refusal
+        (SystemExit, code 2) happens before the work folder is known, so it writes no marker and leaves an earlier
+        marker in place; that is the one case in which a marker can outlive a refusal.
     --------------------------------------------------------------------------
     """
     args = _parser().parse_args(argv)
@@ -767,8 +772,13 @@ def main(argv: Optional[List[str]] = None, *, call: Optional[Callable] = None, f
         return EXIT_REFUSAL
     if args.command == "run" and not args.dry_run:
         # G: a marker present means this run ended. It is removed before any refusal can be raised, so no refused
-        # run leaves the outcome of an earlier one behind.
-        (Path(args.work).resolve() / RUN_DONE_NAME).unlink(missing_ok=True)
+        # run leaves the outcome of an earlier one behind. Review 5: a marker that cannot be removed is a named
+        # refusal, never a traceback.
+        try:
+            (Path(args.work).resolve() / RUN_DONE_NAME).unlink(missing_ok=True)
+        except OSError as error:
+            _emit({"status": "refused", "error": f"cannot remove the previous completion marker ({type(error).__name__})"})
+            return EXIT_REFUSAL
     try:
         if args.command == "prepare":
             return cmd_prepare(args, call, window, count)

@@ -656,6 +656,28 @@ class TestUgsDriver(unittest.TestCase):
                 ugs_driver.write_run_done(work, {key: 0 for key in ugs_driver.RUN_DONE_KEYS})
         self.assertEqual(sorted(p.name for p in work.iterdir()), [])
 
+    def test_an_unremovable_marker_is_a_named_refusal_with_exit_2_and_no_traceback(self):
+        # Review 5: a marker path that cannot be removed is refused with a reason, never a traceback.
+        self.add_reports([9])
+        self.prepare()
+        self.marker_path().mkdir()
+        code, lines, _ = self.run_loop()
+        self.assertEqual(code, 2)
+        self.assertEqual(lines[-1]["status"], "refused")
+        self.assertIn("completion marker", lines[-1]["error"])
+
+    def test_an_argparse_refusal_writes_no_marker(self):
+        # Review 5: the argument parser refuses before the work folder is known, so nothing is written.
+        self.add_reports([9])
+        self.prepare()
+        with self.assertRaises(SystemExit) as ctx:
+            with contextlib.redirect_stderr(io.StringIO()):
+                ugs_driver.main(["run", "--work", str(self.work), "--reports", str(self.reports), "--no-such-option"],
+                                call=self.model, fetch=None, window=100000,
+                                count=lambda text: len(text.split()))
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertFalse(self.marker_path().exists())
+
     def test_a_dry_run_writes_no_marker(self):
         self.add_reports([9])
         self.prepare()

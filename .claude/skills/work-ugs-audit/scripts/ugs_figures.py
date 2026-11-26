@@ -211,8 +211,30 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
                   report_dir: Path, call: Callable, ctx: StepContext, language: str, settings: Dict[str, int],
                   printed: Optional[str]) -> None:
     """
-    Fit the image, ask the model once about the figure and write the verdicts into the record.
-    The citing paragraph is searched with the printed number only; without one it is left empty.
+    --------------------------------------------------------------------------
+    Purpose:
+        Fit the image, ask the model once about the figure and write the verdicts, the kind and the title keys into the
+        record.
+
+    Details:
+        The kind is the model's, except a script-flagged table_titled_figure, judged as "table" (review H). Title keys:
+        a titled figure whose answer is a table gets title_kind_candidate "table_titled_figure" and no flag (review B);
+        a table_image whose answer is not table or other, with no grid reading (title_grid not True), gets
+        title_kind_mismatch "figure_titled_table" with title_kind_source "vision" (review C). A script verdict is
+        never overwritten. The citing paragraph is searched with the printed number only; without one it is empty.
+
+    Inputs:
+        record (dict): the figure record, changed in place (kind, criteria, model_image, title keys)
+        fig (dict): the checked figure, with its file and its script criteria
+        criteria (list[dict]): the criteria to send; empty for a table_image (kind only)
+        pages, report_dir, call, ctx, language, settings, printed: as figures_report passes them
+
+    Outputs:
+        None. The record is changed in place.
+
+    Raises:
+        NotRun: a model call that is not retryable propagates.
+    --------------------------------------------------------------------------
     """
     figure_id = record["figure_id"]
     fitted = fit_for_model(report_dir / "figures" / fig["file"], report_dir / "model_images", settings["max_long_edge"],
@@ -332,7 +354,9 @@ def figures_report(
             records are judged and no extraction runs (None keeps the extraction)
 
     Outputs:
-        report (dict): `report_id`, `figures` (a record per figure) and `report_criteria`.
+        report (dict): `report_id`, `figures` (a record per figure and per table image, with element_type, title_grid,
+            titled, title_kind_mismatch, title_kind_source and title_kind_candidate), `report_criteria` and
+            `vision_validated` (whether the vision role was validated for this run).
 
     Raises:
         NotRun: a model kind that is not retryable.

@@ -144,5 +144,24 @@ class TestUgsLedger(unittest.TestCase):
             self.assertEqual(read(path), text)
 
 
+class TestFiguresLineAnyMark(unittest.TestCase):
+    """Review fix: a new figure id is added even when the figures line was already settled by an earlier run."""
+
+    def test_a_new_figure_is_added_when_the_figures_line_is_done(self):
+        from ugs_ledger import add_report, add_figures, set_mark
+        text = add_report("", "R01", ["grade I01", "figures"])
+        text = set_mark(text, "R01", "figures", "x")
+        text = add_figures(text, "R01", ["F1", "T-i03"])
+        self.assertIn("- [ ] figure T-i03", text)
+        self.assertIn("- [ ] figure F1", text)
+
+    def test_a_new_figure_is_added_when_the_figures_line_is_blocked(self):
+        from ugs_ledger import add_report, add_figures, set_mark
+        text = add_report("", "R01", ["grade I01", "figures"])
+        text = set_mark(text, "R01", "figures", "!", "error")
+        text = add_figures(text, "R01", ["T-i03"])
+        self.assertIn("- [ ] figure T-i03", text)
+
+
 if __name__ == "__main__":
     unittest.main()

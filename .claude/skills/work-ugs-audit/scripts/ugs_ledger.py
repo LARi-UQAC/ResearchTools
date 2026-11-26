@@ -66,7 +66,7 @@ def add_figures(text: str, report_id: str, figure_ids: list[str]) -> str:
     for i, line in enumerate(lines):
         if line.startswith("## "):
             current_report = line[3:].strip()
-        elif current_report == report_id and line.strip() == "- [ ] figures":
+        elif current_report == report_id and re.match(r"- \[[ x!]\] figures(?:\s|$)", line.strip()):  # any mark
             insert_idx = i + 1
             break
     

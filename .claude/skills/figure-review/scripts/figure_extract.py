@@ -31,6 +31,7 @@ ELEMENT_SETTING_KEYS = (
     "running_band_pt",
     "group_max_gap_pt",
     "running_size_tolerance_pt",
+    "second_pass_title_distance_pt",
 )
 # Element id prefix per element type: F01 figures, T01 tables, L01 logos.
 ELEMENT_ID_PREFIX = {"figure": "F", "table": "T", "table_image": "T", "logo": "L"}
@@ -712,6 +713,79 @@ def _is_text_box(item: Dict[str, Any], words: List[tuple], settings: Dict[str, A
     return ratio >= settings["text_box_min_area_ratio"]
 
 
+def _second_pass_table_title(available: List[tuple], rect: "fitz.Rect", markers: Dict[str, Any],
+                             max_distance: float) -> Optional[Tuple[Dict[str, str], tuple]]:
+    """
+    Purpose: Find the table title of an untitled table within the second-pass distance, the nearest first (review R3).
+    Details: The first pass uses max_title_distance_pt. This second pass reaches a title farther away, as on R02
+        page 47, and only among the blocks no table or figure has claimed.
+    Inputs:
+        available: List[tuple] - the blocks still free on the page.
+        rect: fitz.Rect - the untitled table.
+        markers: Dict[str, Any] - the data returned by element_labels.load_markers.
+        max_distance: float - second_pass_title_distance_pt.
+    Outputs:
+        Optional[Tuple[Dict[str, str], tuple]] - the title record and its block, or None.
+    Raises:
+        MarkerError: If the markers are incomplete.
+    """
+    prefixes = list(element_labels._marker_prefixes(markers, "table_prefixes"))
+    candidates = []
+    for block in available:
+        if len(block) < 7 or block[6] != TEXT_BLOCK_TYPE or element_labels._overlaps(block, rect):
+            continue
+        text = element_labels._clean(block[4])
+        if not element_labels._starts_with_marker(text, prefixes):
+            continue
+        placement = element_labels._gap_and_position(block, rect)
+        if placement is not None and placement[0] <= max_distance:
+            candidates.append((placement[0], block, text, placement[1]))
+    if not candidates:
+        return None
+    _, block, text, position = min(candidates, key=lambda item: item[0])
+    available.remove(block)
+    title = {"text": text, "position": position,
+             "alignment": element_labels._alignment(block, rect, _alignment_tolerance(markers))}
+    return title, block
+
+
+def _alignment_tolerance(markers: Dict[str, Any]) -> float:
+    """
+    Purpose: Read the centring tolerance of the element markers.
+    Inputs:
+        markers: Dict[str, Any] - the data returned by element_labels.load_markers.
+    Outputs:
+        float - centre_tolerance_ratio.
+    Raises:
+        MarkerError: If the value is missing.
+    """
+    return element_labels._marker_value(markers, "centre_tolerance_ratio")
+
+
+def _unclaimed_table_title_numbers(available: List[tuple], markers: Dict[str, Any]) -> List[str]:
+    """
+    Purpose: List the printed numbers of the table-title blocks left unclaimed on a page (review R3, number only).
+    Inputs:
+        available: List[tuple] - the blocks still free on the page.
+        markers: Dict[str, Any] - the data returned by element_labels.load_markers.
+    Outputs:
+        List[str] - the numbers, in reading order; a title with no number is left out.
+    Raises:
+        MarkerError: If the markers are incomplete.
+    """
+    prefixes = list(element_labels._marker_prefixes(markers, "table_prefixes"))
+    numbers = []
+    for block in sorted(available, key=lambda item: (item[1], item[0])):
+        if len(block) < 7 or block[6] != TEXT_BLOCK_TYPE:
+            continue
+        text = element_labels._clean(block[4])
+        if element_labels._starts_with_marker(text, prefixes):
+            match = PRINTED_NUMBER_RE.match(text)
+            if match:
+                numbers.append(match.group(1))
+    return numbers
+
+
 def _vector_text_sizes(page: "fitz.Page", rect: "fitz.Rect") -> List[float]:
     """
     Purpose: Collect the font sizes of the labels around a vector drawing, caption lines excluded.
@@ -1073,6 +1147,16 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                 if item["kind"] == "table":
                     item["title"] = _take_title(available, item["rect"], "table", markers)
                     item["notes"] = element_labels.find_notes(scan["blocks"], item["rect"], markers)
+            # Review R3 (R02 page 47): a second pass gives an untitled table the nearest table title still free.
+            for item in items:
+                if item["kind"] == "table" and item["title"] is None:
+                    found = _second_pass_table_title(available, item["rect"], markers,
+                                                     settings["second_pass_title_distance_pt"])
+                    if found is not None:
+                        item["title"], _block = found
+                        item["notes"] = element_labels.find_notes(scan["blocks"], item["rect"], markers)
+                    else:
+                        item["unclaimed_titles"] = _unclaimed_table_title_numbers(available, markers)
                     # Review R1 (R01 pages 42 and 44): a ruled grid with no table title but an unclaimed figure
                     # title within reach is a figure, and takes that title.
                     if item["title"] is None:
@@ -1161,6 +1245,8 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                 del record["drawing_area_ratio"]  # plan 7: a table_image has no figure_id nor ratio
             if kind == "table":
                 record["markdown"] = item["markdown"]
+                if item["title"] is None:
+                    record["unclaimed_titles"] = item.get("unclaimed_titles", [])
             records.append(record)
         return records
     finally:

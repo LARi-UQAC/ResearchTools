@@ -34,6 +34,7 @@ SETTINGS = {
     "running_band_pt": 80,
     "group_max_gap_pt": 150,
     "running_size_tolerance_pt": 8,
+    "second_pass_title_distance_pt": 90,
 }
 ELEMENT_SETTING_KEYS = tuple(SETTINGS)
 
@@ -574,6 +575,18 @@ class TestExtractElements(unittest.TestCase):
         self.assertEqual([r["element_type"] for r in records], ["figure"])
         self.assertEqual(records[0]["element_id"], "F16")
         self.assertEqual(records[0]["title"]["text"], "Figure 16: Schema du montage")
+
+    def test_untitled_table_title_beyond_the_first_distance_is_found_on_second_pass(self):
+        # Review R3 (R02 page 47): the table title lies about 50 points under the grid, beyond the 36 point
+        # distance of the first pass. The second pass, within second_pass_title_distance_pt, gives it.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur"], ["Masse", "12.5"]])
+        _centred_text(page, 200, 300, "Tableau 6 : Essais")
+        self._save(doc)
+        table = [r for r in self._extract() if r["element_type"] == "table"][0]
+        self.assertEqual(table["title"]["text"], "Tableau 6 : Essais")
+        self.assertEqual(table["element_id"], "T6")
 
     def test_extraction_block_holds_the_element_settings(self):
         block = json.loads(CRITERIA_PATH.read_text(encoding="utf-8"))["extraction"]

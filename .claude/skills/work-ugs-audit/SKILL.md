@@ -60,11 +60,15 @@ Language step. A word written correctly is never a spelling finding: a finding i
 quote, or only swaps spellings listed in `assets/accepted_spellings.json` (both spellings of the 1990 French reform);
 the count is `rejected_correct`. Findings dropped by a `spelling_only` page are counted in `dropped_scope`.
 
+A comment written in another language than the report's is replaced by its label in the report language, counted as
+`comment_language_replaced` (`ugs_language.py`, Issue #126 plan 22).
+
 Grades. Each item of `grade.json` keeps every field the model gave, above all the score. The `validation` field holds
 `ok` or the code of the refusal (`quote_not_found`, `evidence_missing`, `score_above_max`, `unknown_status`, and the
 others of `GRADE_CODES` in `ugs_grade.py`). A refused proof keeps its score and counts in the totals, with its label in
 the annex. A score that cannot be used (absent, not finite, above the maximum) gives status `not_run`, a null score,
-and the raw value in `model_score`; a score that is not finite gives `model_score` null and its text in
+and the raw value in `model_score`. A score above the maximum is asked again once, and `not_applicable` is accepted only
+for an optional item (Issue #126 plan 22). A score that is not finite gives `model_score` null and its text in
 `model_score_raw`, so `grade.json` is always strict JSON. Each record also carries `missing`: the element that is
 absent or wrong in the report and cost the points, in the report language, empty at the maximum score, cut at
 `grade.missing_max_chars` characters. It is model text saved in

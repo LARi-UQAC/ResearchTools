@@ -80,6 +80,7 @@ def fixture_config() -> dict:
         "paging": {"enabled": True, "sample_interval_s": 1},
         "safety": {"min_free_ram_mib": 4096, "free_ram_reread_delay_s": 0},
         "sweep": {"model": "fixture-model:test", "num_ctx": 8192,
+                  "accepted_ctx_log_ratios": [1, 2],
                   "threads": [4, 10], "repeats": 1,
                   "gpu_layers": [5, 8, 10], "gpu_sweep_num_thread": 14,
                   "gpu_stop_after_failures": 2},
@@ -108,17 +109,24 @@ def fixture_log(n_threads: int = 10, n_ctx: int = 8192,
 
 class FakeDaemon:
     def __init__(self, log_text: str, decode_tps: float = 2.73,
-                 fail_on: str = None):
+                 fail_on: str = None, ps_reply=None):
         self.log_text = log_text
         self.decode_tps = decode_tps
         self.fail_on = fail_on
+        self.ps_reply = ps_reply
         self.calls = []
 
     def tags(self, timeout):
         return {"models": [{"name": "fixture-model:test"}]}
 
     def ps(self, timeout):
-        return {"models": []}
+        # Before any load nothing is resident, so evict_all returns at once; the scripted reply describes
+        # the model only after it has been loaded (otherwise evict_all waits for it to leave).
+        if not self.calls or self.ps_reply is None:
+            return {"models": []}
+        if callable(self.ps_reply):
+            return self.ps_reply(timeout)
+        return self.ps_reply
 
     def generate(self, payload, timeout):
         self.calls.append(payload)
@@ -341,6 +349,63 @@ class TestRungGuards(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Instrumentation
 # ---------------------------------------------------------------------------
+
+def _ps_entry(context_length, name="fixture-model:test"):
+    """A /api/ps reply holding one loaded model with its granted context (fictitious)."""
+    return {"models": [{"name": name, "model": name, "context_length": context_length}]}
+
+
+class TestDoubledLogWindow(unittest.TestCase):
+    """A log window of twice the request is accepted only when /api/ps confirms the request (plan 23).
+
+    Measured 2026-11-25 on gemma4 26B: the log counted both caches (524288 for a request of 262144) while ollama ps
+    showed the requested window. Fictitious model names and sizes only (R34).
+    """
+
+    def _rung(self, log_window, ps_reply, cfg=None):
+        log = fixture_log(n_ctx=log_window)
+        daemon = FakeDaemon(log, ps_reply=ps_reply)
+        return tp.sweep_one(cfg or fixture_config(), "fixture", probe,
+                            fake_deps(daemon, FakeLog(log)), 10,
+                            "fixture-model:test", 8192, samplers=sampler_factory())
+
+    def test_a_doubled_log_confirmed_by_api_ps_is_accepted(self):
+        row = self._rung(16384, _ps_entry(8192))
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(row["ctx_log_ratio"], 2)
+        self.assertEqual(row["ctx_api_ps_granted"], 8192)
+        self.assertIsNotNone(row["decode_tps"])
+
+    def test_a_doubled_log_that_api_ps_does_not_confirm_is_rejected(self):
+        row = self._rung(16384, _ps_entry(16384))
+        self.assertIn("rejected", row["status"])
+        self.assertIn("16384", row["status"])
+        self.assertIsNone(row["decode_tps"])
+
+    def test_a_tripled_log_is_rejected_even_when_api_ps_agrees(self):
+        row = self._rung(24576, _ps_entry(8192))
+        self.assertIn("rejected", row["status"])
+        self.assertIsNone(row["decode_tps"])
+
+    def test_an_unreadable_api_ps_keeps_the_rejection_and_names_it(self):
+        def broken(timeout):
+            raise OSError("connection refused")
+        row = self._rung(16384, broken)
+        self.assertIn("rejected", row["status"])
+        self.assertIn("/api/ps", row["status"])
+
+    def test_a_model_missing_from_api_ps_keeps_the_rejection(self):
+        row = self._rung(16384, {"models": []})
+        self.assertIn("rejected", row["status"])
+        self.assertIn("/api/ps", row["status"])
+
+    def test_a_missing_accepted_ratio_key_is_named(self):
+        cfg = fixture_config()
+        del cfg["sweep"]["accepted_ctx_log_ratios"]
+        with self.assertRaises(Exception) as ctx:
+            self._rung(16384, _ps_entry(8192), cfg=cfg)
+        self.assertIn("accepted_ctx_log_ratios", str(ctx.exception))
+
 
 class TestSamplerParsing(unittest.TestCase):
 

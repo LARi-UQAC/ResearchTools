@@ -562,6 +562,76 @@ def default_samplers(cfg: dict, origin: str, probe, deps):
             pagein_sampler(cfg, origin, probe, which=deps.which))
 
 
+def ps_context_length(deps, model: str, timeout: float) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the context window the daemon reports for a loaded model, from its own /api/ps listing.
+
+    Inputs:
+        deps: the injected effects; deps.daemon.ps(timeout) returns the parsed /api/ps reply.
+        model (str): the model tag as requested.
+        timeout (float): seconds allowed to the request.
+
+    Outputs:
+        int: the context_length of the entry named model.
+
+    Raises:
+        LookupError: when the model is not in the /api/ps listing.
+        ValueError: when the entry carries no integer context_length.
+    --------------------------------------------------------------------------
+    """
+    reply = deps.daemon.ps(timeout) or {}
+    for entry in reply.get("models", []):
+        if model in (entry.get("name"), entry.get("model")):
+            value = entry.get("context_length")
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+            raise ValueError("the /api/ps entry has no integer context_length")
+    raise LookupError(f"{model} is not in the /api/ps listing")
+
+
+def _confirmed_log_ratio(granted: int, num_ctx: int, model: str, cfg: dict, probe, deps,
+                         origin: str):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Decide whether a log window that differs from the request is a whole multiple of it that the configuration
+        accepts and the daemon's own /api/ps confirms (plan 23). Without the confirmation the log is not trusted.
+
+    Inputs:
+        granted (int): the window the server log reports.
+        num_ctx (int): the window requested.
+        model (str): the model tag, to find it in /api/ps.
+        cfg (dict): the probe configuration (sweep.accepted_ctx_log_ratios, ollama.connect_timeout_s).
+        probe: the loaded gpu probe module, for the no-silent-default reader.
+        deps: the injected effects.
+        origin (str): the configuration file, named in refusals.
+
+    Outputs:
+        tuple: (ratio, ps_granted, why). ratio is the accepted integer multiple, or None; ps_granted is the /api/ps
+            window when it was read; why is the reason for refusing, empty when the ratio is not a multiple at all.
+
+    Raises:
+        Refusal: when a required configuration key is missing (R3), raised by the probe's reader.
+    --------------------------------------------------------------------------
+    """
+    if not num_ctx or granted % num_ctx:
+        return None, None, ""
+    ratio = granted // num_ctx
+    accepted = require(probe, cfg, "sweep.accepted_ctx_log_ratios", origin)
+    if ratio not in accepted:
+        return None, None, ""
+    timeout = float(require(probe, cfg, "ollama.connect_timeout_s", origin))
+    try:
+        ps_granted = ps_context_length(deps, model, timeout)
+    except Exception as exc:
+        return None, None, f"/api/ps unreadable: {type(exc).__name__}: {exc}"
+    if ps_granted != num_ctx:
+        return None, ps_granted, f"/api/ps grants {ps_granted}, not the request"
+    return ratio, ps_granted, ""
+
+
 def sweep_one(cfg: dict, origin: str, probe, deps, num_thread: int,
               model: str, num_ctx: int, samplers=default_samplers,
               num_gpu: int = None, reject_clamped: bool = True) -> dict:
@@ -652,16 +722,24 @@ def sweep_one(cfg: dict, origin: str, probe, deps, num_thread: int,
     # CLAMPED and reported as success, and two rungs on different windows are
     # not comparable.
     if row["n_ctx_granted"] is not None and row["n_ctx_granted"] != num_ctx:
-        if reject_clamped:
+        ratio, ps_granted, why = _confirmed_log_ratio(row["n_ctx_granted"], num_ctx, model, cfg,
+                                                      probe, deps, origin)
+        if ratio is not None:
+            # Plan 23: the log counts two caches for this architecture, and /api/ps confirms the request
+            row["ctx_log_ratio"] = ratio
+            row["ctx_api_ps_granted"] = ps_granted
+        elif reject_clamped:
             row["status"] = (f"rejected: requested num_ctx {num_ctx} but the daemon "
                              f"granted {row['n_ctx_granted']}; the rung would "
-                             f"describe a window that was never in force")
+                             f"describe a window that was never in force"
+                             + (f" ({why})" if why else ""))
             return row
-        # In a CONTEXT sweep the clamp is the answer rather than a spoiled rung:
-        # the question being asked is which windows this card can actually
-        # grant, so the run continues and the row says what was granted.
-        row["status"] = (f"clamped: asked {num_ctx}, granted "
-                         f"{row['n_ctx_granted']}")
+        elif ratio is None:
+            # In a CONTEXT sweep the clamp is the answer rather than a spoiled rung:
+            # the question being asked is which windows this card can actually
+            # grant, so the run continues and the row says what was granted.
+            row["status"] = (f"clamped: asked {num_ctx}, granted "
+                             f"{row['n_ctx_granted']}")
 
     # The verification this script exists for. Nothing in the API says whether
     # num_thread was honoured, and an ignored request produces a full table of

@@ -37,6 +37,7 @@ CHECK_IDS = ("figures_cited", "tables_cited", "figure_order", "table_order", "eq
 # N5: a row added by the assemble step, not by run_checks; its id is named here so the annex can label it.
 CITATION_CHECK_ID = "citation_placement"
 UNTITLED_CHECK_ID = "untitled_elements"  # owner N2: elements with no title, a finding never a count
+TITLE_KIND_CHECK_ID = "title_kind"  # N7 (plan 20): a figure title on a table or a table title on a figure
 FIGURE_COUNT_CHECK_ID = "figure_counts"
 TABLE_COUNT_CHECK_ID = "table_counts"
 COUNT_CHECK_IDS = (FIGURE_COUNT_CHECK_ID, TABLE_COUNT_CHECK_ID)

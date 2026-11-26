@@ -130,6 +130,62 @@ class TestChecksTable(unittest.TestCase):
         self.assertEqual(old, "T rows 1")
 
 
+class TestTitleKindRow(unittest.TestCase):
+    """N7 (plan 20 task 2): the title_kind check row and its PDF annotation, in both report languages."""
+
+    FR_TABLE = ("Titre incorrect : cet élément est un tableau, pas une figure. Utiliser « Tableau N » et l'inscrire "
+                "dans la liste des tableaux.")
+    FR_FIGURE = ("Titre incorrect : cet élément est une figure, pas un tableau. Utiliser « Figure N » et l'inscrire "
+                 "dans la liste des figures.")
+    EN_TABLE = 'Wrong title: this element is a table, not a figure. Use "Table N" and add it to the list of tables.'
+    EN_FIGURE = 'Wrong title: this element is a figure, not a table. Use "Figure N" and add it to the list of figures.'
+
+    @staticmethod
+    def _figures(*flags):
+        return {"figures": [{"figure_id": "F%d" % (i + 1), "page": 1, "rect": [0, 0, 1, 1], "caption": "Figure %d: x" % (i + 1),
+                             "title_kind_mismatch": flag, "title_kind_source": "script" if flag else None}
+                            for i, flag in enumerate(flags)]}
+
+    def test_two_flagged_elements_give_not_ok_with_their_ids(self):
+        row = ugs_assemble.title_kind_row(self._figures("table_titled_figure", None, "table_titled_figure"))
+        self.assertEqual(row, {"id": "title_kind", "status": "not_ok", "detail": {"ids": ["F1", "F3"]}})
+
+    def test_no_flagged_element_gives_ok_with_no_ids(self):
+        row = ugs_assemble.title_kind_row(self._figures(None, None))
+        self.assertEqual(row, {"id": "title_kind", "status": "ok", "detail": {}})
+
+    def test_no_figures_file_gives_not_applicable(self):
+        self.assertEqual(ugs_assemble.title_kind_row(None)["status"], "not_applicable")
+
+    def test_figures_without_the_key_are_not_applicable_not_ok(self):
+        row = ugs_assemble.title_kind_row({"figures": [{"figure_id": "F1", "page": 1, "rect": [0, 0, 1, 1]}]})
+        self.assertEqual(row["status"], "not_applicable")
+
+    def test_annotation_text_is_the_exact_french_copy(self):
+        comments = [a["comment"] for a in ugs_assemble.title_kind_annotations(
+            self._figures("table_titled_figure", "figure_titled_table"), "fr")]
+        self.assertEqual(comments, [self.FR_TABLE, self.FR_FIGURE])
+
+    def test_annotation_text_is_the_exact_english_copy(self):
+        comments = [a["comment"] for a in ugs_assemble.title_kind_annotations(self._figures("table_titled_figure"), "en")]
+        self.assertEqual(comments, [self.EN_TABLE])
+
+    def test_the_figure_titled_table_message_in_both_languages(self):
+        figures = self._figures("figure_titled_table")
+        self.assertEqual([a["comment"] for a in ugs_assemble.title_kind_annotations(figures, "fr")], [self.FR_FIGURE])
+        self.assertEqual([a["comment"] for a in ugs_assemble.title_kind_annotations(figures, "en")], [self.EN_FIGURE])
+
+    def test_an_unflagged_figure_gets_no_annotation(self):
+        self.assertEqual(ugs_assemble.title_kind_annotations(self._figures(None), "fr"), [])
+
+    def test_labels_carry_the_row_and_the_comments_in_both_languages(self):
+        for language in ("fr", "en"):
+            labels = _labels(language)
+            self.assertIn("title_kind", labels["check_values"])
+            self.assertIn("ids", labels["check_detail_values"])
+            self.assertEqual(set(labels["title_kind_comments"]), {"table_titled_figure", "figure_titled_table"})
+
+
 class TestAssembleChecks(unittest.TestCase):
     """
     Purpose: The assemble step writes checks.json in the loop folder and passes the checks to the annex.
@@ -236,7 +292,7 @@ class TestAssembleChecks(unittest.TestCase):
         self._assemble(["Figure 2.1 shows the layout."])
         checks = self._checks()
         # N5 adds the citation_placement row after the five cross-reference checks.
-        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement", "figure_counts", "table_counts", "untitled_elements", "appendices"])
+        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement", "figure_counts", "table_counts", "untitled_elements", "title_kind", "appendices"])
         self.assertEqual(checks[0]["status"], "ok")
         labels = _labels("en")
         with fitz.open(str(self.loop_dir / "annotated.pdf")) as doc:

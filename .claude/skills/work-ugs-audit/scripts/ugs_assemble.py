@@ -15,7 +15,7 @@ sys.path.insert(0, str(_FIGURE_REVIEW_SCRIPTS))
 from figure_checks import failure_comment, load_criteria
 from grade_total import compute
 from pdf_annotate import annotate
-from pdf_annex import DEFAULT_LABELS, render_rows, build_html, append_annex, load_labels, render_checks
+from pdf_annex import DEFAULT_LABELS, TITLE_KIND_CODES, render_rows, build_html, append_annex, load_labels, render_checks
 from ref_check import check_all, _default_resolver
 from ugs_text import REF_HEADING_RE, split_body_and_references
 from ugs_tables import load_elements
@@ -23,7 +23,7 @@ import ugs_config
 import element_labels
 import crossref_checks
 import front_matter
-from crossref_checks import (run_checks, load_settings as load_checks_settings, DEFAULT_MARKERS_PATH,
+from crossref_checks import (TITLE_KIND_CHECK_ID, run_checks, load_settings as load_checks_settings, DEFAULT_MARKERS_PATH,
                              misplaced_citations, load_citation_rules)
 
 REPORT_LANGUAGES = ("fr", "en")
@@ -97,6 +97,66 @@ def citation_annotations(body_pages: List[str], language: str) -> List[dict]:
 
 
 COUNT_STATUS_TO_CHECK = {"ok": "ok", "mismatch": "not_ok", "not_found": "not_applicable"}
+
+
+def title_kind_row(figures: Optional[dict]) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the title_kind check row of the annex (N7, plan 20): every element whose printed title contradicts its
+        kind, by id.
+
+    Details:
+        Ok when no element is flagged, not_ok with the ids otherwise. An absent figures file, or one written before
+        the title_kind_mismatch key existed, is not_applicable, never ok: an old run must not read as a pass.
+
+    Inputs:
+        figures (dict | None): the figures.json of the report, None when absent.
+
+    Outputs:
+        row (dict): id, status and detail (ids only).
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    records = (figures or {}).get("figures", [])
+    if not any("title_kind_mismatch" in record for record in records):
+        return {"id": TITLE_KIND_CHECK_ID, "status": "not_applicable", "detail": {}}
+    ids = [record["figure_id"] for record in records if record.get("title_kind_mismatch")]
+    if not ids:
+        return {"id": TITLE_KIND_CHECK_ID, "status": "ok", "detail": {}}
+    return {"id": TITLE_KIND_CHECK_ID, "status": "not_ok", "detail": {"ids": ids}}
+
+
+def title_kind_annotations(figures: dict, language: str) -> List[dict]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        One PDF annotation per element whose title contradicts its kind (N7, plan 20), on the printed caption, with
+        the comment of its code in the report language.
+
+    Inputs:
+        figures (dict): the figures.json of the report.
+        language (str): "fr" or "en".
+
+    Outputs:
+        annotations (list[dict]): page, kind, code, quote (the caption), rect and comment, as the other annotations.
+
+    Raises:
+        AnnexError: from load_labels when a comment is missing from annex_labels.json (R3).
+    --------------------------------------------------------------------------
+    """
+    comments = load_labels(DEFAULT_LABELS, language)["title_kind_comments"]
+    annotations = []
+    for record in figures.get("figures", []):
+        code = record.get("title_kind_mismatch")
+        if code not in TITLE_KIND_CODES:
+            continue
+        annotations.append({"page": record.get("page"), "kind": "figure", "code": code,
+                            "quote": record.get("caption") or None, "rect": record.get("rect"),
+                            "comment": comments[code]})
+    return annotations
 
 
 def count_rows(meta: dict) -> List[dict]:
@@ -505,6 +565,7 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
     if figures_data:
         figure_criteria = criteria if criteria is not None else load_criteria(_SHIPPED_CRITERIA)["criteria"]
         annotations.extend(figure_annotations(figures_data, figure_criteria, language))
+        annotations.extend(title_kind_annotations(figures_data, language))
 
     # N5: misplaced citations on the body pages, one annotation each and one row of the checks table.
     body_pages = _body_pages(pages)
@@ -543,6 +604,7 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
     meta_name = ugs_config.load(ugs_config.default_path())[META_NAME_KEY]
     report_meta = _read_report_meta(report_dir.parent.parent / report_id / meta_name)
     checks.extend(count_rows(report_meta))
+    checks.append(title_kind_row(figures_data))
     checks.append(appendix_row(pages, report_meta))
     _atomic_write_text(report_dir / CHECKS_FILE_NAME, json.dumps(checks, indent=2))
 

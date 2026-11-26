@@ -56,7 +56,8 @@
       "figure_counts": "Nombre de figures : déclaré et extrait",
       "table_counts": "Nombre de tableaux : déclaré et extrait",
       "appendices": "Appendices listées et présentes",
-      "untitled_elements": "Éléments sans titre (figures ou tableaux non légendés)"
+      "untitled_elements": "Éléments sans titre (figures ou tableaux non légendés)",
+      "title_kind": "Titre conforme au type d'élément (figure ou tableau)"
     },
     "check_status_values": {
       "ok": "Conforme",
@@ -71,7 +72,8 @@
       "skipped": "Sautés",
       "declared": "Déclaré",
       "extracted": "Extrait",
-      "extra": "Non listées"
+      "extra": "Non listées",
+      "ids": "Éléments"
     },
     "excluded_reason_values": {
       "cover": "page couverture",
@@ -80,7 +82,11 @@
     },
     "excluded_item": "page {page} : {reason}",
     "citation_comment": "Appel numérique placé après le point de la phrase : placer la citation avant le point.",
-    "excluded_separator": " ; "
+    "excluded_separator": " ; ",
+    "title_kind_comments": {
+      "table_titled_figure": "Titre incorrect : cet élément est un tableau, pas une figure. Utiliser « Tableau N » et l'inscrire dans la liste des tableaux.",
+      "figure_titled_table": "Titre incorrect : cet élément est une figure, pas un tableau. Utiliser « Figure N » et l'inscrire dans la liste des figures."
+    }
   },
   "en": {
     "provenance": "English wording chosen by the author, to be reviewed by the owner. The check, numbering and excluded-page wording was added on 2026-11-17 (Issue 122, plan 8), with the same status.",
@@ -126,7 +132,8 @@
       "figure_counts": "Number of figures: declared and extracted",
       "table_counts": "Number of tables: declared and extracted",
       "appendices": "Appendices listed and present",
-      "untitled_elements": "Elements without a title (unlabelled figures or tables)"
+      "untitled_elements": "Elements without a title (unlabelled figures or tables)",
+      "title_kind": "Title matches the element type (figure or table)"
     },
     "check_status_values": {
       "ok": "Passed",
@@ -141,7 +148,8 @@
       "skipped": "Skipped",
       "declared": "Declared",
       "extracted": "Extracted",
-      "extra": "Not listed"
+      "extra": "Not listed",
+      "ids": "Elements"
     },
     "excluded_reason_values": {
       "cover": "cover page",
@@ -150,6 +158,10 @@
     },
     "excluded_item": "page {page}: {reason}",
     "citation_comment": "Numeric citation placed after the period of the sentence: place the citation before the period.",
-    "excluded_separator": "; "
+    "excluded_separator": "; ",
+    "title_kind_comments": {
+      "table_titled_figure": "Wrong title: this element is a table, not a figure. Use \"Table N\" and add it to the list of tables.",
+      "figure_titled_table": "Wrong title: this element is a figure, not a table. Use \"Figure N\" and add it to the list of figures."
+    }
   }
 }

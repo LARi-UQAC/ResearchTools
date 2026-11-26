@@ -1,0 +1,25 @@
+{
+  "_provenance": "Owner example 2026-11-26 (R01 Annex A, the timesheet analysis, graded None before this change). Generic groups of French and English words that name one section; never per student or per report (R7).",
+  "groups": [
+    [
+      "feuilles de temps",
+      "bilan des heures",
+      "heures",
+      "timesheet",
+      "timesheets"
+    ],
+    [
+      "budget",
+      "coûts",
+      "couts",
+      "courbe en S",
+      "S-curve"
+    ],
+    [
+      "revue de conception",
+      "client",
+      "expert",
+      "design review"
+    ]
+  ]
+}

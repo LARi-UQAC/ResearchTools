@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 WORD_SPLIT_RE = re.compile(r'[^a-zA-Z0-9\u00C0-\u024F]+')
 REF_ENTRY_START_RE = re.compile(r'^(\[\d+\]|\d+\.|\d+\)|[-*•])\s*')
+SECTION_TERMS_FILE = Path(__file__).resolve().parent.parent / "assets" / "section_terms.json"
 REF_HEADING_RE = re.compile(r'^(?:#{1,6}\s*)?(?:\d+\.?\s*)?(?:References|Références|Bibliographie)\s*$', re.IGNORECASE)
 
 NUMBERED_LINE_RE = re.compile(r'^\d+(?:\.\d+)*\.?\s+\S')
@@ -168,7 +169,75 @@ def page_blocks(pages: List[str], numbers: List[int]) -> str:
             blocks.append(f"### Page {num}\n{pages[num-1]}")
     return "\n".join(blocks)
 
-def select_pages(item: Dict[str, Any], pages: List[str], budget_tokens: int, count: Callable[[str], int], min_word_len: int) -> List[int]:
+def load_section_terms(path: Path = SECTION_TERMS_FILE) -> List[List[str]]:
+    """
+    Purpose: Read the groups of section terms (plan 25, Task 2): words that name one section of a report, such as
+        "feuilles de temps" and "bilan des heures". A group that shares a keyword with an item adds its words to the
+        keywords of the page search.
+    Inputs:
+        path: Path - The terms file, the shipped one by default.
+    Outputs:
+        List[List[str]] - The groups, each a list of non-empty term strings.
+    Raises:
+        ValueError: If the file is unreadable, has no 'groups' list, or a group is not a list of text (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"cannot read section terms {path}: {exc}") from exc
+    groups = raw.get("groups") if isinstance(raw, dict) else None
+    if not isinstance(groups, list):
+        raise ValueError(f"missing key 'groups' (a list of term groups) in {path}")
+    result: List[List[str]] = []
+    for group in groups:
+        if not isinstance(group, list) or not all(isinstance(term, str) and term.strip() for term in group):
+            raise ValueError(f"each group of 'groups' must be a list of non-empty text in {path}")
+        result.append(list(group))
+    return result
+
+
+def _expand_with_terms(keywords: set, terms: List[List[str]], min_word_len: int) -> set:
+    """
+    Purpose: Add to the keywords the words of every term group that shares a word with them (plan 25, Task 2).
+    Inputs:
+        keywords: set - The normalized keywords of the item.
+        terms: List[List[str]] - The groups from load_section_terms.
+        min_word_len: int - The shortest word kept.
+    Outputs:
+        set - The keywords and the words of the matching groups.
+    Raises:
+        None.
+    """
+    expanded = set(keywords)
+    for group in terms:
+        words = set()
+        for term in group:
+            for word in WORD_SPLIT_RE.split(term):
+                if len(word) >= min_word_len:
+                    words.add(_normalize_word(word))
+        if any(_words_match(word, keyword, min_word_len) for word in words for keyword in keywords):
+            expanded |= words
+    return expanded
+
+
+def _is_appendix_heading(line: str) -> bool:
+    """
+    Purpose: Tell whether a line opens an appendix (plan 25, Task 2): an appendix word of front_matter.json at the
+        start of a line, with or without markdown hashes, followed by an id.
+    Inputs:
+        line: str - One line of the report text.
+    Outputs:
+        bool - True when the line is an appendix heading.
+    Raises:
+        ValueError: when front_matter.json is broken (the appendix settings refuse it, R3).
+    """
+    from front_matter import load_appendix_settings  # read only when the report has references
+    words = load_appendix_settings()["markers"]
+    stripped = re.sub(r"^#{1,6}\s*", "", line.strip())
+    return any(re.match(r"(?i)" + re.escape(word) + r"\s+\S", stripped) for word in words)
+
+
+def select_pages(item: Dict[str, Any], pages: List[str], budget_tokens: int, count: Callable[[str], int], min_word_len: int, section_terms: Optional[List[List[str]]] = None) -> List[int]:
     """
     Purpose: Select pages that fit the token budget, prioritizing those with matching headings.
     Inputs:
@@ -186,6 +255,8 @@ def select_pages(item: Dict[str, Any], pages: List[str], budget_tokens: int, cou
         return all_numbers
 
     keywords = _extract_keywords(item, min_word_len)
+    terms = load_section_terms() if section_terms is None else section_terms  # plan 25 task 2
+    keywords = _expand_with_terms(keywords, terms, min_word_len)
     
     # Filter pages that have a heading matching keywords
     matching_numbers = []
@@ -265,7 +336,15 @@ def split_body_and_references(pages: List[str]) -> Tuple[str, List[Dict[str, Any
     body_lines = [line for _, line in all_lines[:ref_start_idx]]
     ref_lines = [(page_num, line) for page_num, line in all_lines[ref_start_idx + 1:]]
     
+    # Plan 25 task 2 (owner, R01 Annex A): an appendix after the references is graded body text, not a reference.
+    appendix_at = next((index for index, (_, line) in enumerate(ref_lines) if _is_appendix_heading(line)), None)
+    appendix_lines = []
+    if appendix_at is not None:
+        appendix_lines = [line for _, line in ref_lines[appendix_at:]]
+        ref_lines = ref_lines[:appendix_at]
     body_text = "\n".join(body_lines).strip()
+    if appendix_lines:
+        body_text = "\n".join([body_text] + appendix_lines).strip()
     
     refs = []
     current_entry_lines = []

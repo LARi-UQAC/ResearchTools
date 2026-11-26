@@ -12,6 +12,7 @@ import argparse
 import contextlib
 import io
 import json
+import os
 import batch_stats
 import sys
 from datetime import datetime, timezone
@@ -453,6 +454,65 @@ def _calibration_note(work: Path, loop: int, prompts: Dict[str, str]) -> str:
         "REASONS": "; ".join(batch.get("reasons", []))})
 
 
+RUN_DONE_NAME = "run_done.json"
+RUN_DONE_KEYS = ("loop", "exit_code", "reports", "open_steps", "blocked_steps", "stopped_at")
+
+
+def write_run_done(work: Path, record: Dict[str, Any]) -> Path:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Write the completion marker of a run atomically, so a session that was stopped reads the outcome once.
+
+    Details:
+        The file holds ids, counts and codes only, never a timestamp (R19) and never report text. It is written
+        through a sibling temporary file and os.replace, so a reader sees the old marker or the new one, never a
+        half-written file.
+
+    Inputs:
+        work (Path): the work folder
+        record (dict): the keys of RUN_DONE_KEYS, all present
+
+    Outputs:
+        target (Path): the marker file written.
+
+    Raises:
+        DriverError: a key of RUN_DONE_KEYS is missing from the record.
+    --------------------------------------------------------------------------
+    """
+    missing = [key for key in RUN_DONE_KEYS if key not in record]
+    if missing:
+        raise DriverError(f"completion marker without {', '.join(missing)}")
+    target = work / RUN_DONE_NAME
+    temporary = work / (RUN_DONE_NAME + ".tmp")
+    temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    os.replace(temporary, target)
+    return target
+
+
+def _finish_run(work: Path, record: Dict[str, Any]) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Count the open and blocked steps of the ledger into the record and write the completion marker.
+
+    Inputs:
+        work (Path): the work folder holding ledger.md
+        record (dict): the run record, its exit_code and stopped_at already set
+
+    Outputs:
+        None. Writes run_done.json in the work folder.
+
+    Raises:
+        DriverError: from write_run_done when the record is incomplete.
+    --------------------------------------------------------------------------
+    """
+    steps = parse_ledger(read_ledger(work / "ledger.md"))
+    record["open_steps"] = sum(1 for step in steps if step["mark"] == " ")
+    record["blocked_steps"] = sum(1 for step in steps if step["mark"] == "!")
+    write_run_done(work, record)
+
+
 def _stopped_step(ledger_path: Path, report_id: str, step: Optional[str]) -> Optional[str]:
     """
     --------------------------------------------------------------------------
@@ -535,6 +595,8 @@ def cmd_run(args, call, fetch, window, count) -> int:
         report_prepare._check_work_dir(reports, work)
     except report_prepare.PrepareError as error:
         raise DriverError(str(error)) from None
+    if not args.dry_run:  # a marker present means this run ended: the previous one is removed before anything else
+        (work / RUN_DONE_NAME).unlink(missing_ok=True)
     current = _current_loop(work)
     if args.loop != current:
         raise DriverError(f"loop {args.loop} is not the current loop")
@@ -559,21 +621,30 @@ def cmd_run(args, call, fetch, window, count) -> int:
         batch_stats.write_json_atomic(state, {"loop": current})
     calls = {step: (lambda prompt, schema, images=None, kind=kind: model_call(kind, prompt, schema, images))
              for step, kind in STEP_KIND.items()}
-    for report_id in wanted:
-        try:
-            result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services, note, fetch,
-                                on_step=lambda name: active.update(step=name), only_steps=only_steps)
-        except NotRun as error:
-            _emit({"report_id": report_id, "step": _stopped_step(work / "ledger.md", report_id, active["step"]),
-                   "status": "not_run", "kind": error.kind})
-            return EXIT_NOT_RUN
-        states = list(result["steps"].values())
-        line = {"report_id": report_id, "status": result["status"], "done": states.count("done"),
-                "blocked": states.count("blocked")}
-        if "reason" in result:  # a report refused by its own pages or language: named, the batch goes on
-            line["reason"] = result["reason"]
-        _emit(line)
-    return EXIT_OK
+    record = {"loop": current, "exit_code": EXIT_OK, "reports": list(wanted), "open_steps": 0,
+              "blocked_steps": 0, "stopped_at": None}
+    try:
+        for report_id in wanted:
+            try:
+                result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services, note,
+                                    fetch, on_step=lambda name: active.update(step=name), only_steps=only_steps)
+            except NotRun as error:
+                step = _stopped_step(work / "ledger.md", report_id, active["step"])
+                _emit({"report_id": report_id, "step": step, "status": "not_run", "kind": error.kind})
+                record.update(exit_code=EXIT_NOT_RUN, stopped_at={"report": report_id, "step": step, "kind": error.kind})
+                break
+            states = list(result["steps"].values())
+            line = {"report_id": report_id, "status": result["status"], "done": states.count("done"),
+                    "blocked": states.count("blocked")}
+            if "reason" in result:  # a report refused by its own pages or language: named, the batch goes on
+                line["reason"] = result["reason"]
+            _emit(line)
+    except Exception:  # an ordinary error ends the run too: the marker still says so, then the error propagates
+        record["exit_code"] = EXIT_NOT_RUN
+        _finish_run(work, record)
+        raise
+    _finish_run(work, record)
+    return record["exit_code"]
 
 
 def _batch_stats(argv: List[str]) -> tuple:

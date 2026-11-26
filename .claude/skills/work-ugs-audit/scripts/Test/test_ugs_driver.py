@@ -559,6 +559,75 @@ class TestUgsDriver(unittest.TestCase):
         self.assertEqual(self.model.calls, [])
 
 
+    # --- run_done.json: the completion marker (plan 18, N6) ---
+
+    def marker_path(self):
+        return self.work / ugs_driver.RUN_DONE_NAME
+
+    def marker(self):
+        return json.loads(self.marker_path().read_text(encoding="utf-8"))
+
+    def test_a_finished_run_writes_the_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        code, _, _ = self.run_loop()
+        self.assertEqual(code, 0)
+        record = self.marker()
+        self.assertEqual(record["exit_code"], 0)
+        self.assertEqual(record["loop"], 1)
+        self.assertEqual(record["reports"], ["R01"])
+        self.assertEqual(record["open_steps"], 0)
+        self.assertIsNone(record["stopped_at"])
+
+    def test_an_unreachable_model_writes_the_marker_with_stopped_at(self):
+        self.add_reports([9])
+        self.prepare()
+        down = FakeModel(fail_with=NotRun("unreachable", "down"))
+        code, _, _ = self.run_loop(model=down)
+        self.assertEqual(code, 1)
+        record = self.marker()
+        self.assertEqual(record["exit_code"], 1)
+        self.assertEqual(record["stopped_at"], {"report": "R01", "step": "grade I01", "kind": "unreachable"})
+        self.assertGreaterEqual(record["open_steps"], 1)
+
+    def test_a_refused_run_writes_no_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        code, _, _ = self.run_loop(loop=2)
+        self.assertEqual(code, 2)
+        self.assertFalse(self.marker_path().exists())
+
+    def test_a_new_run_removes_an_old_marker_first(self):
+        self.add_reports([9])
+        self.prepare()
+        self.marker_path().write_text(json.dumps({"exit_code": 0, "planted": True}), encoding="utf-8")
+        code, _, _ = self.run_loop(model=FakeModel(fail_with=NotRun("unreachable", "down")))
+        self.assertEqual(code, 1)
+        record = self.marker()
+        self.assertEqual(record["exit_code"], 1)
+        self.assertNotIn("planted", record)
+
+    def test_a_dry_run_writes_no_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        code, _, _ = self.drv(["run", "--work", str(self.work), "--reports", str(self.reports), "--loop", "1",
+                               "--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertFalse(self.marker_path().exists())
+
+    def test_the_marker_holds_no_report_text(self):
+        self.add_reports([9])
+        self.prepare()
+        self.run_loop()
+        self.assertNotIn(MARKER, self.marker_path().read_text(encoding="utf-8"))
+
+    def test_the_marker_is_written_without_a_temporary_file_left_behind(self):
+        self.add_reports([9])
+        self.prepare()
+        self.run_loop()
+        self.assertEqual(sorted(p.name for p in self.work.glob("*.tmp")), [])
+
+
 class TestOcrPreflightRefusal(unittest.TestCase):
 
     def test_preflight_refusal_is_named_when_tesseract_is_missing(self):

@@ -86,12 +86,20 @@ and `attempts` counts the tries. The auditor receives `missing` and `comment`, n
 
 Elements and levels (Issue #126 plan 25, review round 1). The model lists the elements a rubric item asks for and gives each
 a verdict: `present`, `partial` or `absent`; a present or partial element carries its page and a quote, checked on the page
-(`quote_not_found` and the other proof codes). The code computes the level from the verdicts (`assets/grade_levels.json`):
+by `quote_match.py` (review round 2). A quote matches in three tiers: a key tier (NFKC, case, invisible characters,
+Markdown, table bars and every non-alphanumeric character removed on both sides), an elision tier (fragments around `...`
+found in order) and a fuzzy tier (accent-folded words in order, share `grade.quote_min_word_share`). Every tier needs
+`grade.quote_min_chars` and `grade.quote_min_words`; the page searched is the named page within `grade.quote_page_window`;
+a quote over `grade.quote_max_words` skips the fuzzy tier; at most `grade.max_elements` elements are verified. An unverified
+present element counts as `grade.unverified_present_counts_as`, an unverified partial one counts as absent, so a quote that
+cannot be found costs that element and never refuses the item. The code computes the level from the verdicts (`assets/grade_levels.json`):
 all present gives `complete_correct`, none present or partial gives `absent`, otherwise the share of present elements (a
 partial one counts `partial_weight`) selects a band. `exemplary` comes only from an explicit `exceptional` claim, and only when
 every element is present and every quote is verified; a refused proof never keeps it. The points are the level's fraction of
-the maximum, rounded to `grade.score_step` and never above the maximum. A rated item with no verified quote is refused at any
-level (`evidence_missing`), an empty element list is `elements_missing` (asked again once). `model_score` holds the element
+the maximum, rounded to `grade.score_step` and never above the maximum. A rated item with no verified quote is refused
+(`evidence_missing`, asked again once, the answer with the most verified elements kept), except an item whose every element is
+absent with a `missing` text, which is level `absent`, score 0. An empty element list is `elements_missing` and fewer elements
+than the rubric checklist is `elements_too_few` (asked again once). `model_score` holds the element
 summary ("present N, partial N, absent N"). A not_applicable answer carries no score and no evidence (`not_applicable_with_score`).
 
 A report whose language cannot be decided (no text layer and no metadata) is refused in preparation with a named

@@ -107,8 +107,10 @@ def title_kind_row(figures: Optional[dict]) -> dict:
         kind, by id.
 
     Details:
-        Ok when no element is flagged, not_ok with the ids otherwise. An absent figures file, or one written before
-        the title_kind_mismatch key existed, is not_applicable, never ok: an old run must not read as a pass.
+        The row reflects the script's flags and the annotations are built from the same field, so the two always
+        agree. not_ok with the ids when any element carries a flag, whatever the vision role did; ok when the keys
+        exist and nothing is flagged. not_applicable only when no element record carries the keys (an absent figures
+        file, or one written before the key existed), never ok: an old run must not read as a pass.
 
     Inputs:
         figures (dict | None): the figures.json of the report, None when absent.
@@ -121,10 +123,7 @@ def title_kind_row(figures: Optional[dict]) -> dict:
     --------------------------------------------------------------------------
     """
     records = (figures or {}).get("figures", [])
-    # Review F: without a validated vision role the check did not run on its model side, so it is not applicable;
-    # a figures file written before the key existed is not applicable too, never ok.
-    if (figures or {}).get("vision_validated") is not True or not any("title_kind_mismatch" in record
-                                                                      for record in records):
+    if not any("title_kind_mismatch" in record for record in records):
         return {"id": TITLE_KIND_CHECK_ID, "status": "not_applicable", "detail": {}}
     ids = [record["figure_id"] for record in records if record.get("title_kind_mismatch")]
     if not ids:

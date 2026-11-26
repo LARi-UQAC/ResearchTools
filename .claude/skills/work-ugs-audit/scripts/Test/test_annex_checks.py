@@ -154,10 +154,16 @@ class TestTitleKindRow(unittest.TestCase):
         row = ugs_assemble.title_kind_row(self._figures(None, None))
         self.assertEqual(row, {"id": "title_kind", "status": "ok", "detail": {}})
 
-    def test_vision_not_validated_gives_not_applicable_even_with_script_flags(self):
-        # Review F: the check did not really run on the model-side signal, so it is not a pass nor a finding.
-        row = ugs_assemble.title_kind_row(self._figures("table_titled_figure", vision_validated=False))
-        self.assertEqual(row["status"], "not_applicable")
+    def test_script_flags_are_reported_whether_or_not_vision_was_validated(self):
+        # Review 4: the row reflects the script; vision not validated does not hide a script flag.
+        row = ugs_assemble.title_kind_row(self._figures("table_titled_figure", None, vision_validated=False))
+        self.assertEqual(row, {"id": "title_kind", "status": "not_ok", "detail": {"ids": ["F1"]}})
+        self.assertEqual(len(ugs_assemble.title_kind_annotations(
+            self._figures("table_titled_figure", None, vision_validated=False), "fr")), 1)
+
+    def test_no_script_flag_and_no_vision_is_ok_only_when_the_keys_exist(self):
+        row = ugs_assemble.title_kind_row(self._figures(None, vision_validated=False))
+        self.assertEqual(row, {"id": "title_kind", "status": "ok", "detail": {}})
 
     def test_no_figures_file_gives_not_applicable(self):
         self.assertEqual(ugs_assemble.title_kind_row(None)["status"], "not_applicable")

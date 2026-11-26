@@ -643,8 +643,9 @@ class TestUgsDriver(unittest.TestCase):
     def test_a_marker_write_failure_never_masks_the_original_error(self):
         self.add_reports([9])
         self.prepare()
-        with patch("ugs_driver.run_report", side_effect=RuntimeError("planted")),                 patch("ugs_driver.write_run_done", side_effect=OSError("planted write failure")):
-            code, lines, _ = self.run_loop()
+        with patch("ugs_driver.run_report", side_effect=RuntimeError("planted")):
+            with patch("ugs_driver.write_run_done", side_effect=OSError("planted write failure")):
+                code, lines, _ = self.run_loop()
         self.assertEqual(code, 1)
         self.assertEqual(lines[-1], {"status": "failed", "error": "RuntimeError"})
 

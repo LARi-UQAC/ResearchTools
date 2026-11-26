@@ -227,7 +227,13 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
         record (dict): the figure record, changed in place (kind, criteria, model_image, title keys)
         fig (dict): the checked figure, with its file and its script criteria
         criteria (list[dict]): the criteria to send; empty for a table_image (kind only)
-        pages, report_dir, call, ctx, language, settings, printed: as figures_report passes them
+        pages (list[str]): the page texts of the report, for the citing paragraph
+        report_dir (Path): the report folder (figures and model_images)
+        call (Callable): the model call of the figure role
+        ctx (StepContext): the prompts, schemas and retry counts
+        language (str): the report language, for the criteria comments
+        settings (dict): the extraction settings (max_long_edge and the JPEG settings)
+        printed (str | None): the printed number of the element, None when untitled
 
     Outputs:
         None. The record is changed in place.

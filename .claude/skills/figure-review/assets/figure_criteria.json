@@ -71,6 +71,7 @@
      "label_fr": "Légende compréhensible seule", "label_en": "Caption understandable on its own",
      "comment_fr": "La légende ne se comprend pas seule : dire ce qui est montré, dans quelles conditions.", "comment_en": "The caption cannot be understood alone: say what is shown and under which conditions."},
     {"id": "source_cited", "level": "figure", "scope": "undergraduate", "judged_by": "script", "applies_to": ["all"], "needs": "source", "threshold": null,
+     "reason_fr": "Figure empruntée sans source : citer la source dans le titre.",
      "label_fr": "Source citée pour une figure empruntée", "label_en": "Source cited for a borrowed figure",
      "comment_fr": "Aucune source n'est indiquée dans la légende : citer la source si la figure est empruntée.", "comment_en": "No source is given in the caption: cite the source if the figure is borrowed."},
     {"id": "si_units_consistent", "level": "figure", "scope": "undergraduate", "judged_by": "model", "applies_to": ["chart"], "needs": "either", "threshold": null,

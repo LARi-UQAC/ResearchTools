@@ -75,9 +75,10 @@
   },
   "figure": {
     "type": "object",
-    "required": ["kind", "criteria"],
+    "required": ["kind", "criteria", "borrowed"],
     "properties": {
       "kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "table", "photo", "other"]},
+      "borrowed": {"type": "boolean"},
       "criteria": {
         "type": "array",
         "items": {

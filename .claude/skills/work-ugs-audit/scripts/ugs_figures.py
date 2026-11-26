@@ -172,6 +172,8 @@ def _valid_figure_answer(answer: Any, sent_ids: List[str]) -> bool:
     items = answer.get("criteria")
     if not isinstance(items, list):
         return False
+    if "borrowed" in answer and not isinstance(answer["borrowed"], bool):
+        return False
     return all(isinstance(i, dict) and i.get("id") in sent_ids and i.get("verdict") in VERDICTS for i in items)
 
 
@@ -297,6 +299,40 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
             if item["verdict"] == "fail":
                 result["comment"] = f"{failure_comment(cid, criteria, language)} {reason}"
             record["criteria"][cid] = result
+    _apply_source_rule(record, answer, criteria, language)
+
+
+def _apply_source_rule(record: Dict[str, Any], answer: Dict[str, Any], criteria: List[Dict[str, Any]],
+                       language: str) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Fail source_cited for a figure the model reads as borrowed (borrowed true) whose title cites no source. A
+        cited source passes whatever the model says, and an own figure stays not applicable (plan 21, R01 case 2).
+
+    Inputs:
+        record (dict): the figure record, changed in place (criteria).
+        answer (dict): the accepted model answer for this figure; its borrowed key may be absent (unknown).
+        criteria (list[dict]): the criteria of the run; the rule does nothing when source_cited is not among them.
+        language (str): the report language, for the failure comment.
+
+    Outputs:
+        None. The record is changed in place when the figure is borrowed without a source.
+
+    Raises:
+        ValueError: when the source_cited criterion has no reason_fr in the criteria file (R3).
+    --------------------------------------------------------------------------
+    """
+    crit = next((c for c in criteria if c["id"] == "source_cited"), None)
+    if crit is None or answer.get("borrowed") is not True:
+        return
+    if record["criteria"].get("source_cited", {}).get("verdict") == "pass":
+        return
+    if "reason_fr" not in crit:
+        raise ValueError("criterion 'source_cited' has no reason_fr in the criteria file")
+    reason = crit["reason_fr"]
+    record["criteria"]["source_cited"] = {"verdict": "fail", "reason": reason,
+                                          "comment": f"{failure_comment('source_cited', criteria, language)} {reason}"}
 
 
 def _judge_style(figures: List[Dict[str, Any]], criteria: List[Dict[str, Any]], report_dir: Path, call: Callable,

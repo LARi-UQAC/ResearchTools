@@ -28,7 +28,10 @@ Criteria to judge (id | label | kinds it applies to):
 
 {{CRITERIA}}
 
-Answer with one JSON object with the keys kind and criteria. Criteria is a list of objects with the keys
+Also answer borrowed: true only for a figure reproduced from a publication, a datasheet, a website or another author;
+false for the student's own figure, and false when you cannot tell.
+
+Answer with one JSON object with the keys kind, borrowed and criteria. Criteria is a list of objects with the keys
 id, verdict (pass, fail or not_applicable) and reason (one short sentence). Give one object for every
 criterion listed, and no other id. Nothing else.
 

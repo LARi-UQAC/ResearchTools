@@ -403,7 +403,9 @@ def check(figures: List[Dict], pages: List[str], body_font_size: float, criteria
             if re.search(r"\[\d+\]", caption) or "Source" in caption:
                 result_fig["criteria"][crit_id] = {"verdict": "pass", "reason": "Source cited in caption"}
             else:
-                result_fig["criteria"][crit_id] = {"verdict": "fail", "reason": "No source cited in caption"}
+                # Plan 21 task 2: a source is needed only for a borrowed figure, which the script cannot tell
+                result_fig["criteria"][crit_id] = {"verdict": "not_applicable",
+                                                   "reason": "No source in caption; required only if borrowed"}
 
         results.append(result_fig)
         

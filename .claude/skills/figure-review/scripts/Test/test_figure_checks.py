@@ -310,6 +310,12 @@ class TestPerFigureNumbering(unittest.TestCase):
         self.assertEqual(verdicts[3]["verdict"], "fail")
         self.assertIn("figure 3", verdicts[3]["reason"].lower())
 
+    def test_no_source_is_not_applicable_by_default(self):
+        # Plan 21 task 2: the script cannot tell a borrowed figure, so a figure without a source is not applicable
+        figures = [self._fig("Figure 1: The plant.", 1)]
+        results = figure_checks.check(figures, [""], 10.0, self.criteria_doc)
+        self.assertEqual(results[0]["criteria"]["source_cited"]["verdict"], "not_applicable")
+
     def test_the_reason_is_the_french_text_of_the_criteria_file(self):
         verdicts = self._verdicts(["Figure 1: a", "Figure 4: c"])
         template = next(c for c in self.criteria_doc["criteria"] if c["id"] == "numbered_in_sequence")["reason_fr"]

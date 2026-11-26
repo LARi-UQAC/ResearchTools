@@ -433,6 +433,41 @@ class TestUgsFigures(unittest.TestCase):
     def test_the_figure_prompt_names_the_kind_table(self):
         self.assertIn("table (a grid of rows and columns", FIGURE_PROMPT)
 
+    def _borrowed_model(self, borrowed):
+        def answer(prompt):
+            return {"kind": "chart", "borrowed": borrowed,
+                    "criteria": [{"id": i, "verdict": "pass", "reason": "r"} for i in SENT_LINE.findall(prompt)]}
+        return FakeModel(script=[answer, answer, answer])
+
+    def test_a_borrowed_figure_without_source_fails(self):
+        # Issue 126, plan 22/21 task 2 (R01 case 2): a figure the model reads as borrowed needs a source in its title
+        result = self.report(self._borrowed_model(True), language="fr")
+        entry = result["figures"][0]["criteria"]["source_cited"]
+        self.assertEqual(entry["verdict"], "fail")
+        self.assertEqual(entry["reason"], "Figure empruntée sans source : citer la source dans le titre.")
+
+    def test_an_own_figure_without_source_is_not_applicable(self):
+        result = self.report(self._borrowed_model(False))
+        self.assertEqual(result["figures"][0]["criteria"]["source_cited"]["verdict"], "not_applicable")
+
+    def test_an_answer_without_the_borrowed_key_is_unknown_and_not_a_fail(self):
+        result = self.report(FakeModel())
+        self.assertEqual(result["figures"][0]["criteria"]["source_cited"]["verdict"], "not_applicable")
+
+    def test_vision_not_validated_never_fails_the_source(self):
+        result = self.report(FakeModel(), vision_ok=False)
+        self.assertEqual(result["figures"][0]["criteria"]["source_cited"]["verdict"], "not_applicable")
+
+    def test_a_cited_source_passes_whatever_borrowed_says(self):
+        pages = [{"text": "Figure 1 shows the plant.\n\nMore text.", "image": True,
+                  "caption": "Figure 1: The plant [1]."}]
+        pdf = make_report(self.tmp / "cited.pdf", pages)
+        with fitz.open(str(pdf)) as doc:
+            texts = [page.get_text() for page in doc]
+        result = ugs_figures.figures_report(pdf, self.report_dir, "R01", texts, self._borrowed_model(True),
+                                            self.ctx, self.criteria, "fr", True, None, None)
+        self.assertEqual(result["figures"][0]["criteria"]["source_cited"]["verdict"], "pass")
+
 
 class TestTitleKindFromAnswer(unittest.TestCase):
     """N7 (plan 20): the mapping from an element type and a vision kind to the title mismatch."""

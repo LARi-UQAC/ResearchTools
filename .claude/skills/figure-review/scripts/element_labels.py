@@ -222,6 +222,33 @@ def _gap_and_position(block: tuple, rect: "fitz.Rect") -> Optional[tuple]:
     return None
 
 
+def _title_placement(block: tuple, rect: "fitz.Rect", overlap_allowed: float) -> Optional[tuple]:
+    """
+    Purpose: Place a title block against an element, allowing a caption that reaches into the element's edge.
+    Details: A drawing's box can run a few points into the caption under it (plan 17, R01 page 17). A block that
+        straddles the bottom or top edge, beside the element horizontally, by no more than overlap_allowed points
+        is still the title on that side. A block lying inside the element is never a title.
+    Inputs:
+        block: tuple - the block tuple.
+        rect: fitz.Rect - the element rectangle.
+        overlap_allowed: float - the largest overlap in points that still counts as beside the edge.
+    Outputs:
+        tuple or None - (gap in points, "below" or "above"), None when the block is not a title of the element.
+    Raises:
+        None.
+    """
+    placement = _gap_and_position(block, rect)
+    if placement is not None:
+        return placement
+    if min(block[2], rect.x1) <= max(block[0], rect.x0):
+        return None
+    if block[1] < rect.y1 < block[3] and rect.y1 - block[1] <= overlap_allowed:
+        return 0.0, POSITION_BELOW
+    if block[1] < rect.y0 < block[3] and block[3] - rect.y0 <= overlap_allowed:
+        return 0.0, POSITION_ABOVE
+    return None
+
+
 def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
                markers: Dict[str, Any]) -> Optional[Dict[str, str]]:
     """
@@ -245,14 +272,16 @@ def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
     max_distance = _marker_value(markers, "max_title_distance_pt")
     tolerance = _marker_value(markers, "centre_tolerance_ratio")
 
+    overlap_allowed = _marker_value(markers, "title_overlap_pt")
+
     found: Dict[str, List[tuple]] = {POSITION_BELOW: [], POSITION_ABOVE: []}
     for block in blocks:
-        if len(block) < 7 or block[6] != TEXT_BLOCK_TYPE or _overlaps(block, rect):
+        if len(block) < 7 or block[6] != TEXT_BLOCK_TYPE:
             continue
         text = _clean(block[4])
         if not _starts_with_marker(text, prefixes):
             continue
-        placement = _gap_and_position(block, rect)
+        placement = _title_placement(block, rect, overlap_allowed)
         if placement is None or placement[0] > max_distance:
             continue
         found[placement[1]].append((placement[0], block, text))

@@ -10,6 +10,10 @@
     "value": 24,
     "provenance": "proposal 2026-11-16, tune on the real reports"
   },
+  "title_overlap_pt": {
+    "value": 12,
+    "provenance": "proposal 2026-11-25 (plan 17, real check on R01 page 17): a caption whose top lies this many points inside the edge of its drawing is still the title on that side; tune on the real reports"
+  },
   "centre_tolerance_ratio": {
     "value": 0.1,
     "provenance": "proposal 2026-11-16 (a tenth of the element width is centred), tune on the real reports"

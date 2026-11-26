@@ -515,6 +515,19 @@ class TestExtractElements(unittest.TestCase):
         self.assertTrue(all(r["file"] is None for r in logos))
         self.assertFalse((self.out / "L01.png").exists())
 
+    def test_title_overlapping_the_bottom_edge_is_still_below(self):
+        # Plan 17 (real check on R01 page 17): the drawing's box reaches 8 points into its caption line, so the
+        # caption overlaps the box by a little. It is still the caption below the drawing, not an untitled region.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 208)
+        _centred_text(page, 200, 214, "Figure 1: Recouvrement")
+        self._save(doc)
+        figures = [r for r in self._extract() if r["element_type"] == "figure"]
+        self.assertEqual(len(figures), 1)
+        self.assertEqual(figures[0]["title"]["text"], "Figure 1: Recouvrement")
+        self.assertEqual(figures[0]["title"]["position"], "below")
+
     def test_extraction_block_holds_the_element_settings(self):
         block = json.loads(CRITERIA_PATH.read_text(encoding="utf-8"))["extraction"]
         for key in ELEMENT_SETTING_KEYS:

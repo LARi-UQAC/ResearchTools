@@ -5,14 +5,14 @@ Pipeline stage: figure-review, element extraction (plan 2 of issue 122).
 """
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_MARKERS_PATH = Path(__file__).resolve().parent.parent / "assets" / "element_markers.json"
 
 # Prefix lists the markers file must carry (R3: a missing key is a named error).
 PREFIX_KEYS = ("figure_prefixes", "table_prefixes", "note_prefixes")
 # Numeric entries, each {"value": number, "provenance": str} (R4).
-NUMERIC_KEYS = ("max_title_distance_pt", "max_note_distance_pt", "centre_tolerance_ratio")
+NUMERIC_KEYS = ("max_title_distance_pt", "max_note_distance_pt", "centre_tolerance_ratio", "column_min_words")
 
 # Element type to the prefix list it must start with.
 ELEMENT_PREFIX_KEYS = {"figure": "figure_prefixes", "table": "table_prefixes"}
@@ -184,13 +184,19 @@ def _overlaps(block: tuple, rect: "fitz.Rect") -> bool:
     return block[0] < rect.x1 and block[2] > rect.x0 and block[1] < rect.y1 and block[3] > rect.y0
 
 
-def _alignment(block: tuple, rect: "fitz.Rect", tolerance_ratio: float) -> str:
+def _alignment(block: tuple, rect: "fitz.Rect", tolerance_ratio: float,
+               column: Optional[Tuple[float, float]] = None) -> str:
     """
-    Purpose: Measure how a block is aligned against the element, from the horizontal centres.
+    Purpose: Measure how a block is aligned against the element, from the horizontal centres (plan 24, Task 2).
+    Details: A block centred on the element is "center". A block centred on the page text column (when given) is
+        "center" too, so a figure that sits off the column can still carry a title centred under the text. Otherwise
+        the block is "left" or "right" of the element centre.
     Inputs:
         block: tuple - the block tuple, its x0 and x1 are used.
         rect: fitz.Rect - the element rectangle.
-        tolerance_ratio: float - the share of the element width within which a block counts as centred.
+        tolerance_ratio: float - the share of the element width (of the column width for the column) within which a
+            block counts as centred.
+        column: Optional[Tuple[float, float]] - the left and right edges of the page text column, or None.
     Outputs:
         str - "left", "center" or "right".
     Raises:
@@ -201,6 +207,10 @@ def _alignment(block: tuple, rect: "fitz.Rect", tolerance_ratio: float) -> str:
     tolerance = tolerance_ratio * rect.width
     if abs(block_centre - element_centre) <= tolerance:
         return ALIGN_CENTER
+    if column is not None:
+        column_centre = (column[0] + column[1]) / 2
+        if abs(block_centre - column_centre) <= tolerance_ratio * (column[1] - column[0]):
+            return ALIGN_CENTER
     return ALIGN_LEFT if block_centre < element_centre else ALIGN_RIGHT
 
 
@@ -249,8 +259,48 @@ def _title_placement(block: tuple, rect: "fitz.Rect", overlap_allowed: float) ->
     return None
 
 
+def text_column(blocks: List[tuple], markers: Dict[str, Any]) -> Optional[Tuple[float, float]]:
+    """
+    Purpose: Measure the page text column as the median left and right edges of its body blocks (plan 24, Task 2).
+    Details: A body block holds at least column_min_words words; a shorter block is a caption or a label and does not
+        define the column.
+    Inputs:
+        blocks: List[tuple] - the tuples of page.get_text("blocks") for one page.
+        markers: Dict[str, Any] - the data returned by load_markers.
+    Outputs:
+        Optional[Tuple[float, float]] - (left, right) in points, or None when no block is long enough.
+    Raises:
+        MarkerError: If column_min_words is missing.
+    """
+    min_words = _marker_value(markers, "column_min_words")
+    body = [block for block in blocks
+            if len(block) >= 7 and block[6] == TEXT_BLOCK_TYPE and len(_clean(block[4]).split()) >= min_words]
+    if not body:
+        return None
+    lefts = sorted(block[0] for block in body)
+    rights = sorted(block[2] for block in body)
+    middle = len(body) // 2
+    return _median(lefts, middle), _median(rights, middle)
+
+
+def _median(values: List[float], middle: int) -> float:
+    """
+    Purpose: Give the median of a sorted list of edges, the mean of the two middle values for an even count.
+    Inputs:
+        values: List[float] - the sorted values, not empty.
+        middle: int - len(values) // 2.
+    Outputs:
+        float - the median.
+    Raises:
+        None.
+    """
+    if len(values) % 2:
+        return float(values[middle])
+    return (values[middle - 1] + values[middle]) / 2
+
+
 def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
-               markers: Dict[str, Any]) -> Optional[Dict[str, str]]:
+               markers: Dict[str, Any], column: Optional[Tuple[float, float]] = None) -> Optional[Dict[str, str]]:
     """
     Purpose: Find the title of a figure or a table: the nearest text block that opens with a marker
         word of its type, looking below first for a figure and above first for a table.
@@ -293,7 +343,7 @@ def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
             return {
                 "text": text,
                 "position": direction,
-                "alignment": _alignment(block, rect, tolerance),
+                "alignment": _alignment(block, rect, tolerance, column),
             }
     return None
 

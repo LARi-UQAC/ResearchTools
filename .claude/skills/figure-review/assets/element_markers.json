@@ -30,6 +30,10 @@
     "value": 12,
     "provenance": "proposal 2026-11-25 (plan 17, real check on R01 page 17): a caption whose top lies this many points inside the edge of its drawing is still the title on that side; tune on the real reports"
   },
+  "column_min_words": {
+    "value": 6,
+    "provenance": "proposal 2026-11-26 (plan 24, Task 2): a text block of at least this many words defines the page text column (its median left and right edges); a shorter block is a caption or a label"
+  },
   "centre_tolerance_ratio": {
     "value": 0.1,
     "provenance": "proposal 2026-11-16 (a tenth of the element width is centred), tune on the real reports"

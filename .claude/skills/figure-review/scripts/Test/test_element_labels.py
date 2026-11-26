@@ -315,5 +315,110 @@ class InImageTitleTest(unittest.TestCase):
             el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, 0.9)
 
 
+class TextColumnAlignmentTest(unittest.TestCase):
+    """
+    Purpose: A title centred on the page text column is centred even when the figure sits off that column (plan 24,
+        Task 2). Blocks are fictitious tuples; no page is opened (R21).
+    """
+
+    def setUp(self):
+        """
+        Purpose: Load the shipped markers and a figure 100 to 200 wide, under a text column 300 to 500 wide.
+        Inputs:
+            None.
+        Outputs:
+            None. Sets self.markers, self.rect and self.column.
+        Raises:
+            None.
+        """
+        self.markers = el.load_markers(MARKERS_PATH)
+        self.rect = fitz.Rect(100, 100, 200, 300)
+        self.column = (300.0, 500.0)
+
+    def block(self, x0, x1, text="Figure 4 Temperature", y0=310):
+        """
+        Purpose: Build one title block on a fictitious line below the figure.
+        Inputs:
+            x0, x1 (float): the block extent.
+            text (str): the fictitious text.
+            y0 (float): the top of the block.
+        Outputs:
+            tuple: a text block tuple (x0, y0, x1, y1, text, block_no, block_type).
+        Raises:
+            None.
+        """
+        return (x0, y0, x1, y0 + 12, text, 0, 0)
+
+    def test_a_title_centred_on_the_column_is_center(self):
+        """
+        Purpose: A title centred on the text column (centre 400) under a figure centred at 150 is centred.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts center with the column and right without it.
+        Raises:
+            AssertionError: If the column reference is not used.
+        """
+        title = self.block(340, 460)
+        self.assertEqual(el._alignment(title, self.rect, 0.1, self.column), "center")
+        self.assertEqual(el._alignment(title, self.rect, 0.1), "right")
+
+    def test_the_figure_centre_still_decides_first(self):
+        """
+        Purpose: A title centred on the figure stays centred whatever the column.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts center.
+        Raises:
+            AssertionError: If the figure reference is lost.
+        """
+        self.assertEqual(el._alignment(self.block(120, 180), self.rect, 0.1, self.column), "center")
+
+    def test_text_column_is_the_median_of_the_body_blocks(self):
+        """
+        Purpose: Three long blocks at 300-500, 310-510 and 320-520 give the column 310 to 510; a short caption is
+            not part of it.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts the median column.
+        Raises:
+            AssertionError: If the median or the word filter is wrong.
+        """
+        long_text = " ".join(["mot"] * 8)
+        blocks = [(300, 0, 500, 9, long_text, 0, 0), (310, 0, 510, 9, long_text, 0, 0),
+                  (320, 0, 520, 9, long_text, 0, 0), (50, 0, 90, 9, "Note", 0, 0)]
+        self.assertEqual(el.text_column(blocks, self.markers), (310.0, 510.0))
+
+    def test_no_body_block_gives_no_column(self):
+        """
+        Purpose: A page with only short blocks has no column, and the rule falls back to the figure.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts None.
+        Raises:
+            AssertionError: If a column is invented.
+        """
+        self.assertIsNone(el.text_column([(10, 0, 20, 9, "Note", 0, 0)], self.markers))
+
+    def test_the_word_count_comes_from_the_markers(self):
+        """
+        Purpose: A missing column_min_words key is a named error (R3).
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts the MarkerError names the key.
+        Raises:
+            AssertionError: If the key is not required.
+        """
+        markers = dict(self.markers)
+        markers.pop("column_min_words")
+        with self.assertRaises(el.MarkerError) as raised:
+            el.text_column([], markers)
+        self.assertIn("column_min_words", str(raised.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

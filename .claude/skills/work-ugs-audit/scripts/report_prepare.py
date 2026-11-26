@@ -34,7 +34,7 @@ import front_pages  # noqa: E402
 import page_roles  # noqa: E402
 import text_quality  # noqa: E402
 import ugs_config  # noqa: E402
-from figure_extract import ELEMENT_SETTING_KEYS, extract_elements  # noqa: E402
+from figure_extract import ELEMENT_SETTING_KEYS, _element_id, extract_elements  # noqa: E402
 from text_quality import OcrUnavailable, TextQualityError  # noqa: E402
 import table_image  # noqa: E402
 from ugs_tables import (TABLE_IMAGE_TYPE, TablesError, enrich_page_text, load_min_anchor_chars,  # noqa: E402
@@ -665,6 +665,98 @@ def _region_words(pdf_file: Path, record: Dict[str, Any], page_words: Optional[C
     return inside
 
 
+IN_IMAGE_BAND_KEY = "in_image_title_band_ratio"
+IN_IMAGE_SOURCE = "image"
+IN_IMAGE_NAME_TAKEN = "in_image_name_taken"
+
+
+def _load_in_image_band() -> float:
+    """
+    Purpose: Read the share of the element height searched for a title drawn inside it (plan 24, Task 1), from the
+        `extraction` block of the figure criteria file (R0, R3).
+    Inputs:
+        None.
+    Outputs:
+        float - the band ratio, above 0 and at most 0.5.
+    Raises:
+        PrepareError: when the file is unreadable, the key is missing or the value is not a ratio of that range.
+    """
+    try:
+        document = json.loads(FIGURE_CRITERIA_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise PrepareError("the figure criteria file is unreadable") from error
+    block = document.get(EXTRACTION_BLOCK) if isinstance(document, dict) else None
+    entry = block.get(IN_IMAGE_BAND_KEY) if isinstance(block, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise PrepareError(f"extraction setting '{IN_IMAGE_BAND_KEY}' is missing from the figure criteria")
+    value = entry["value"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= 0.5:
+        raise PrepareError(f"extraction setting '{IN_IMAGE_BAND_KEY}' must be a ratio above 0 and at most 0.5")
+    return float(value)
+
+
+def _decide_in_image_titles(records: List[Dict[str, Any]], folder: Path, pdf_file: Path,
+                            page_words: Optional[Callable], tesseract_language: Callable[[], str],
+                            band_ratio: float, markers: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Purpose: Give an untitled raster figure the title written inside its image (plan 24, Task 1). The element then
+        takes its printed number as its id and file name, as a text title gives it.
+    Details: Runs inside the classify step of each count-loop attempt, so the count loop sees the titles found. Only a
+        raster figure with no title is read. A table marker found in the image makes the element a table_image. A
+        text title is never replaced. An id or a file already taken is never overwritten: the record keeps its id and
+        carries the status in_image_name_taken.
+    Inputs:
+        records (list[dict]): the element records of one attempt, changed in place.
+        folder (Path): the attempt folder holding the element files.
+        pdf_file (Path): the PDF of the report.
+        page_words (Callable | None): the page-level reader (pdf, page, codes), None when OCR is unavailable.
+        tesseract_language (Callable[[], str]): the Tesseract codes of the report language.
+        band_ratio (float): the share of the element height read at each edge.
+        markers (dict): the data returned by element_labels.load_markers.
+    Outputs:
+        list[dict]: the same records. A titled record carries title (text, position in_image_top or in_image_bottom,
+        alignment) and title_source "image".
+    Raises:
+        PrepareError: when the Tesseract codes of the language are unknown.
+    """
+    for record in records:
+        if record.get("element_type") != "figure" or record.get("title") is not None:
+            continue
+        if record.get("source") != "raster" or "rect" not in record or "page" not in record:
+            continue
+        words = _region_words(pdf_file, record, page_words, tesseract_language)
+        if not words:
+            continue
+        rect = fitz.Rect(record["rect"])
+        found, new_kind = None, "figure"
+        for element_type in ("figure", "table"):
+            found = element_labels.find_in_image_title(words, rect, element_type, markers, band_ratio)
+            if found is not None:
+                new_kind = "figure" if element_type == "figure" else TABLE_IMAGE_TYPE
+                break
+        if found is None:
+            continue
+        title = {"text": found["text"], "position": found["position"], "alignment": found["alignment"]}
+        taken = {str(other.get("element_id", "")).lower() for other in records if other is not record}
+        new_id = _element_id(new_kind, title, {}, taken)
+        new_file = f"{new_id}.png"
+        old_file = folder / record["file"] if record.get("file") else None
+        target = folder / new_file
+        if target.exists() and (old_file is None or target.resolve() != old_file.resolve()):
+            record["status"] = IN_IMAGE_NAME_TAKEN
+            continue
+        if old_file is not None and old_file.exists():
+            old_file.rename(target)
+        record.update({"element_type": new_kind, "element_id": new_id, "file": new_file, "title": title,
+                       "caption": title["text"], "title_source": IN_IMAGE_SOURCE})
+        if new_kind == "figure":
+            record["figure_id"] = new_id
+        else:
+            record.pop("figure_id", None)  # plan 7: a table_image has no figure_id nor ratio
+            record.pop("drawing_area_ratio", None)
+    return records
+
+
 def _decide_title_kinds(records: List[Dict[str, Any]], pdf_file: Path, page_words: Optional[Callable],
                         tesseract_language: Callable[[], str], image_settings: table_image.ImageSettings,
                         strong_rows: int, strong_cols: int, weak_rows: int, weak_cols: int,
@@ -1040,9 +1132,13 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
         except text_quality.QualityConfigError as error:
             raise PrepareError(str(error)) from None
 
+    page_ocr = _memoized_page_ocr(hooks.ocr_words)  # plan 24: one OCR per page, shared by every attempt
+    markers = element_labels.load_markers(ELEMENT_MARKERS_FILE)
+    in_image_band = _load_in_image_band()
+
     def classify(records: List[Dict[str, Any]], folder: Path) -> List[Dict[str, Any]]:
         """
-        Purpose: Apply the untitled-region rule to one attempt's records, with the loaded settings.
+        Purpose: Apply the in-image title rule, then the untitled-region rule, to one attempt's records.
         Inputs:
             records (list[dict]): the records of the attempt.
             folder (Path): the attempt folder.
@@ -1051,6 +1147,8 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
         Raises:
             PrepareError: when the Tesseract codes are unknown.
         """
+        records = _decide_in_image_titles(records, folder, pdf_file, page_ocr, tesseract_language, in_image_band,
+                                          markers)
         return _classify_untitled_records(records, folder, pdf_file, ocr_words, tesseract_language,
                                           image_settings, untitled_rows, untitled_cols)
 

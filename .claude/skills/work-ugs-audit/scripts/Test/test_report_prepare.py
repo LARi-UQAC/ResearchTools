@@ -990,5 +990,158 @@ class TitledGridReadingTests(unittest.TestCase):
         self.assertEqual(records[0]["title_kind_source"], "script")
 
 
+class InImageTitleTests(unittest.TestCase):
+    """Plan 24 Task 1: a title drawn inside an untitled raster figure is found, and the element takes its printed number."""
+
+    RECT = [100, 100, 500, 400]
+
+    def setUp(self):
+        """
+        Purpose: Give each test a folder with an untitled figure file and a fictitious PDF path.
+        Inputs:
+            None.
+        Outputs:
+            None. Sets self.folder, self.pdf and the element file.
+        Raises:
+            None.
+        """
+        self.folder = Path(tempfile.mkdtemp())
+        self.pdf = self.folder / "fixture.pdf"
+        (self.folder / "F-u01.png").write_bytes(b"png")
+        self.markers = element_labels_markers()
+
+    def tearDown(self):
+        """
+        Purpose: Remove the temporary folder.
+        Inputs:
+            None.
+        Outputs:
+            None.
+        Raises:
+            None.
+        """
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+    def words_at(self, y0, text, x0=150, x1=450):
+        """
+        Purpose: Build the OCR word tuples of one fictitious line, spread over its width.
+        Inputs:
+            y0 (float): the top of the line.
+            text (str): the fictitious words.
+            x0, x1 (float): the line extent.
+        Outputs:
+            list[tuple]: the word tuples with block and line numbers.
+        Raises:
+            None.
+        """
+        parts = text.split()
+        step = (x1 - x0) / len(parts)
+        return [(x0 + i * step, y0, x0 + (i + 1) * step, y0 + 12, word, 1, 1, i) for i, word in enumerate(parts)]
+
+    def record(self, element_id="F-u01", title=None, source="raster", element_type="figure"):
+        """
+        Purpose: Build one fictitious element record of a figure finder.
+        Inputs:
+            element_id (str): the id of the record.
+            title (dict | None): the title already attached, None for an untitled element.
+            source (str): raster or vector.
+            element_type (str): figure or table_image.
+        Outputs:
+            dict: the record.
+        Raises:
+            None.
+        """
+        return {"element_id": element_id, "element_type": element_type, "page": 1, "rect": self.RECT,
+                "file": f"{element_id}.png", "source": source, "title": title, "figure_id": element_id}
+
+    def decide(self, records, words, folder=None):
+        """
+        Purpose: Run the in-image rule with a stub page reader that returns the given words.
+        Inputs:
+            records (list[dict]): the records of one attempt.
+            words (list[tuple]): the OCR words of the page.
+            folder (Path | None): the attempt folder, the setUp folder by default.
+        Outputs:
+            list[dict]: the records after the rule.
+        Raises:
+            None.
+        """
+        return report_prepare._decide_in_image_titles(records, folder or self.folder, self.pdf,
+                                                     lambda pdf, page, codes: words, lambda: "eng", 0.15,
+                                                     self.markers)
+
+    def test_a_bottom_figure_title_gives_the_printed_number_and_file(self):
+        records = self.decide([self.record()], self.words_at(372, "Figure 4 Temperature"))
+        record = records[0]
+        self.assertEqual((record["element_id"], record["element_type"], record["file"]), ("F4", "figure", "F4.png"))
+        self.assertEqual(record["title"]["position"], "in_image_bottom")
+        self.assertEqual(record["title"]["alignment"], "center")
+        self.assertEqual(record["figure_id"], "F4")
+        self.assertTrue((self.folder / "F4.png").exists())
+        self.assertFalse((self.folder / "F-u01.png").exists())
+
+    def test_a_table_title_in_the_image_makes_a_table_image(self):
+        records = self.decide([self.record()], self.words_at(104, "Tableau 2 Budget", 100, 220))
+        record = records[0]
+        self.assertEqual((record["element_id"], record["element_type"]), ("T2", "table_image"))
+        self.assertEqual(record["title"]["position"], "in_image_top")
+        self.assertNotIn("figure_id", record)
+        self.assertNotIn("drawing_area_ratio", record)
+
+    def test_a_text_title_wins_over_an_in_image_title(self):
+        titled = self.record(title={"text": "Figure 3 Text", "position": "below", "alignment": "left"})
+        records = self.decide([titled], self.words_at(372, "Figure 4 Temperature"))
+        self.assertEqual(records[0]["title"]["text"], "Figure 3 Text")
+        self.assertEqual(records[0]["element_id"], "F-u01")
+
+    def test_a_marker_word_in_the_middle_of_the_image_is_not_a_title(self):
+        records = self.decide([self.record()], self.words_at(200, "Figure of merit"))
+        self.assertIsNone(records[0]["title"])
+        self.assertEqual(records[0]["element_id"], "F-u01")
+
+    def test_a_vector_element_is_left_to_its_own_text_layer(self):
+        records = self.decide([self.record(source="vector")], self.words_at(372, "Figure 4 Temperature"))
+        self.assertIsNone(records[0]["title"])
+
+    def test_an_id_already_given_gets_a_suffix(self):
+        other = self.record("F4")
+        other["title"] = {"text": "Figure 4 Autre", "position": "below", "alignment": "left"}
+        records = self.decide([self.record(), other], self.words_at(372, "Figure 4 Temperature"))
+        self.assertEqual(records[0]["element_id"], "F4-b")
+        self.assertEqual(records[0]["file"], "F4-b.png")
+
+    def test_a_file_already_on_disk_is_never_overwritten(self):
+        (self.folder / "F4.png").write_bytes(b"other")
+        records = self.decide([self.record()], self.words_at(372, "Figure 4 Temperature"))
+        self.assertEqual(records[0]["status"], "in_image_name_taken")
+        self.assertEqual(records[0]["element_id"], "F-u01")
+        self.assertEqual((self.folder / "F4.png").read_bytes(), b"other")
+        self.assertTrue((self.folder / "F-u01.png").exists())
+
+    def test_the_band_ratio_is_read_from_the_criteria_file(self):
+        self.assertEqual(report_prepare._load_in_image_band(), 0.15)
+
+    def test_a_missing_band_ratio_is_named(self):
+        broken = self.folder / "criteria.json"
+        broken.write_text(json.dumps({"extraction": {}}), encoding="utf-8")
+        with patch.object(report_prepare, "FIGURE_CRITERIA_FILE", broken):
+            with self.assertRaises(PrepareError) as raised:
+                report_prepare._load_in_image_band()
+        self.assertIn("in_image_title_band_ratio", str(raised.exception))
+
+
+def element_labels_markers():
+    """
+    Purpose: Load the shipped element markers for the in-image tests.
+    Inputs:
+        None.
+    Outputs:
+        dict: the markers as element_labels.load_markers returns them.
+    Raises:
+        None.
+    """
+    return report_prepare.element_labels.load_markers(report_prepare.ELEMENT_MARKERS_FILE)
+
+
 if __name__ == "__main__":
     unittest.main()

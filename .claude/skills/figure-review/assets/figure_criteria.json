@@ -9,6 +9,10 @@
     "render_dpi": {"value": 150, "provenance": "starting value, adjustable by the professor (dots per inch when a vector figure is turned into a bitmap for a model; the longest side is then cut to max_long_edge)"},
     "render_timeout_s": {"value": 60, "provenance": "starting value, unmeasured, adjustable by the professor (seconds allowed to one external tool: pdflatex, epstopdf or draw.io)"},
     "drawio_scale": {"value": 3, "provenance": "default of paper2talk fig_export.export, which produced projector-grade exports (integer scale of the draw.io export)"},
+    "in_image_title_band_ratio": {
+      "value": 0.15,
+      "provenance": "proposal 2026-11-26 (plan 24, Task 1): a title drawn inside a raster figure is read in the top and bottom band of this share of the element height; a starting value, tune on the real reports"
+    },
     "fragment_gap_pt": {"value": 24, "provenance": "proposal 2026-11-16 (points between two figure regions that still form one diagram), tune on counts of the real reports"},
     "table_overlap_ratio": {"value": 0.6, "provenance": "proposal 2026-11-16 (share of a drawing region lying inside a table box, from which the region is not a figure), tune on counts of the real reports"},
     "logo_max_area_pt2": {"value": 20000, "provenance": "proposal 2026-11-16 (area in pt^2 under which a repeated header or footer image is a logo), tune on counts of the real reports"},

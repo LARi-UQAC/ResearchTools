@@ -298,6 +298,76 @@ def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
     return None
 
 
+IN_IMAGE_TOP = "in_image_top"
+IN_IMAGE_BOTTOM = "in_image_bottom"
+
+
+def _lines_of(words: List[tuple]) -> List[List[tuple]]:
+    """
+    Purpose: Group OCR word tuples into their lines, in reading order (top to bottom, left to right in a line).
+    Details: A word carries its block and line numbers at indices 5 and 6 (PyMuPDF and the page OCR); a tuple
+        without them is taken as a line of its own.
+    Inputs:
+        words: List[tuple] - the word tuples (x0, y0, x1, y1, text, ...).
+    Outputs:
+        List[List[tuple]] - the lines, each sorted by x0, the lines sorted by their top edge.
+    Raises:
+        None.
+    """
+    groups: Dict[tuple, List[tuple]] = {}
+    for index, word in enumerate(words):
+        key = (word[5], word[6]) if len(word) >= 7 else ("single", index)
+        groups.setdefault(key, []).append(word)
+    lines = [sorted(members, key=lambda item: item[0]) for members in groups.values()]
+    return sorted(lines, key=lambda members: min(item[1] for item in members))
+
+
+def find_in_image_title(words: List[tuple], rect: "fitz.Rect", element_type: str, markers: Dict[str, Any],
+                        band_ratio: float) -> Optional[Dict[str, str]]:
+    """
+    Purpose: Find a title drawn inside a raster element: a line opening with a marker word of its type, lying in the
+        top or the bottom band of the element (plan 24, Task 1).
+    Details: The band is band_ratio of the element height at each edge. A marker word inside the drawing, or a line
+        that does not open with a marker, is not a title. The top band is preferred for a table and the bottom band
+        for a figure, the same order as find_title. The alignment is measured on the line, as for a text title.
+    Inputs:
+        words: List[tuple] - the OCR word tuples of the element region (clipped to the element by the caller).
+        rect: fitz.Rect - the element rectangle.
+        element_type: str - "figure" or "table".
+        markers: Dict[str, Any] - the data returned by load_markers.
+        band_ratio: float - the share of the element height read at each edge, above 0 and at most one half.
+    Outputs:
+        Optional[Dict[str, str]] - {"text", "position" ("in_image_top" or "in_image_bottom"), "alignment"}, or None.
+    Raises:
+        ValueError: If element_type is unknown or band_ratio is outside (0, 0.5].
+        MarkerError: If the markers lack the prefix list or the centring tolerance.
+    """
+    if element_type not in ELEMENT_PREFIX_KEYS:
+        raise ValueError(f"unknown element type '{element_type}' (expected figure or table)")
+    if isinstance(band_ratio, bool) or not isinstance(band_ratio, (int, float)) or not 0 < band_ratio <= 0.5:
+        raise ValueError(f"band_ratio must be a number above 0 and at most 0.5, got {band_ratio!r}")
+    prefixes = _marker_prefixes(markers, ELEMENT_PREFIX_KEYS[element_type])
+    tolerance = _marker_value(markers, "centre_tolerance_ratio")
+    band = band_ratio * rect.height
+    found: Dict[str, List[tuple]] = {IN_IMAGE_TOP: [], IN_IMAGE_BOTTOM: []}
+    for members in _lines_of(words):
+        text = _clean(" ".join(item[4] for item in members))
+        if not _starts_with_marker(text, prefixes):
+            continue
+        box = (min(item[0] for item in members), min(item[1] for item in members),
+               max(item[2] for item in members), max(item[3] for item in members))
+        if box[3] <= rect.y0 + band:
+            found[IN_IMAGE_TOP].append((box, text))
+        elif box[1] >= rect.y1 - band:
+            found[IN_IMAGE_BOTTOM].append((box, text))
+    order = [IN_IMAGE_TOP, IN_IMAGE_BOTTOM] if element_type == "table" else [IN_IMAGE_BOTTOM, IN_IMAGE_TOP]
+    for position in order:
+        if found[position]:
+            box, text = found[position][0]
+            return {"text": text, "position": position, "alignment": _alignment(box, rect, tolerance)}
+    return None
+
+
 def _remove_sequence(words: List[str], sequence: List[str]) -> List[str]:
     """
     Purpose: Remove every contiguous run of words equal to a sequence, the words of a title.

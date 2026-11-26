@@ -174,5 +174,146 @@ class ElementLabelsTest(unittest.TestCase):
             el.find_title(self._blocks(), FIGURE_RECT, "logo", self.markers)
 
 
+IMAGE_RECT = fitz.Rect(100, 100, 500, 400)
+IN_IMAGE_BAND = 0.15
+
+
+def _line(x0, y0, x1, y1, text, line_no):
+    """
+    Purpose: Build the word tuples of one OCR line, the words spread evenly over its width.
+    Inputs:
+        x0, y0, x1, y1: float - the line box.
+        text: str - the fictitious words, separated by spaces.
+        line_no: int - the line number, stored as the block and line fields of each word.
+    Outputs:
+        list[tuple] - (x0, y0, x1, y1, word, block, line, word_no) per word.
+    Raises:
+        None.
+    """
+    words = text.split()
+    step = (x1 - x0) / len(words)
+    return [(x0 + index * step, y0, x0 + (index + 1) * step, y1, word, 0, line_no, index)
+            for index, word in enumerate(words)]
+
+
+class InImageTitleTest(unittest.TestCase):
+    """
+    Purpose: A title drawn inside a raster element is found in its top or bottom band (plan 24, Task 1).
+    Details: Word boxes are fictitious tuples; no page is opened (R21).
+    """
+
+    def setUp(self):
+        """
+        Purpose: Load the shipped markers once for the class.
+        Inputs:
+            None.
+        Outputs:
+            None. Sets self.markers.
+        Raises:
+            None.
+        """
+        self.markers = el.load_markers(MARKERS_PATH)
+
+    def test_figure_title_in_the_bottom_band_is_found_centred(self):
+        """
+        Purpose: A centred line starting with a figure marker in the bottom band is the title, below.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts text, position and alignment.
+        Raises:
+            AssertionError: If the title is missed or misplaced.
+        """
+        words = _line(150, 370, 450, 382, "Figure 4 Temperature", 1)
+        found = el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, IN_IMAGE_BAND)
+        self.assertEqual(found["position"], "in_image_bottom")
+        self.assertEqual(found["alignment"], "center")
+        self.assertEqual(found["text"], "Figure 4 Temperature")
+
+    def test_table_title_in_the_top_band_is_found_left(self):
+        """
+        Purpose: A line starting with a table marker at the left of the top band is the title, above, left.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts position and alignment.
+        Raises:
+            AssertionError: If the title is missed or misplaced.
+        """
+        words = _line(100, 104, 220, 116, "Tableau 2 Budget", 1)
+        found = el.find_in_image_title(words, IMAGE_RECT, "table", self.markers, IN_IMAGE_BAND)
+        self.assertEqual(found["position"], "in_image_top")
+        self.assertEqual(found["alignment"], "left")
+
+    def test_marker_word_in_the_middle_of_the_image_is_not_a_title(self):
+        """
+        Purpose: A figure marker in the middle of the drawing, an axis label, is not a title.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts None.
+        Raises:
+            AssertionError: If the middle line is taken for a title.
+        """
+        words = _line(150, 200, 300, 212, "Figure of merit", 1)
+        self.assertIsNone(el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, IN_IMAGE_BAND))
+
+    def test_a_line_not_opening_with_a_marker_is_not_a_title(self):
+        """
+        Purpose: A bottom line that only mentions a figure later on is not a title.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts None.
+        Raises:
+            AssertionError: If the line is taken for a title.
+        """
+        words = _line(150, 370, 450, 382, "Note see Figure 4", 1)
+        self.assertIsNone(el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, IN_IMAGE_BAND))
+
+    def test_the_band_ratio_decides_the_reach_of_the_band(self):
+        """
+        Purpose: With a band of 5 percent (15 points) the bottom line at 370 is outside the band and is not found.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts None with the narrow band and a title with the wide one.
+        Raises:
+            AssertionError: If the band ratio does not change the answer.
+        """
+        words = _line(150, 370, 450, 382, "Figure 4 Temperature", 1)
+        self.assertIsNone(el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, 0.05))
+        self.assertIsNotNone(el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, IN_IMAGE_BAND))
+
+    def test_a_figure_marker_is_not_a_table_title(self):
+        """
+        Purpose: The element type picks its marker words: a Figure line is no title of a table.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts None.
+        Raises:
+            AssertionError: If the marker of the other type is accepted.
+        """
+        words = _line(150, 370, 450, 382, "Figure 4 Temperature", 1)
+        self.assertIsNone(el.find_in_image_title(words, IMAGE_RECT, "table", self.markers, IN_IMAGE_BAND))
+
+    def test_unknown_element_type_and_bad_band_are_refused(self):
+        """
+        Purpose: An unknown element type and a band outside 0 to one half are refused with ValueError.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts both refusals.
+        Raises:
+            AssertionError: If a refusal is not raised.
+        """
+        words = _line(150, 370, 450, 382, "Figure 4 Temperature", 1)
+        with self.assertRaises(ValueError):
+            el.find_in_image_title(words, IMAGE_RECT, "logo", self.markers, IN_IMAGE_BAND)
+        with self.assertRaises(ValueError):
+            el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, 0.9)
+
+
 if __name__ == "__main__":
     unittest.main()

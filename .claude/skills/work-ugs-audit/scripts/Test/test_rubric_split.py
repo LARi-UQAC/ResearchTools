@@ -3,6 +3,7 @@ Offline tests for rubric_split (Issue 120, plan 1): a Markdown rubric is split b
 sections and every section keeps its exact text. Fictitious rubric text only (R34), no model, no network (R21).
 """
 import copy
+import json
 import os
 import sys
 import unittest
@@ -280,6 +281,35 @@ class ElementTests(unittest.TestCase):
 
     def test_the_element_rules_key_is_required_and_named_when_missing(self):
         self.assertIn("rubric.element_regexes", ugs_config.REQUIRED_KEYS)
+
+
+class ElementRuleValidationTest(unittest.TestCase):
+    """Review round 1, group B, finding 13: the element rules are checked at load, and a number is an element at column 0."""
+
+    @staticmethod
+    def load_with(rules):
+        """Load the shipped configuration with another element rule list, from a temporary file (fictitious)."""
+        import tempfile
+        raw = json.loads(ugs_config.default_path().read_text(encoding="utf-8"))
+        raw["rubric.element_regexes"]["value"] = rules
+        path = Path(tempfile.mkdtemp()) / "ugs_config.json"
+        path.write_text(json.dumps(raw), encoding="utf-8")
+        return ugs_config.load(path)
+
+    def test_a_rule_that_does_not_compile_is_a_named_error(self):
+        with self.assertRaises(ugs_config.ConfigError) as ctx:
+            self.load_with(["(unclosed"])
+        self.assertIn("rubric.element_regexes", str(ctx.exception))
+
+    def test_a_rule_without_a_capture_group_is_a_named_error(self):
+        with self.assertRaises(ugs_config.ConfigError) as ctx:
+            self.load_with(["^\\s*- \\[ \\]\\s+.+$"])
+        self.assertIn("rubric.element_regexes", str(ctx.exception))
+
+    def test_an_indented_nested_number_is_not_an_element(self):
+        text = "## 1. Resume (/1)\n\n1. **Un** : a\n   2. nested point\n3. **Trois** : c\n"
+        elements = rubric_split.section_elements(text, ELEMENT_RULES)
+        self.assertEqual([e["text"] for e in elements], ["**Un** : a", "**Trois** : c"])
 
 
 REAL_RUBRIC = os.environ.get("UGS_REAL_RUBRIC")

@@ -69,7 +69,34 @@ def load(path: Path) -> dict:
         if key not in result:
             raise ConfigError(f"missing required key '{key}': {path}")
 
+    _check_element_rules(result, path)
     return result
+
+
+def _check_element_rules(config: dict, path: Path) -> None:
+    """
+    Purpose: Check that each rubric element rule compiles and has a capture group (review round 1, finding 13), so a bad
+        rule is a named error at load and never a silent empty element list at grading time.
+    Inputs:
+        config: dict - The loaded configuration, dotted key to value.
+        path: Path - The file, for the message.
+    Outputs:
+        None.
+    Raises:
+        ConfigError: If a rule is not a text, does not compile, or has no capture group.
+    """
+    rules = config.get("rubric.element_regexes")
+    if not isinstance(rules, list) or not rules:
+        raise ConfigError(f"'rubric.element_regexes' must be a non-empty list of patterns: {path}")
+    for rule in rules:
+        if not isinstance(rule, str):
+            raise ConfigError(f"'rubric.element_regexes' holds a rule that is not text: {path}")
+        try:
+            compiled = re.compile(rule)
+        except re.error as exc:
+            raise ConfigError(f"'rubric.element_regexes' holds a rule that does not compile ({exc}): {path}")
+        if compiled.groups < 1:
+            raise ConfigError(f"'rubric.element_regexes' holds a rule without a capture group: {path}")
 
 def annotation_author(repo_root: Path) -> str:
     """

@@ -2,6 +2,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # Put the parent folder of the test folder on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -46,7 +47,9 @@ def make_ctx():
                 "## fr_exceptional\nNon justifié.\n\n"
                 "## en_exceptional\nNot supported.\n\n"
                 "## fr_not_applicable\nNon facultatif.\n\n"
-                "## en_not_applicable\nNot optional.\n"
+                "## en_not_applicable\nNot optional.\n\n"
+                "## fr_few\nFew.\n\n"
+                "## en_few\nFew.\n"
             ),
         },
         schemas={
@@ -443,6 +446,19 @@ class RealR01GradeTest(unittest.TestCase):
         self.assertEqual(item["status"], "rated")
         self.assertTrue(any(entry["page"] >= min(appendix_pages) for entry in item["evidence"]),
                         "I07 has no evidence on an appendix page")
+
+
+_MIN_ELEMENTS = mock.patch("ugs_grade.read_min_model_elements", return_value=1)
+
+
+def setUpModule():
+    """Pin the minimum of model-named elements to 1: these tests pin the other grading rules (review round 1,
+    finding 7); the minimum itself is tested in test_grade_validation.py with explicit settings."""
+    _MIN_ELEMENTS.start()
+
+
+def tearDownModule():
+    _MIN_ELEMENTS.stop()
 
 
 if __name__ == "__main__":

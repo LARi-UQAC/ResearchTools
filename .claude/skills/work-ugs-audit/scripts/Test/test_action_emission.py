@@ -42,7 +42,9 @@ def make_ctx(emit=None, *, prompts=None) -> StepContext:
                                 "## fr_evidence\nnFictif.\n\n"
                                 "## en_evidence\nnFictive.\n\n"
                                 "## fr_not_applicable\nnFictif.\n\n"
-                                "## en_not_applicable\nnFictive.\n"),
+                                "## en_not_applicable\nnFictive.\n\n"
+                                "## fr_few\nFew.\n\n"
+                                "## en_few\nFew.\n"),
         },
         schemas={"grade_item": {}}, levels={"0": 0.0, "10": 1.0}, window_tokens=100000, reserve_tokens=10,
         count=lambda text: 1, grade_retries=0, audit_retries=0, min_word_len=3, emit=emit,

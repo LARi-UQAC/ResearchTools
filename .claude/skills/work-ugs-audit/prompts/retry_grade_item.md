@@ -30,6 +30,14 @@ Tes éléments ne correspondent pas à ceux de la liste de cette section. Donne 
 
 Your elements do not match the list of this section. Give one verdict for each id of the list, and only those, once each: present, partial or absent.
 
+## fr_few
+
+Ta réponse nomme trop peu d'éléments pour cette section. Liste chaque élément que la section demande, un par entrée, avec son verdict : present, partial ou absent, et pour un élément present ou partial sa page et une citation exacte de douze mots au plus.
+
+## en_few
+
+Your answer names too few elements for this section. List every element the section asks for, one entry each, with its verdict: present, partial or absent, and for a present or partial element its page and a quote of twelve words at most, copied exactly.
+
 ## fr_comment
 
 Ton commentaire parle du rapport entier. Réécris-le en une ou deux phrases qui parlent de cette section seulement, en commençant par « Cette section » ou par le nom de la section.

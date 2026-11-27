@@ -7,6 +7,7 @@ absent). The code computes the level from those verdicts (grade_levels.json) and
 
 import json
 import math
+import re
 import sys
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
@@ -46,7 +47,11 @@ GRADE_CODES = (
     "not_applicable_with_score",
     "elements_mismatch",
     "comment_scope",
+    "elements_few",
 )
+
+# The codes whose record is rated and keeps its points: ok, and elements_few (rated, flagged for the professor's check).
+SOFT_OK_CODES = ("ok", "elements_few")
 
 # The refusals asked again with a template of the prompts folder: each code names its section of
 # retry_grade_item.md, in the report language.
@@ -58,6 +63,7 @@ RETRY_SECTION_BY_CODE = {
     "not_applicable_not_allowed": "not_applicable",
     "not_applicable_with_score": "not_applicable",
     "comment_scope": "comment",
+    "elements_few": "few",
 }
 
 # The credit of a verdict in the points (owner, 2026-11-27): present 1, partial the partial weight, absent 0.
@@ -449,7 +455,31 @@ def read_grade_settings(path: Path = None) -> Dict[str, Any]:
     config = default_path() if path is None else Path(path)
     return {"quote": quote_match.read_quote_settings(config), "unverified_as": read_unverified_as(config),
             "step": read_grade_step(config), "max_elements": read_max_elements(config),
-            "comment_openings": read_comment_openings(config)}
+            "comment_openings": read_comment_openings(config),
+            "min_model_elements": read_min_model_elements(config)}
+
+
+def read_min_model_elements(path: Path) -> int:
+    """
+    Purpose: Read the fewest elements a model-named item must name (review round 1, finding 7, grade.min_model_elements).
+    Inputs:
+        path: Path - The configuration JSON, normally ugs_config.default_path().
+    Outputs:
+        int - A positive whole number.
+    Raises:
+        ValueError: If the file is unreadable, the key is absent or the value is not a positive whole number (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read {path}: {exc}") from exc
+    entry = raw.get("grade.min_model_elements") if isinstance(raw, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise ValueError(f"missing key 'grade.min_model_elements' in {path}")
+    value = entry["value"]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"'grade.min_model_elements' must be a positive whole number in {path}")
+    return value
 
 
 def read_comment_openings(path: Path) -> List[str]:
@@ -489,8 +519,10 @@ def opens_forbidden(comment: Any, openings: List[str]) -> bool:
     """
     if not isinstance(comment, str):
         return False
-    head = " ".join(comment.split()).casefold()
-    return any(head.startswith(opening) for opening in openings)
+    # Review round 1, finding 9: leading punctuation, quotes, guillemets and Markdown emphasis are stripped, then the
+    # opening must be a whole word ("The reported" does not open with "the report").
+    head = " ".join(comment.split()).casefold().lstrip(" \t*_#>\"'«»“”‘’([{-")
+    return any(re.match(re.escape(opening) + r"(?!\w)", head) for opening in openings)
 
 
 # The keys of a rated answer that only the code computes (review round 1, security): the model's values are never kept.
@@ -511,7 +543,7 @@ def _name_key(name: Any) -> str:
 
 
 def prepare_elements(elements: List[dict], pages: List[str], settings: Dict[str, Any],
-                     unverified_as: str, max_elements: int) -> Tuple[List[dict], int]:
+                     unverified_as: str, max_elements: int, by_id: bool = False) -> Tuple[List[dict], int]:
     """
     Purpose: Verify each present or partial element's quote and give every element its effective verdict (review
         round 2, items 1 and 2). A repeated element name is counted once (item 6).
@@ -533,7 +565,8 @@ def prepare_elements(elements: List[dict], pages: List[str], settings: Dict[str,
     distinct: List[dict] = []
     seen = set()
     for element in elements:
-        key = _name_key(element.get("element"))
+        # Review round 1, finding 5: rubric elements are one per id, so two identical checklist lines are two elements.
+        key = element.get("id") if by_id else _name_key(element.get("element"))
         if key in seen:
             continue
         seen.add(key)
@@ -618,7 +651,7 @@ def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal,
         by_id = {entry.get("id"): entry for entry in source}
         source = [dict(by_id[ref["id"]], element=ref["text"], id=ref["id"]) for ref in rubric]
         cap = len(rubric)
-    elements, ignored = prepare_elements(source, pages, settings, unverified_as, cap)
+    elements, ignored = prepare_elements(source, pages, settings, unverified_as, cap, by_id=bool(rubric))
     claimed = answer.get("exceptional") is True and all(entry["effective"] == "present" for entry in elements)
     level = level_for_elements(elements, claimed, scale)
     computed = dict(answer)
@@ -860,14 +893,14 @@ def _record_from_answer(
     if missing_max_chars is None:
         missing_max_chars = read_missing_max_chars(default_path())
     usable = answer.get("status") == "rated" and "level" in answer
-    if code == "ok":
+    if code in SOFT_OK_CODES:
         status = answer.get("status")
         score = answer.get("score") if usable else None
     else:
         status = "not_run"
         score = None
     elements = answer.get("elements") if usable else []
-    keep_evidence = code == "ok" and usable
+    keep_evidence = code in SOFT_OK_CODES and usable
     evidence = answer.get("evidence") if keep_evidence else []
     record = {
         "item_id": item_id,
@@ -877,7 +910,7 @@ def _record_from_answer(
         "evidence": [] if evidence is None else evidence,
         "missing": _missing_text(answer, max_points, score, missing_max_chars),
         "audit": "not_run",
-        "flag": code != "ok",
+        "flag": code not in SOFT_OK_CODES,
         "model_score": element_summary(elements) if usable else None,
         "validation": code,
         "attempts": attempts,
@@ -962,6 +995,26 @@ def _verified_count(answer: dict) -> int:
     if not isinstance(elements, list):
         return 0
     return sum(1 for entry in elements if isinstance(entry, dict) and entry.get("verified"))
+
+
+def _scope_record(item_id: str, answer: dict, attempts: int, max_points: Any, missing_max_chars: int) -> dict:
+    """
+    Purpose: Build the record of a rated answer whose comment opens on the whole report, after the retry: the model
+        sentence is dropped and the code justification stays (review round 1, finding 3).
+    Inputs:
+        item_id: str - The rubric item identifier.
+        answer: dict - The prepared answer.
+        attempts: int - The number of model calls made.
+        max_points: Any - The maximum of the rubric item.
+        missing_max_chars: int - The limit of the missing text.
+    Outputs:
+        dict - The grade record, validation ok, with comment_code comment_scope and an empty comment.
+    Raises:
+        None.
+    """
+    record = _record_from_answer(item_id, dict(answer, comment=""), "ok", attempts, max_points, missing_max_chars)
+    record["comment_code"] = "comment_scope"
+    return record
 
 
 def _item_text(item: dict) -> str:
@@ -1061,6 +1114,8 @@ def grade_item(
     last_retry_note = ""
     code = "schema_invalid"
     scope_asked = False  # a comment on the whole report is asked again once, then its sentence is dropped
+    few_asked = False  # a model-named item with too few elements is asked again once (review round 1, finding 7)
+    soft = None  # (answer, code): the fallback of a comment-scope or few-elements answer, kept over a refusal (finding 3)
     best = None  # (answer, code, verified count): the answer with the most verified elements across the attempts
     for attempt in range(ctx.grade_retries + 1):
         current_note = calibration_note
@@ -1093,17 +1148,25 @@ def grade_item(
 
         answer = with_level_score(answer, item, scale, step, pages, quote_settings, unverified_as, max_elements)
         code, message = check_grade_answer(answer, item, pages)
+        if (code == "ok" and answer.get("status") == "rated" and not item.get("elements")
+                and len(answer["elements"]) < settings["min_model_elements"]):
+            if not few_asked:
+                few_asked = True
+                soft = (answer, "elements_few")
+                last_error_reason = message = "the item names fewer elements than the minimum"
+                last_retry_note = _retry_note(ctx, "elements_few", language)
+                continue
+            return _record_from_answer(item_id, answer, "elements_few", attempt + 1,
+                                       item.get("max_points", 0), missing_max_chars)
         if code == "ok" and opens_forbidden(answer.get("comment"), openings):
             if not scope_asked:
                 scope_asked = True
+                soft = (answer, "comment_scope")
                 last_error_reason = message = "the comment opens on the whole report, not on this section"
                 last_retry_note = _retry_note(ctx, "comment_scope", language)
                 continue
             # Asked again and still on the whole report: the model sentence is dropped, the code justification stays.
-            record = _record_from_answer(item_id, dict(answer, comment=""), "ok", attempt + 1,
-                                         item.get("max_points", 0), missing_max_chars)
-            record["comment_code"] = "comment_scope"
-            return record
+            return _scope_record(item_id, answer, attempt + 1, item.get("max_points", 0), missing_max_chars)
         if code == "ok":
             return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0), missing_max_chars)
         support = _verified_count(answer)
@@ -1113,6 +1176,14 @@ def grade_item(
         last_retry_note = _retry_note(ctx, code, language) if code in RETRY_SECTION_BY_CODE else ""
 
     attempts = ctx.grade_retries + 1
+    # Review round 1, finding 3: an answer that fails only on the comment scope or on the minimum elements is kept as
+    # the fallback over any refusal, so the item is never not_run for a sentence or a count alone.
+    if soft is not None:
+        answer, soft_code = soft
+        if soft_code == "comment_scope":
+            return _scope_record(item_id, answer, attempts, item.get("max_points", 0), missing_max_chars)
+        return _record_from_answer(item_id, answer, "elements_few", attempts, item.get("max_points", 0),
+                                   missing_max_chars)
     if best is None:
         return _no_answer_record(item_id, code, attempts, "")
     return _record_from_answer(item_id, best[0], best[1], attempts, item.get("max_points", 0), missing_max_chars)

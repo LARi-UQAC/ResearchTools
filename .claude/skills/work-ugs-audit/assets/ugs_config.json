@@ -181,6 +181,10 @@
     "value": 24,
     "provenance": "chosen by the session 2026-11-27 under the owner's review of round 2: twice the 12 words the prompt asks for; a longer quote skips the fuzzy tier (resource cap)"
   },
+  "grade.min_model_elements": {
+    "value": 3,
+    "provenance": "session 2026-11-27, review round 1 finding 7: one trivial element must not earn a whole section; a model-named item with fewer elements is asked again once, then rated with the code elements_few for the professor's check"
+  },
   "grade.element_label_words": {
     "value": 12,
     "provenance": "session 2026-11-27, keeps a note readable: the most words of an element text repeated in a comment; a longer text is cut on a word with three dots"
@@ -249,7 +253,7 @@
     "provenance": "chosen 2026-11-15 from the professor's list of figures a report can hold (UML, SysML, flowchart, logigram, software or electronic architecture, project breakdown structure, Gantt, Kanban, budget, S-curve, timesheet): the words the professor writes as the expected kind of a figure in the vision probe, each mapped to the schema kind the model answers; a table or a board has no criterion of its own so it is `other`; adjustable by the professor 2026-11-26 (review H, #126): a table, a budget table, a budget, a timesheet, a time sheet and a spreadsheet are the kind table, which the figure criteria judge; they were other."
   },
   "rubric.element_regexes": {
-    "value": ["^\\s*- \\[ \\]\\s+(.+)$", "^\\s*(\\d+)\\.\\s+(.+)$"],
+    "value": ["^\\s*- \\[ \\]\\s+(.+)$", "^(\\d+)\\.\\s+(.+)$"],
     "provenance": "owner rubric format, 2026-11-27: the first rule is the checklist line of the rubric, the second the top-level numbered point (its bold label kept as the element name, the number dropped); bullets without a checkbox are not elements; the first rule that matches at least one line of a section gives that section its elements, in rubric order"
   },
   "rubric.loose_heading_regex": {

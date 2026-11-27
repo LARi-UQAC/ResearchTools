@@ -34,7 +34,9 @@ def make_ctx():
     return StepContext(
         prompts={
             "audit_item": "AUDIT {{ITEM}} {{GRADE_RECORD}} {{EVIDENCE_PAGES}}",
-            "grade_item": "GRADE {{ITEM}} {{SECTIONS}} {{LEVELS}} {{LANGUAGE_OF_REPORT}} {{CALIBRATION_NOTE}}"
+            "grade_item": "GRADE {{ITEM}} {{SECTIONS}} {{LEVELS}} {{LANGUAGE_OF_REPORT}} {{CALIBRATION_NOTE}}",
+            # The retry template of a model-named item with too few elements (review round 1, finding 7).
+            "retry_grade_item": "## fr_few\nFew.\n\n## en_few\nFew.\n"
         },
         schemas={
             "audit_item": {"type": "object"},
@@ -328,6 +330,20 @@ class TestMissingInTheAudit(unittest.TestCase):
         result = audit_report(rubric, self.pages, grade, call, self.ctx, "en", "")
         self.assertEqual(result["items"][0]["missing"], "MISS_ONE")
         self.assertEqual(result["items"][0]["comment"], "CMT_ONE")
+
+
+from unittest import mock as _mock
+
+_MIN_ELEMENTS = _mock.patch("ugs_grade.read_min_model_elements", return_value=1)
+
+
+def setUpModule():
+    """Pin the minimum of model-named elements to 1: these tests pin the audit rules (review round 1, finding 7)."""
+    _MIN_ELEMENTS.start()
+
+
+def tearDownModule():
+    _MIN_ELEMENTS.stop()
 
 
 if __name__ == '__main__':

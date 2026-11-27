@@ -39,7 +39,7 @@ TEST_SCALE = GradeScale(
 STEP = Decimal("0.25")
 QUOTE = {"min_chars": 12, "min_words": 3, "min_word_share": 0.9, "window_factor": 1.3, "page_window": 1, "max_words": 24}
 SETTINGS = {"quote": QUOTE, "unverified_as": "partial", "step": STEP, "max_elements": 12,
-            "comment_openings": ["le rapport", "ce rapport", "the report", "this report"]}
+            "comment_openings": ["le rapport", "ce rapport", "the report", "this report"], "min_model_elements": 1}
 
 
 class FakeCall:
@@ -75,7 +75,9 @@ def make_ctx():
                 "## fr_mismatch\nMismatch.\n\n"
                 "## en_mismatch\nMismatch.\n\n"
                 "## fr_comment\nComment.\n\n"
-                "## en_comment\nComment.\n"
+                "## en_comment\nComment.\n\n"
+                "## fr_few\nFew.\n\n"
+                "## en_few\nFew.\n"
             ),
         },
         schemas={"grade_item": {"type": "object"}, "rubric": {"type": "object"}},
@@ -491,7 +493,7 @@ class TestTotals(unittest.TestCase):
 
 FINE_STEP = Decimal("0.001")
 OPENINGS = ["le rapport", "ce rapport", "the report", "this report"]
-SETTINGS_FINE = dict(SETTINGS, step=FINE_STEP, comment_openings=OPENINGS)
+SETTINGS_FINE = dict(SETTINGS, step=FINE_STEP, comment_openings=OPENINGS, min_model_elements=1)
 ITEM_FOUR = {"id": "I01", "title": "Intro", "max_points": 1,
              "elements": [{"id": "E1", "text": "Contexte"}, {"id": "E2", "text": "Objectif"},
                           {"id": "E3", "text": "Methode"}, {"id": "E4", "text": "Resultat"}]}
@@ -634,6 +636,98 @@ class TestGradeConfigPoints(unittest.TestCase):
     def test_the_new_codes_are_in_the_table(self):
         self.assertIn("elements_mismatch", GRADE_CODES)
         self.assertIn("comment_scope", GRADE_CODES)
+
+
+SETTINGS_FEW = dict(SETTINGS_FINE, min_model_elements=3)
+ITEM_MODEL = {"id": "I01", "title": "Intro", "max_points": 1}
+
+
+def _model_answer(names, comment="Cette section est presque complete.", ids=None):
+    """Return a rated answer naming the given model elements, all present and with a quote on page 1 (fictitious)."""
+    return {"status": "rated", "comment": comment,
+            "elements": [{"element": name, "verdict": "present", "page": 1, "quote": GOOD_QUOTE} for name in names]}
+
+
+class TestCommentScopeFallbacks(unittest.TestCase):
+    """Review round 1, group B, finding 3: a comment-scope answer is the fallback; it is never not_run."""
+
+    def record(self, responses, retries):
+        """Grade ITEM_FOUR with scripted answers and the given number of retries."""
+        ctx = make_ctx()
+        ctx.grade_retries = retries
+        return grade_item(ITEM_FOUR, PAGES, FakeCall(responses), ctx, "fr", "", settings=SETTINGS_FINE)
+
+    def test_scope_alone_with_no_retry_left_is_kept_with_its_sentence_dropped(self):
+        record = self.record([_four_answer(comment="Le rapport est complet.")], retries=0)
+        self.assertEqual(record["status"], "rated")
+        self.assertEqual(record["comment"], "")
+        self.assertEqual(record["comment_code"], "comment_scope")
+        self.assertEqual(record["validation"], "ok")
+
+    def test_mismatch_then_scope_returns_the_scope_answer_not_not_run(self):
+        bad = _four_answer()
+        bad["elements"][3]["id"] = "E9"
+        record = self.record([bad, _four_answer(comment="Le rapport est complet.")], retries=1)
+        self.assertEqual(record["status"], "rated")
+        self.assertEqual(record["comment_code"], "comment_scope")
+
+    def test_scope_then_mismatch_returns_the_scope_answer_not_not_run(self):
+        bad = _four_answer()
+        bad["elements"][3]["id"] = "E9"
+        record = self.record([_four_answer(comment="Le rapport est complet."), bad], retries=1)
+        self.assertEqual(record["status"], "rated")
+        self.assertEqual(record["comment_code"], "comment_scope")
+        self.assertEqual(record["comment"], "")
+
+
+class TestRubricElementsPerId(unittest.TestCase):
+    """Review round 1, group B, finding 5: rubric elements are prepared per id, never merged by name."""
+
+    def test_two_identical_checklist_lines_are_two_elements(self):
+        item = {"id": "I01", "title": "Intro", "max_points": 1,
+                "elements": [{"id": "E1", "text": "Equipment is listed."},
+                             {"id": "E2", "text": "Equipment is listed."}]}
+        answer = {"status": "rated", "comment": "Cette section est presque complete.", "elements": [
+            _rubric_element("E1", "present"), _rubric_element("E2", "absent", page=None, quote=None)]}
+        record = grade_item(item, PAGES, FakeCall([answer]), make_ctx(), "fr", "", settings=SETTINGS_FINE)
+        self.assertEqual(len(record["elements"]), 2)
+        self.assertEqual(record["score"], 0.5)
+
+
+class TestMinimumModelElements(unittest.TestCase):
+    """Review round 1, group B, finding 7: a model-named item must name at least grade.min_model_elements."""
+
+    def grade(self, responses):
+        """Grade the model-named item with the given scripted answers."""
+        call = FakeCall(responses)
+        record = grade_item(ITEM_MODEL, PAGES, call, make_ctx(), "fr", "", settings=SETTINGS_FEW)
+        return record, call
+
+    def test_one_element_is_asked_again_then_rated_with_elements_few(self):
+        record, call = self.grade([_model_answer(["Alpha"]), _model_answer(["Alpha"])])
+        self.assertEqual(len(call.calls), 2)
+        self.assertEqual(record["status"], "rated")
+        self.assertEqual(record["validation"], "elements_few")
+        self.assertEqual(record["score"], 1)
+
+    def test_a_second_answer_with_enough_elements_is_kept_as_ok(self):
+        record, call = self.grade([_model_answer(["Alpha"]), _model_answer(["Alpha", "Beta", "Gamma"])])
+        self.assertEqual(record["validation"], "ok")
+
+    def test_the_minimum_is_read_from_the_configuration(self):
+        self.assertEqual(ugs_grade.read_min_model_elements(default_path()), 3)
+
+
+class TestGroupBOpeningsAndRules(unittest.TestCase):
+    """Review round 1, group B, finding 9: an opening is a whole word after the punctuation is stripped."""
+
+    def test_a_word_that_only_starts_like_the_opening_is_not_forbidden(self):
+        self.assertFalse(ugs_grade.opens_forbidden("The reported results are fine.", ["the report"]))
+
+    def test_markdown_emphasis_and_guillemets_do_not_hide_the_opening(self):
+        self.assertTrue(ugs_grade.opens_forbidden("**Le rapport** est complet.", ["le rapport"]))
+        self.assertTrue(ugs_grade.opens_forbidden("« Le rapport est complet.", ["le rapport"]))
+        self.assertTrue(ugs_grade.opens_forbidden("Le rapport est complet.", ["le rapport"]))
 
 
 if __name__ == "__main__":

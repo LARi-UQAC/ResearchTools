@@ -104,7 +104,9 @@ absent 0) over the number of elements, rounded to `grade.score_step` (0.001 poin
 (`rubric.element_regexes`: the checklist lines, else the numbered points), each answered by its id (`elements_mismatch`
 when the ids differ, asked again once). Each lost element is named in the item comment with its lost points, and a
 comment that opens on the whole report (`grade.comment_forbidden_openings`) is asked again once, then its sentence is
-dropped (`comment_code`). The level stays in `grade.json` for traceability and decides no points. A rated item with no verified quote is refused
+dropped (`comment_code`). The level stays in `grade.json` for traceability and decides no points. An item with no rubric
+element must name at least `grade.min_model_elements` (3): fewer is asked again once, then the item is rated with the code
+`elements_few`, and the annex marks it for the professor's check. A rated item with no verified quote is refused
 (`evidence_missing`, asked again once, the answer with the most verified elements kept), except an item whose every element is
 absent with a `missing` text, which is level `absent`, score 0. An empty element list is `elements_missing` and fewer elements
 than the rubric checklist is `elements_too_few` (asked again once). `model_score` holds the element

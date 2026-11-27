@@ -95,8 +95,13 @@ present element counts as `grade.unverified_present_counts_as`, an unverified pa
 cannot be found costs that element and never refuses the item. The code computes the level from the verdicts (`assets/grade_levels.json`):
 all present gives `complete_correct`, none present or partial gives `absent`, otherwise the share of present elements (a
 partial one counts `partial_weight`) selects a band. `exemplary` comes only from an explicit `exceptional` claim, and only when
-every element is present and every quote is verified; a refused proof never keeps it. The points are the level's fraction of
-the maximum, rounded to `grade.score_step` and never above the maximum. A rated item with no verified quote is refused
+every element is present and every quote is verified; a refused proof never keeps it. The points come from the elements, not
+from the level (owner, 2026-11-27): the maximum times the sum of the element credits (present 1, partial `partial_weight`,
+absent 0) over the number of elements, rounded to `grade.score_step` (0.001 point). The elements are the rubric's own
+(`rubric.element_regexes`: the checklist lines, else the numbered points), each answered by its id (`elements_mismatch`
+when the ids differ, asked again once). Each lost element is named in the item comment with its lost points, and a
+comment that opens on the whole report (`grade.comment_forbidden_openings`) is asked again once, then its sentence is
+dropped (`comment_code`). The level stays in `grade.json` for traceability and decides no points. A rated item with no verified quote is refused
 (`evidence_missing`, asked again once, the answer with the most verified elements kept), except an item whose every element is
 absent with a `missing` text, which is level `absent`, score 0. An empty element list is `elements_missing` and fewer elements
 than the rubric checklist is `elements_too_few` (asked again once). `model_score` holds the element

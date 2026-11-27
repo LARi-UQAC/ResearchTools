@@ -20,6 +20,7 @@ DEFAULT_LABELS = Path(__file__).resolve().parent.parent / "assets" / "annex_labe
 
 LABEL_LANGUAGES = ("fr", "en")
 LABEL_TEXT_KEYS = ("title", "loop", "item", "score", "status", "comment", "total", "excluded")
+ELEMENT_VERDICT_KEYS = ("present", "partial", "absent")
 STATUS_KEYS = ("rated", "not_applicable", "not_run")
 COLUMN_KEYS = ("item", "score", "status")
 PERCENT_TOTAL = 100
@@ -281,6 +282,15 @@ def load_labels(path: Path, language: str) -> dict:
         raise AnnexError(f"key {where}.validation_values has codes with no grade meaning in {path}: {extra}")
     labels["validation_values"] = {code: codes[code] for code in refusals}
 
+    # The element texts of the item comment (owner, 2026-11-27): verdict labels and the sentences of the comment.
+    verdicts = _require(block, "element_verdicts", path, where)
+    if not isinstance(verdicts, dict):
+        raise AnnexError(f"key {where}.element_verdicts must be an object in {path}")
+    labels["element_verdicts"] = {key: _require_text(verdicts, key, path, f"{where}.element_verdicts")
+                                  for key in ELEMENT_VERDICT_KEYS}
+    for key in ("lost_points", "all_elements_present", "unverified_quote"):
+        labels[key] = _require_text(block, key, path, where)
+
     labels.update(_load_check_labels(block, path, where))
 
     layout = load_layout(path)
@@ -349,6 +359,107 @@ def _validation_text(code: str, labels: dict) -> str:
     return labels["validation_values"][code]
 
 
+ELEMENT_LABEL_WORDS_KEY = "grade.element_label_words"
+
+
+def _points_text(value) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Format a point figure for the student: three decimals, with the trailing zeros and a bare point dropped.
+    Inputs:
+        value: Any - a number (int, float or Decimal).
+    Outputs:
+        text (str): the figure, for example 0.875, 0.125 or 1.
+    --------------------------------------------------------------------------
+    """
+    text = ("%.3f" % float(value)).rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def _cut_words(text: str, max_words: int) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Shorten an element text to a number of words, on a word, with three dots when it is cut.
+    Inputs:
+        text (str): the element text of the rubric.
+        max_words (int): the most words kept.
+    Outputs:
+        text (str): the text, cut when it had more words.
+    --------------------------------------------------------------------------
+    """
+    words = text.split()
+    if len(words) <= max_words:
+        return " ".join(words)
+    return " ".join(words[:max_words]) + "..."
+
+
+def read_element_label_words(path: Path = DEFAULT_LABELS.parent / "ugs_config.json") -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the most words of an element text kept in a comment (grade.element_label_words).
+    Inputs:
+        path (Path): the configuration JSON, normally ugs_config.default_path().
+    Outputs:
+        words (int): a positive whole number.
+    Raises:
+        AnnexError: if the file is unreadable, the key is absent or the value is not a positive whole number (R3).
+    --------------------------------------------------------------------------
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AnnexError(f"cannot read {path}: {exc}") from exc
+    entry = raw.get(ELEMENT_LABEL_WORDS_KEY) if isinstance(raw, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise AnnexError(f"missing key '{ELEMENT_LABEL_WORDS_KEY}' in {path}")
+    value = entry["value"]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise AnnexError(f"'{ELEMENT_LABEL_WORDS_KEY}' must be a positive whole number in {path}")
+    return value
+
+
+def item_comment(item: dict, max_points, labels: dict, max_words: Optional[int] = None) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The comment of one rated item, as the student reads it in the PDF note and in the annex (owner, 2026-11-27):
+        the score, the model's sentence about this section, then every lost point named with its element, or the
+        sentence that every element is present.
+    Details:
+        Each lost element reads « <element> » <verdict> -<points>, and an element marked present whose quote no tier
+        verified says so. An element text longer than max_words is cut on a word with three dots.
+    Inputs:
+        item (dict): a grade record, with item_id, score, comment and losses (from ugs_grade.with_level_score).
+        max_points (Any): the maximum of the rubric item.
+        labels (dict): the annex labels of the report language, from load_labels.
+        max_words (int | None): the most words of an element text; None reads grade.element_label_words.
+    Outputs:
+        text (str): the comment for the note and the annex.
+    Raises:
+        AnnexError: if a label is missing, or max_words is None and the configuration is unreadable (R3).
+    --------------------------------------------------------------------------
+    """
+    if max_words is None:
+        max_words = read_element_label_words()
+    comment = " ".join(str(item.get("comment") or "").split())
+    head = "%s %s / %s:" % (item["item_id"], _points_text(item.get("score") or 0), max_points)
+    text = head + (" " + comment if comment else "")
+    losses = item.get("losses") or []
+    if not losses:
+        return text + " " + labels["all_elements_present"]
+    parts = []
+    for loss in losses:
+        part = "« %s » %s -%s" % (_cut_words(str(loss.get("text") or ""), max_words),
+                                  labels["element_verdicts"][loss["verdict"]], _points_text(loss["lost"]))
+        if loss.get("unverified"):
+            part += " (%s)" % labels["unverified_quote"]
+        parts.append(part)
+    return text + " " + labels["lost_points"] + " : " + " ; ".join(parts)
+
+
 def render_rows(rubric: dict, grade: dict, totals: dict, labels: Optional[dict] = None) -> str:
     """
     Purpose: Render HTML rows for the rubric table.
@@ -378,6 +489,9 @@ def render_rows(rubric: dict, grade: dict, totals: dict, labels: Optional[dict] 
         score = grade_item.get("score")
         raw_title = item.get("title", "")
         raw_comment = grade_item.get("comment", "")
+        if labels is not None and grade_item.get("status") == "rated":
+            # The comment the student reads: the score, the section sentence and every lost point (2026-11-27).
+            raw_comment = item_comment(grade_item, max_points, labels)
         if labels is not None:
             raw_title = _break_long_runs(raw_title, labels["max_unbroken_run"])
             raw_comment = _break_long_runs(raw_comment, labels["max_unbroken_run"])

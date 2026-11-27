@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "figure-review" / "scripts" / "Test"))
 
 import ugs_assemble
+from pdf_annex import DEFAULT_LABELS, load_labels, item_comment
 from _pdf_fixtures import make_report
 
 
@@ -91,14 +92,15 @@ class TestUgsAssemble(unittest.TestCase):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_grade_annotations_one_per_evidence_entry(self):
-        annotations = ugs_assemble.grade_annotations(self.rubric, self.grade)
+        annotations = ugs_assemble.grade_annotations(self.rubric, self.grade, "en")
         self.assertEqual(len(annotations), 1)
         self.assertEqual(annotations[0]["page"], 1)
         self.assertEqual(annotations[0]["kind"], "technical")
         self.assertEqual(annotations[0]["code"], "I01")
         self.assertEqual(annotations[0]["quote"], "Hello")
         self.assertIsNone(annotations[0]["rect"])
-        self.assertEqual(annotations[0]["comment"], "I01 45.0 / 50: Good")
+        # The note is the item comment: the score, the sentence, then the element sentence (2026-11-27).
+        self.assertEqual(annotations[0]["comment"], "I01 45 / 50: Good Every element of the rubric is present.")
 
     def test_unrated_items_make_no_annotation(self):
         # I02 is not_run, so no annotation for it.
@@ -107,7 +109,7 @@ class TestUgsAssemble(unittest.TestCase):
         grade_copy = json.loads(json.dumps(self.grade))
         grade_copy["items"][0]["status"] = "not_applicable"
         grade_copy["items"][0]["score"] = None
-        annotations = ugs_assemble.grade_annotations(self.rubric, grade_copy)
+        annotations = ugs_assemble.grade_annotations(self.rubric, grade_copy, "en")
         self.assertEqual(len(annotations), 0)
 
     def test_figure_annotations_only_for_failed_criteria_with_a_comment(self):
@@ -519,6 +521,51 @@ class TestUgsAssemble(unittest.TestCase):
         en_title = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, "en")["title"]
         self.assertIn(fr_title, html_text)
         self.assertNotIn(en_title, html_text)
+
+
+ITEM_PARTIAL = {"item_id": "I01", "status": "rated", "score": 0.875, "comment": "Cette section est presque complete.",
+                "evidence": [{"page": 1, "quote": "The first page describes the fictive engine test"}],
+                "losses": [{"id": "E4", "text": "Resultat", "verdict": "partial", "lost": 0.125, "unverified": False}]}
+RUBRIC_ONE = {"items": [{"id": "I01", "title": "Methode", "max_points": 1}]}
+
+
+class TestItemComment(unittest.TestCase):
+    """The comment the student reads names every lost point, in the report language (owner, 2026-11-27)."""
+
+    def labels(self, language):
+        """Return the annex labels of one language, as the assembly reads them."""
+        return load_labels(DEFAULT_LABELS, language)
+
+    def test_a_partial_element_is_named_with_its_lost_points(self):
+        text = item_comment(ITEM_PARTIAL, 1, self.labels("fr"), max_words=12)
+        self.assertTrue(text.startswith("I01 0.875 / 1: Cette section est presque complete."))
+        self.assertIn("Points perdus : « Resultat » partiel -0.125", text)
+
+    def test_all_present_gives_the_all_present_sentence(self):
+        item = dict(ITEM_PARTIAL, score=1, losses=[])
+        text = item_comment(item, 1, self.labels("fr"), max_words=12)
+        self.assertIn("Tous les éléments de la grille sont présents.", text)
+        self.assertNotIn("Points perdus", text)
+
+    def test_english_labels_for_an_english_report(self):
+        text = item_comment(ITEM_PARTIAL, 1, self.labels("en"), max_words=12)
+        self.assertIn("Points lost : « Resultat » partial -0.125", text)
+
+    def test_the_note_and_the_annex_carry_the_same_text(self):
+        note = ugs_assemble.grade_annotations(RUBRIC_ONE, {"items": [ITEM_PARTIAL]}, "fr")[0]["comment"]
+        self.assertEqual(note, item_comment(ITEM_PARTIAL, 1, self.labels("fr")))
+
+    def test_a_long_element_text_is_cut_on_a_word_with_an_ellipsis(self):
+        words = " ".join("mot%d" % number for number in range(1, 21))
+        item = dict(ITEM_PARTIAL, losses=[{"id": "E4", "text": words, "verdict": "absent", "lost": 0.25,
+                                           "unverified": False}])
+        text = item_comment(item, 1, self.labels("fr"), max_words=12)
+        self.assertIn("« mot1 mot2 mot3 mot4 mot5 mot6 mot7 mot8 mot9 mot10 mot11 mot12... »", text)
+        self.assertNotIn("mot13", text)
+
+    def test_the_word_limit_is_read_from_the_configuration(self):
+        from ugs_config import load, default_path
+        self.assertEqual(load(default_path())["grade.element_label_words"], 12)
 
 
 if __name__ == "__main__":

@@ -181,6 +181,10 @@
     "value": 24,
     "provenance": "chosen by the session 2026-11-27 under the owner's review of round 2: twice the 12 words the prompt asks for; a longer quote skips the fuzzy tier (resource cap)"
   },
+  "grade.element_label_words": {
+    "value": 12,
+    "provenance": "session 2026-11-27, keeps a note readable: the most words of an element text repeated in a comment; a longer text is cut on a word with three dots"
+  },
   "grade.max_elements": {
     "value": 12,
     "provenance": "starting value, unmeasured, adjustable by the professor (review round 2): elements beyond this count in one item are ignored and counted, a resource cap on the verification"

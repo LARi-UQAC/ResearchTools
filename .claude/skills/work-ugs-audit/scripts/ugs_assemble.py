@@ -15,7 +15,7 @@ sys.path.insert(0, str(_FIGURE_REVIEW_SCRIPTS))
 from figure_checks import failure_comment, load_criteria
 from grade_total import compute
 from pdf_annotate import annotate
-from pdf_annex import DEFAULT_LABELS, TITLE_KIND_CODES, TITLE_PLACEMENT_CHECK_ID, render_rows, build_html, append_annex, load_labels, render_checks
+from pdf_annex import DEFAULT_LABELS, TITLE_KIND_CODES, TITLE_PLACEMENT_CHECK_ID, render_rows, build_html, append_annex, load_labels, render_checks, item_comment
 from ref_check import check_all, _default_resolver
 from ugs_text import REF_HEADING_RE, split_body_and_references
 from ugs_tables import load_elements
@@ -386,22 +386,23 @@ def _read_report_meta(path: Path) -> dict:
     return data
 
 
-def grade_annotations(rubric: dict, grade: dict) -> List[dict]:
+def grade_annotations(rubric: dict, grade: dict, language: str) -> List[dict]:
     """
-    Purpose: Generate annotations for rated items with evidence.
+    Purpose: Generate annotations for rated items with evidence. The note carries the same comment as the annex row
+        (item_comment, owner 2026-11-27).
     Inputs:
         rubric: dict - The rubric definition.
         grade: dict - The grade data.
+        language: str - The report language, fr or en, which selects the labels of the comment.
     Outputs:
         List[dict] - List of annotation dictionaries.
     """
     annotations = []
+    labels = load_labels(DEFAULT_LABELS, language)
     for item in grade.get("items", []):
         if item.get("status") != "rated":
             continue
         item_id = item.get("item_id")
-        score = item.get("score")
-        comment = item.get("comment", "")
         max_points = None
         for r_item in rubric.get("items", []):
             if r_item.get("id") == item_id:
@@ -418,7 +419,7 @@ def grade_annotations(rubric: dict, grade: dict) -> List[dict]:
                 "code": item_id,
                 "quote": evidence.get("quote"),
                 "rect": None,
-                "comment": f"{item_id} {score} / {max_points}: {comment}"
+                "comment": item_comment(item, max_points, labels)
             })
     return annotations
 
@@ -662,7 +663,7 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
 
     # Generate annotations
     annotations = []
-    annotations.extend(grade_annotations(rubric, grade))
+    annotations.extend(grade_annotations(rubric, grade, language))
     
     if language_data:
         # ugs_language.py returns "annotations" key

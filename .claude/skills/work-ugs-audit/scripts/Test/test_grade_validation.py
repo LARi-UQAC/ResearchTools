@@ -80,7 +80,7 @@ def make_ctx():
                 "## en_few\nFew.\n"
             ),
         },
-        schemas={"grade_item": {"type": "object"}, "rubric": {"type": "object"}},
+        schemas={"grade_item": REAL_GRADE_SCHEMA, "rubric": {"type": "object"}},
         levels={"absent": 0, "attempted": 0.5, "partial": 0.75, "complete_correct": 0.88, "exemplary": 1.0},
         window_tokens=1000,
         reserve_tokens=100,
@@ -768,6 +768,75 @@ class TestFewElementsCommentScope(unittest.TestCase):
         record = self.grade([_model_answer(["Alpha"]), _model_answer(["Alpha"])], retries=1)
         self.assertEqual(record["validation"], "elements_few")
         self.assertFalse(record["flag"])
+
+
+REAL_GRADE_SCHEMA = json.loads((PROMPTS_DIR / "schemas.json").read_text(encoding="utf-8"))["grade_item"]
+SIX_ELEMENT_ITEM = {"id": "I01", "title": "Intro", "max_points": 6,
+                    "elements": [{"id": "E%d" % n, "text": "Fictitious element %d" % n} for n in range(1, 7)]}
+
+
+class RecordingCall:
+    """A scripted call that records the schema each prompt is sent with (fictitious answers, R21)."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.schemas = []
+
+    def __call__(self, prompt, schema, images=None):
+        self.schemas.append(schema)
+        return self.responses.pop(0)
+
+
+class TestPerItemSchema(unittest.TestCase):
+    """Review round 3 (defect on the real R01 run): an item with rubric elements is answered under a schema that
+    forces its ids; an item without rubric elements keeps the unchanged schema."""
+
+    def grade(self, item, responses, retries=0):
+        """Grade one item with the real schema file and the scripted answers; return (record, recording call)."""
+        ctx = make_ctx()
+        ctx.grade_retries = retries
+        ctx.schemas = {"grade_item": REAL_GRADE_SCHEMA, "rubric": {"type": "object"}}
+        call = RecordingCall(responses)
+        record = grade_item(item, PAGES, call, ctx, "en", "", settings=SETTINGS_FINE)
+        return record, call
+
+    def test_an_item_with_six_rubric_elements_is_answered_under_a_schema_forcing_its_ids(self):
+        answer = {"status": "rated", "comment": "Fine.", "elements": [
+            _rubric_element("E%d" % n, "present") for n in range(1, 7)]}
+        _, call = self.grade(SIX_ELEMENT_ITEM, [answer])
+        sent = call.schemas[0]
+        entry = sent["properties"]["elements"]
+        self.assertEqual(entry["minItems"], 6)
+        self.assertEqual(entry["maxItems"], 6)
+        self.assertIn("id", entry["items"]["required"])
+        self.assertEqual(entry["items"]["properties"]["id"]["enum"], ["E%d" % n for n in range(1, 7)])
+
+    def test_an_item_without_rubric_elements_keeps_the_unchanged_schema(self):
+        item = {"id": "I09", "title": "Plain", "max_points": 1}
+        answer = {"status": "rated", "comment": "Fine.", "elements": [_present(), _present(name="b"),
+                                                                       _present(name="c")]}
+        _, call = self.grade(item, [answer])
+        self.assertEqual(call.schemas[0], REAL_GRADE_SCHEMA)
+
+    def test_the_static_schema_file_is_not_changed_by_the_per_item_copy(self):
+        before = json.dumps(REAL_GRADE_SCHEMA, sort_keys=True)
+        answer = {"status": "rated", "comment": "Fine.", "elements": [
+            _rubric_element("E%d" % n, "present") for n in range(1, 7)]}
+        self.grade(SIX_ELEMENT_ITEM, [answer])
+        self.assertEqual(json.dumps(REAL_GRADE_SCHEMA, sort_keys=True), before)
+
+
+class IdMismatchRecordTest(unittest.TestCase):
+    """Review round 3, finding 4: a record of elements_mismatch names the given and the expected ids (ids only)."""
+
+    def test_the_record_holds_the_given_and_the_expected_ids_and_no_text(self):
+        bad = _four_answer()
+        bad["elements"][3]["id"] = "E9"
+        ctx = make_ctx()
+        record = grade_item(ITEM_FOUR, PAGES, FakeCall([bad, bad]), ctx, "fr", "", settings=SETTINGS_FINE)
+        self.assertEqual(record["validation"], "elements_mismatch")
+        self.assertEqual(record["id_check"], {"given": ["E1", "E2", "E3", "E9"], "expected": ["E1", "E2", "E3", "E4"]})
+        self.assertNotIn("Fictitious element", json.dumps(record["id_check"]))
 
 
 class TestGroupBOpeningsAndRules(unittest.TestCase):

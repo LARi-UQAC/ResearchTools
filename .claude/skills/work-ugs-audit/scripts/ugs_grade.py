@@ -5,6 +5,7 @@ The model names, for each rubric item, the elements the item requires and a verd
 absent). The code computes the level from those verdicts (grade_levels.json) and the points from the level.
 """
 
+import copy
 import json
 import math
 import re
@@ -1043,6 +1044,56 @@ def _few_record(item_id: str, answer: dict, attempts: int, max_points: Any, miss
     return _record_from_answer(item_id, answer, "elements_few", attempts, max_points, missing_max_chars)
 
 
+def item_schema(base: dict, rubric_elements: list) -> dict:
+    """
+    Purpose: The schema an item is answered under: for an item with rubric elements, a copy of the grade_item schema
+        in which each element must carry an id, the id is one of the given ids, and the elements number exactly the
+        given count (review round 3). An item without rubric elements gets the base schema itself.
+    Inputs:
+        base: dict - the grade_item schema of schemas.json; never changed.
+        rubric_elements: list - the rubric elements of the item, each with an id (empty for a model-named item).
+    Outputs:
+        dict - the schema to send with the item's call.
+    Raises:
+        ValueError: if the base schema has no elements array to constrain (R3).
+    """
+    if not rubric_elements:
+        return base
+    try:
+        copied = copy.deepcopy(base)
+        elements = copied["properties"]["elements"]
+        entry = elements["items"]
+        entry["properties"]
+    except (KeyError, TypeError) as exc:
+        raise ValueError("the grade_item schema has no elements array to constrain") from exc
+    ids = [ref["id"] for ref in rubric_elements]
+    elements["minItems"] = len(ids)
+    elements["maxItems"] = len(ids)
+    required = list(entry.get("required", []))
+    if "id" not in required:
+        required.append("id")
+    entry["required"] = required
+    entry["properties"]["id"] = {"type": "string", "enum": ids}
+    return copied
+
+
+def _id_check(item: dict, answer: dict) -> dict:
+    """
+    Purpose: The ids an answer gave and the ids its item expects, as sorted lists of ids only (review round 3, finding 4).
+    Inputs:
+        item: dict - the rubric item, with its elements.
+        answer: dict - the raw answer of the refused attempt.
+    Outputs:
+        dict - {"given": [...], "expected": [...]}, ids only, never text.
+    Raises:
+        None.
+    """
+    elements = answer.get("elements") if isinstance(answer, dict) else None
+    given = [str(entry.get("id")) for entry in elements if isinstance(entry, dict)] if isinstance(elements, list) else []
+    expected = [str(ref["id"]) for ref in item.get("elements") or []]
+    return {"given": sorted(given), "expected": sorted(expected)}
+
+
 def _item_text(item: dict) -> str:
     """
     Purpose: The ITEM text of the grader prompt: the rubric section, then its elements with their ids when the rubric
@@ -1128,7 +1179,9 @@ def grade_item(
 
     if ctx.emit is not None:
         ctx.emit("read", page_range(selected_pages), report_id=report_id)
-    schema = ctx.schemas["grade_item"]
+    # Review round 3 (defect on the real R01 run): an item with rubric elements is answered under a schema that forces
+    # its ids; the static file stays unchanged, and the id check of check_grade_answer remains the final check.
+    schema = item_schema(ctx.schemas["grade_item"], item.get("elements") or [])
     scale = load_grade_scale()
     quote_settings = settings["quote"]
     unverified_as = settings["unverified_as"]
@@ -1210,7 +1263,11 @@ def grade_item(
         return _few_record(item_id, answer, attempts, item.get("max_points", 0), missing_max_chars, openings)
     if best is None:
         return _no_answer_record(item_id, code, attempts, "")
-    return _record_from_answer(item_id, best[0], best[1], attempts, item.get("max_points", 0), missing_max_chars)
+    record = _record_from_answer(item_id, best[0], best[1], attempts, item.get("max_points", 0), missing_max_chars)
+    if best[1] == "elements_mismatch":
+        # Review round 3, finding 4: the ids the model gave and the ids the item expects, ids only, for the next diagnosis.
+        record["id_check"] = _id_check(item, best[0])
+    return record
 
 
 def grade_report(

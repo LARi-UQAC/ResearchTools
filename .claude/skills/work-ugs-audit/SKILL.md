@@ -106,7 +106,10 @@ when the ids differ, asked again once). Each lost element is named in the item c
 comment that opens on the whole report (`grade.comment_forbidden_openings`) is asked again once, then its sentence is
 dropped (`comment_code`). The level stays in `grade.json` for traceability and decides no points. An item with no rubric
 element must name at least `grade.min_model_elements` (3): fewer is asked again once, then the item is rated with the code
-`elements_few`, and the annex marks it for the professor's check. A rated item with no verified quote is refused
+`elements_few`, and the annex marks it for the professor's check. The item keeps its points and its record is not flagged
+(`flag` false), so the ledger step is not blocked by it. The 3-element minimum is a speed bump, not a guard: the real
+protection is a checklist in the rubric, which fixes the elements; a model naming three trivial verified elements still
+earns the section. A rated item with no verified quote is refused
 (`evidence_missing`, asked again once, the answer with the most verified elements kept), except an item whose every element is
 absent with a `missing` text, which is level `absent`, score 0. An empty element list is `elements_missing` and fewer elements
 than the rubric checklist is `elements_too_few` (asked again once). `model_score` holds the element
@@ -204,7 +207,14 @@ python .claude/skills/work-ugs-audit/scripts/grade_total.py rubric.json my_grade
 
 Exit 0 when every stored score matches (or none is stored), 1 on a mismatch, 2 on a refusal (an unknown verdict, an element
 count or id set that differs from the rubric's elements of the item). An item with no elements keeps its stored score and is
-reported `not_recomputed`. `--write` names a new file and writes only with `--yes`.
+reported `not_recomputed`; elements with no stored score are reported `no_stored_score`. `--write` names a new file and
+writes only with `--yes`.
+
+The recomputation trusts the stored `effective` and `verified` fields of each element: a hand edit of both passes the
+check. It guards against a stored score that disagrees with its elements, not against edited elements; the rubric's
+checklist is the protection against an element the model invents. A mismatch stops the run with `score_not_reproduced`,
+whose message names the remedy: rerun the section scores with `grade_total.py RUBRIC GRADE --recompute --write OUT --yes`,
+then rerun assemble on OUT.
 
 ## Limits
 

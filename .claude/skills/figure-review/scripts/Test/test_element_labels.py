@@ -505,6 +505,30 @@ class TitleLineAlignmentTest(unittest.TestCase):
         self.assertIsNotNone(title)
         self.assertEqual(len(title["lines"]), 1)
 
+    def _title_lines(self, text):
+        """Return the title lines find_title keeps for a caption written as text on a fictitious page."""
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_textbox(fitz.Rect(100, 402, 500, 470), text, fontsize=10)
+        blocks = page.get_text("blocks")
+        line_boxes = [tuple(line["bbox"]) + ("".join(s["text"] for s in line["spans"]),)
+                      for block in page.get_text("dict")["blocks"] for line in block.get("lines", [])]
+        title = el.find_title(blocks, FIGURE_RECT, "figure", el.load_markers(MARKERS_PATH), None, line_boxes)
+        doc.close()
+        return title["lines"]
+
+    def test_a_caption_with_no_final_mark_stops_at_the_vertical_gap_before_the_body(self):
+        # Review round 2, finding 5: one block holds the caption and the body; the body line sits 16 pt below a 12 pt
+        # caption line (a gap of 1.33 line heights), so the title ends with the caption. Fictitious geometry (R34).
+        block = (100, 402, 500, 442, "Figure 1 fictitious title\nBody text line one of the report.", 0, 0)
+        line_boxes = [(100, 402, 300, 414, "Figure 1 fictitious title"),
+                      (100, 430, 400, 442, "Body text line one of the report.")]
+        title = el.find_title([block], FIGURE_RECT, "figure", el.load_markers(MARKERS_PATH), None, line_boxes)
+        self.assertEqual(len(title["lines"]), 1)
+
+    def test_a_caption_that_wraps_on_a_mid_sentence_colon_keeps_both_lines(self):
+        self.assertEqual(len(self._title_lines("Figure 1 fictitious title:\nthe second line of the caption")), 2)
+
     def test_no_lines_gives_no_line_alignment(self):
         self.assertIsNone(el.lines_alignment([], fitz.Rect(100, 100, 500, 400), self.RATIO))
 

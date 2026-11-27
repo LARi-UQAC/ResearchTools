@@ -26,6 +26,10 @@
     "value": "^\\s*\\d+(?:\\.\\d+)+\\s+[A-Za-z\\u00c0-\\u00ff]{3,}",
     "provenance": "proposal 2026-11-25 (review I3): a numbered section heading of two levels or more and a word of three letters or more; a figure label such as 1.5 V is not a heading. A barrier between two figures"
   },
+  "title_line_gap_ratio": {
+    "value": 0.5,
+    "provenance": "session 2026-11-27, review round 2 finding 5: a vertical gap between two title lines larger than this share of the caption line height ends the title (a blank line is about one line height); tune on the real reports"
+  },
   "title_overlap_pt": {
     "value": 12,
     "provenance": "proposal 2026-11-25 (plan 17, real check on R01 page 17): a caption whose top lies this many points inside the edge of its drawing is still the title on that side; tune on the real reports"

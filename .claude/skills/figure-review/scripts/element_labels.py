@@ -12,7 +12,8 @@ DEFAULT_MARKERS_PATH = Path(__file__).resolve().parent.parent / "assets" / "elem
 # Prefix lists the markers file must carry (R3: a missing key is a named error).
 PREFIX_KEYS = ("figure_prefixes", "table_prefixes", "note_prefixes")
 # Numeric entries, each {"value": number, "provenance": str} (R4).
-NUMERIC_KEYS = ("max_title_distance_pt", "max_note_distance_pt", "centre_tolerance_ratio", "column_min_words")
+NUMERIC_KEYS = ("max_title_distance_pt", "max_note_distance_pt", "centre_tolerance_ratio", "column_min_words",
+                "title_line_gap_ratio")
 
 # Element type to the prefix list it must start with.
 ELEMENT_PREFIX_KEYS = {"figure": "figure_prefixes", "table": "table_prefixes"}
@@ -232,7 +233,7 @@ def lines_alignment(lines: List[tuple], rect: "fitz.Rect", tolerance_ratio: floa
     return ALIGN_RIGHT
 
 
-def _lines_inside(block: tuple, line_boxes: Optional[List[tuple]]) -> List[tuple]:
+def _lines_inside(block: tuple, line_boxes: Optional[List[tuple]], gap_ratio: float = 0.5) -> List[tuple]:
     """
     Purpose: Give the page lines that lie inside a text block's rectangle (one pixel of slack for rounding).
     Inputs:
@@ -248,14 +249,20 @@ def _lines_inside(block: tuple, line_boxes: Optional[List[tuple]]) -> List[tuple
     inside = sorted((box for box in line_boxes
                      if box[0] >= block[0] - 1 and box[2] <= block[2] + 1
                      and box[1] >= block[1] - 1 and box[3] <= block[3] + 1), key=lambda box: box[1])
-    # Review round 1, finding 8: the title stops at the caption. A caption line ends with a sentence mark (the body
-    # lines after it do too, the caption paragraph being the first one), so the lines after the first sentence end
-    # are the body and are dropped. A line box without its text keeps every line (no cut).
+    # Review round 1, finding 8: the title stops at the caption. Review round 2, finding 5: it stops also at a vertical
+    # gap larger than gap_ratio of the caption line height (a blank line), and at a sentence end (. ! ?). A colon does
+    # not end a title (a caption may wrap on one). A line box without its text keeps every line (no cut).
     title = []
+    previous = None
     for box in inside:
+        if previous is not None:
+            line_height = previous[3] - previous[1]
+            if line_height > 0 and box[1] - previous[3] > gap_ratio * line_height:
+                break
         title.append(box)
+        previous = box
         text = box[4].rstrip() if len(box) > 4 and isinstance(box[4], str) else ""
-        if text.endswith((".", "!", "?", ":", ";")):
+        if text.endswith((".", "!", "?")):
             break
     return title
 
@@ -417,7 +424,7 @@ def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
         candidates = sorted(found[direction], key=lambda item: item[0])
         if candidates:
             _, block, text = candidates[0]
-            lines = _lines_inside(block, line_boxes)
+            lines = _lines_inside(block, line_boxes, _marker_value(markers, "title_line_gap_ratio"))
             alignment = lines_alignment(lines, rect, tolerance, column) if lines else None
             return {
                 "text": text,

@@ -116,7 +116,8 @@ class TestPdfAnnotate(unittest.TestCase):
         self.assertEqual(result["placed"], 1)
         import fitz
         doc = fitz.open(self.dst_pdf)
-        annots = list(doc[0].annots())
+        page = doc[0]
+        annots = list(page.annots())
         self.assertEqual(len(annots), 1)
         self.assertEqual(annots[0].type[0], 8)  # Highlight only: no text note (type 0) beside it
         self.assertEqual(annots[0].info["content"], "")

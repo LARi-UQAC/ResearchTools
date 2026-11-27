@@ -13,7 +13,39 @@ _SHIPPED_CRITERIA = _SKILLS_DIR / "figure-review" / "assets" / "figure_criteria.
 sys.path.insert(0, str(_FIGURE_REVIEW_SCRIPTS))
 
 from figure_checks import failure_comment, load_criteria
-from grade_total import compute
+from grade_total import compute, recompute
+import ugs_grade
+from ugs_config import default_path
+
+
+class ScoreNotReproduced(ValueError):
+    """Raised when a stored section score is not the one its elements give (plan 29, owner 2026-11-27).
+
+    The ledger note carries the code, never the score, so the run is blocked with the code it names.
+    """
+
+    code = "score_not_reproduced"
+
+
+def check_scores(rubric: dict, grade: dict) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Stop the assembly when a stored section score is not reproduced by the same recomputation the command uses
+        (plan 29, Task 2). An item with no elements or no stored score is not compared.
+    Inputs:
+        rubric (dict): the rubric of the report.
+        grade (dict): the grade of the report, as grade.json holds it.
+    Outputs:
+        None.
+    Raises:
+        ScoreNotReproduced: naming the ids of the items whose stored score differs from the recomputed one.
+    --------------------------------------------------------------------------
+    """
+    result = recompute(rubric, grade, ugs_grade.load_grade_scale(), ugs_grade.read_grade_step(default_path()))
+    differing = [item["item_id"] for item in result["items"] if item["match"] is False]
+    if differing:
+        raise ScoreNotReproduced("stored score not reproduced for items: " + ", ".join(differing))
 from pdf_annotate import annotate
 from pdf_annex import DEFAULT_LABELS, TITLE_KIND_CODES, TITLE_PLACEMENT_CHECK_ID, render_rows, build_html, append_annex, load_labels, render_checks, item_comment
 from ref_check import check_all, _default_resolver
@@ -670,6 +702,9 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
     # Read grade
     grade_path = report_dir / "grade.json"
     grade = json.loads(grade_path.read_text(encoding="utf-8"))
+
+    # Plan 29, Task 2: a stored score the elements do not give stops the run before any output is written.
+    check_scores(rubric, grade)
 
     # Compute totals
     totals = compute(rubric, grade)

@@ -638,6 +638,36 @@ class TestGroupAComment(unittest.TestCase):
         self.assertTrue(annotations[0]["on_rect"])
 
 
+class ScoreReproductionTest(unittest.TestCase):
+    """Plan 29 Task 2: the assemble step refuses a stored score that its elements do not reproduce."""
+
+    def setUp(self):
+        TestUgsAssemble.setUp(self)
+        # I01 is rated 45 stored; its two elements (one present, one absent) of a 50-point section give 25.
+        self.grade["items"][0]["elements"] = [{"id": "E1", "verdict": "present"}, {"id": "E2", "verdict": "absent"}]
+        (self.report_dir / "grade.json").write_text(json.dumps(self.grade), encoding="utf-8")
+
+    def tearDown(self):
+        TestUgsAssemble.tearDown(self)
+
+    def test_a_mismatching_stored_score_stops_before_the_annotated_pdf(self):
+        from ugs_assemble import ScoreNotReproduced
+        with self.assertRaises(ScoreNotReproduced) as ctx:
+            ugs_assemble.assemble_report(self.src_pdf, self.report_dir, "R01", 1, self.rubric, self.pages,
+                                         self.language, self.settings, None)
+        self.assertEqual(ctx.exception.code, "score_not_reproduced")
+        self.assertFalse((self.report_dir / "annotated.pdf").exists())
+
+    def test_a_matching_stored_score_passes_the_check(self):
+        self.grade["items"][0]["score"] = 25.0
+        ugs_assemble.check_scores(self.rubric, self.grade)  # no exception
+
+    def test_an_item_without_elements_is_not_recomputed_and_passes(self):
+        ugs_assemble.check_scores(self.rubric, {"report_id": "R01", "items": [
+            {"item_id": "I01", "status": "rated", "score": 45.0, "comment": "", "evidence": []},
+            {"item_id": "I02", "status": "not_run", "score": None, "comment": "", "evidence": []}]})
+
+
 def _pdf_with_text(folder, text):
     """Write a one-page fictitious PDF carrying one line of text and return its path."""
     import fitz

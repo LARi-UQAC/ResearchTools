@@ -185,6 +185,27 @@ or an error text.
 `pdf_annex.py`, `vision_probe.py`, `crossref_checks.py`, `front_pages.py`, `front_matter.py`, `count_check.py`,
 `count_loop.py`, `table_image.py`. Each has an offline test in `scripts/Test/`.
 
+## Recomputing a score (plan 29)
+
+Anyone can recompute every section score and the final score from a JSON file of element verdicts, with the same
+functions the grade step uses, and the run stops before writing the annotated PDF when a stored score is not
+reproduced (`score_not_reproduced`). The input is `grade.json` itself or a hand-written file of the same shape:
+
+```bash
+python .claude/skills/work-ugs-audit/scripts/grade_total.py rubric.json my_grade.json --recompute --json
+python .claude/skills/work-ugs-audit/scripts/grade_total.py rubric.json my_grade.json --recompute --write out.json --yes
+```
+
+```json
+{"report_id": "R01", "items": [{"item_id": "I01", "status": "rated",
+  "elements": [{"id": "E1", "verdict": "present"}, {"id": "E2", "verdict": "present"},
+               {"id": "E3", "verdict": "present"}, {"id": "E4", "verdict": "partial"}]}]}
+```
+
+Exit 0 when every stored score matches (or none is stored), 1 on a mismatch, 2 on a refusal (an unknown verdict, an element
+count or id set that differs from the rubric's elements of the item). An item with no elements keeps its stored score and is
+reported `not_recomputed`. `--write` names a new file and writes only with `--yes`.
+
 ## Limits
 
 - Measured 2026-11-25 on two real reports: the titled figure and table numbers matched their lists, but a scanned

@@ -101,6 +101,11 @@ $realEnv = Save-RealEnv
 try {
     . $ScriptUnderTest
 
+    # The AugureAI section below shadows these two; keep the real code for the liveness and
+    # settings checks of Issue #75 (the proxy address and the 2xx liveness answer).
+    $realTestAugureProxy     = ${function:Test-AugureProxy}
+    $realReadAugureDataFile  = ${function:Read-AugureDataFile}
+
     # --- shadow every real dependency, never invoked for real ---
     $script:claudeCallCount = 0
     function claude { $script:claudeCallCount++ }
@@ -575,6 +580,78 @@ try {
     Check "MCP key value absent from the python arguments" (-not ($pyArgs -match "user-mcp-key"))
     Check "MCP key handed to the child environment under its name" ($null -ne $childEnvMap -and $childEnvMap["AUGURE_MCP_KEY"] -eq "user-mcp-key")
     Check "MCP key never placed in the session environment" (-not (Test-Path Env:\AUGURE_MCP_KEY))
+
+    # --- 6e. Issue #75: the proxy address is refused unless loopback, the port is an integer 1..65535,
+    #         and the liveness route must answer 2xx. Nothing is redirected on a refusal. ---
+    $script:SettingsOverride = @{}
+    $script:ProbeCalls  = 0
+    $script:ProbeThrow  = $false
+    $script:ProbeStatus = 200
+
+    function Read-AugureDataFile {
+        param([Parameter(Mandatory)][string]$Name)
+        $doc = & $realReadAugureDataFile -Name $Name
+        if ($Name -eq 'augure-settings.json') {
+            foreach ($key in $script:SettingsOverride.Keys) { $doc.$key.value = $script:SettingsOverride[$key] }
+        }
+        return $doc
+    }
+    function Invoke-WebRequest {
+        param($Uri, [switch]$UseBasicParsing, $TimeoutSec)
+        $script:ProbeCalls++
+        if ($script:ProbeThrow) { throw "shadowed: no answer" }
+        return [pscustomobject]@{ StatusCode = $script:ProbeStatus }
+    }
+
+    $badAddresses = @(
+        @{ Name = "proxy host 0.0.0.0 refused";      Host_ = "0.0.0.0";     Port = 4000 },
+        @{ Name = "proxy host example.org refused";  Host_ = "example.org"; Port = 4000 },
+        @{ Name = "proxy port 0 refused";            Host_ = "127.0.0.1";   Port = 0 },
+        @{ Name = "proxy port 70000 refused";        Host_ = "127.0.0.1";   Port = 70000 },
+        @{ Name = "proxy port non-integer refused";  Host_ = "127.0.0.1";   Port = "4000x" }
+    )
+    foreach ($case in $badAddresses) {
+        Clear-SwitchEnv
+        Set-AugureFixture
+        $script:SettingsOverride = @{ proxy_host = $case.Host_; proxy_port = $case.Port }
+        $script:claudeCallCount = 0
+        $null = & { claude-augure -Profile dev } *>&1
+        Check ("$($case.Name): claude not started")            ($script:claudeCallCount -eq 0)
+        Check ("$($case.Name): no base url set")               (-not (Test-Path Env:\ANTHROPIC_BASE_URL))
+        Check ("$($case.Name): master key never assigned")     (-not (Test-Path Env:\ANTHROPIC_AUTH_TOKEN))
+    }
+    $script:SettingsOverride = @{}
+
+    # The liveness answer itself: only a 2xx counts as up.
+    Set-Item -Path function:Test-AugureProxy -Value $realTestAugureProxy
+    $probeUrl = "http://127.0.0.1:4000/health/liveliness"
+    $script:ProbeStatus = 500
+    $live500 = & $realTestAugureProxy -Url $probeUrl -TimeoutSec 5
+    Check "liveness status 500 is down" (-not $live500)
+    $script:ProbeStatus = 401
+    $live401 = & $realTestAugureProxy -Url $probeUrl -TimeoutSec 5
+    Check "liveness status 401 is down" (-not $live401)
+    $script:ProbeStatus = 200
+    $live200 = & $realTestAugureProxy -Url $probeUrl -TimeoutSec 5
+    Check "liveness status 200 is up"   ($live200 -eq $true)
+    $script:ProbeThrow = $true
+    $liveDown = & $realTestAugureProxy -Url $probeUrl -TimeoutSec 5
+    Check "no answer is down"           (-not $liveDown)
+    $script:ProbeThrow = $false
+
+    # End to end through claude-augure with the real liveness check: 500 refuses, 200 proceeds.
+    Clear-SwitchEnv
+    Set-AugureFixture
+    $script:ProbeStatus = 500
+    $script:claudeCallCount = 0
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "claude-augure refuses a 500 liveness answer" ($script:claudeCallCount -eq 0 -and -not (Test-Path Env:\ANTHROPIC_BASE_URL))
+    Clear-SwitchEnv
+    Set-AugureFixture
+    $script:ProbeStatus = 200
+    $script:claudeCallCount = 0
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "claude-augure proceeds on a 200 liveness answer" ($script:claudeCallCount -eq 1)
 
     Clear-SwitchEnv
 } finally {

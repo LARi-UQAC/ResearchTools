@@ -504,16 +504,17 @@ function Test-AugureProxy {
         TimeoutSec (int): seconds to wait.
 
     Outputs:
-        result (bool): $true when anything answers, an HTTP error included (the proxy is
-        listening); $false when nothing answers.
+        result (bool): $true only when the liveness route answers with a 2xx status. Any other
+        status (401, 500 and so on), a timeout or a connection failure is $false: an error
+        answer from something on the port is not the LiteLLM proxy being up (Issue #75).
     #>
     param([Parameter(Mandatory)][string]$Url, [Parameter(Mandatory)][int]$TimeoutSec)
     try {
-        Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec $TimeoutSec | Out-Null
-        return $true
+        $answer = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec $TimeoutSec
+        $code = [int]$answer.StatusCode
+        return ($code -ge 200 -and $code -le 299)
     } catch {
-        $response = $_.Exception.PSObject.Properties['Response']
-        return ($null -ne $response -and $null -ne $response.Value)
+        return $false
     }
 }
 
@@ -665,6 +666,19 @@ function claude-augure {
         $modelPrefix  = Get-AugureEntryValue -Container $settings -Key 'model_prefix'
     } catch {
         Write-Host "AugureAI settings are incomplete: $($_.Exception.Message)" -ForegroundColor Red
+        return
+    }
+
+    # 0. The proxy address, checked before any key is read or any variable is set (Issue #75).
+    #    The host rule mirrors Resolve-LitellmStartDecision in scripts\local\augure\litellm-autostart.ps1:
+    #    only 127.0.0.1. Change both together. The port must be an integer from 1 to 65535.
+    if ($proxyHost -ne '127.0.0.1') {
+        Write-Host "proxy_host is '$proxyHost' in augure-settings.json; only 127.0.0.1 is allowed (loopback only). Nothing was changed." -ForegroundColor Red
+        return
+    }
+    $portOk = ($proxyPort -is [int] -or $proxyPort -is [long]) -and ($proxyPort -ge 1) -and ($proxyPort -le 65535)
+    if (-not $portOk) {
+        Write-Host "proxy_port is '$proxyPort' in augure-settings.json; it must be an integer from 1 to 65535. Nothing was changed." -ForegroundColor Red
         return
     }
 

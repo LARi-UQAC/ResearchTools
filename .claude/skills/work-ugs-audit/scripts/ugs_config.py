@@ -23,6 +23,7 @@ REQUIRED_KEYS = (
     "rubric.total_regex",
     "rubric.min_check_words",
     "rubric.loose_heading_regex",
+    "rubric.element_regexes",
     "vision.min_word_share",
     "language.comment_min_words",
     "vision.kind_aliases",

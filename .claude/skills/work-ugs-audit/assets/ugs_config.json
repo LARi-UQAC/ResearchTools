@@ -240,6 +240,10 @@
     },
     "provenance": "chosen 2026-11-15 from the professor's list of figures a report can hold (UML, SysML, flowchart, logigram, software or electronic architecture, project breakdown structure, Gantt, Kanban, budget, S-curve, timesheet): the words the professor writes as the expected kind of a figure in the vision probe, each mapped to the schema kind the model answers; a table or a board has no criterion of its own so it is `other`; adjustable by the professor 2026-11-26 (review H, #126): a table, a budget table, a budget, a timesheet, a time sheet and a spreadsheet are the kind table, which the figure criteria judge; they were other."
   },
+  "rubric.element_regexes": {
+    "value": ["^\\s*- \\[ \\]\\s+(.+)$", "^\\s*(\\d+)\\.\\s+(.+)$"],
+    "provenance": "owner rubric format, 2026-11-27: the first rule is the checklist line of the rubric, the second the top-level numbered point (its bold label kept as the element name, the number dropped); bullets without a checkbox are not elements; the first rule that matches at least one line of a section gives that section its elements, in rubric order"
+  },
   "rubric.loose_heading_regex": {
     "value": "^#{1,2}\\s+\\d+\\.\\s+\\S",
     "provenance": "chosen 2026-11-15, narrowed to the heading levels 1 and 2 after review round 2 (a numbered sub-heading of level 3 or more inside a section is part of that section): a heading that starts with a number and a point is a section of the rubric, so one the strict heading pattern did not read (no points, another way to write them) is refused instead of being absorbed into the previous item; adjustable by the professor"

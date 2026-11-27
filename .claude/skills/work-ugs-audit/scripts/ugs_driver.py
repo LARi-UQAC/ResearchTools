@@ -326,7 +326,8 @@ def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window
             try:
                 rubric = rubric_split.split_rubric(source, args.type, config["rubric.section_heading_regex"],
                                                    config["rubric.total_regex"],
-                                                   config["rubric.loose_heading_regex"])
+                                                   config["rubric.loose_heading_regex"],
+                                                   config["rubric.element_regexes"])
             except rubric_split.RubricSplitError as error:
                 raise DriverError(f"invalid rubric: {error}") from None
         if rubric is None:

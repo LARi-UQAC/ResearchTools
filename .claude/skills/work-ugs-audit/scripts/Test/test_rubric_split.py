@@ -3,6 +3,7 @@ Offline tests for rubric_split (Issue 120, plan 1): a Markdown rubric is split b
 sections and every section keeps its exact text. Fictitious rubric text only (R34), no model, no network (R21).
 """
 import copy
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -209,6 +210,91 @@ class ConfigTests(unittest.TestCase):
         for key in ("rubric.section_heading_regex", "rubric.total_regex", "rubric.min_check_words",
                     "rubric.loose_heading_regex"):
             self.assertIn(key, ugs_config.REQUIRED_KEYS)
+
+
+ELEMENT_RULES = CONFIG["rubric.element_regexes"]
+
+CHECKLIST_SECTION = """## 1. Resume (/1)
+
+Le resume contient :
+
+- [ ] Contexte
+- [ ] Objectif
+- [ ] Methode
+- [ ] Resultat
+- [ ] Conclusion
+- [ ] Mots cles
+"""
+
+NUMBERED_SECTION = """## 2. Methode (/2)
+
+1. **Essais** : nom de l'appareil
+2. **Mesures** : unites
+3. **Calcul** : formule
+"""
+
+BULLETS_ONLY_SECTION = """## 3. Conclusion (/0.5)
+
+- Rappel des objectifs
+- Limites
+"""
+
+MIXED_SECTION = """## 4. Mixte (/1)
+
+1. **Ancien** : numerote
+- [ ] Coche un
+- [ ] Coche deux
+"""
+
+
+class ElementTests(unittest.TestCase):
+
+    def test_six_checklist_lines_give_six_elements_in_order(self):
+        elements = rubric_split.section_elements(CHECKLIST_SECTION, ELEMENT_RULES)
+        self.assertEqual([e["id"] for e in elements], ["E1", "E2", "E3", "E4", "E5", "E6"])
+        self.assertEqual([e["text"] for e in elements],
+                         ["Contexte", "Objectif", "Methode", "Resultat", "Conclusion", "Mots cles"])
+
+    def test_numbered_points_give_elements_with_the_bold_label_kept(self):
+        elements = rubric_split.section_elements(NUMBERED_SECTION, ELEMENT_RULES)
+        self.assertEqual([e["text"] for e in elements],
+                         ["**Essais** : nom de l'appareil", "**Mesures** : unites", "**Calcul** : formule"])
+
+    def test_bullets_without_a_checkbox_give_no_element(self):
+        self.assertEqual(rubric_split.section_elements(BULLETS_ONLY_SECTION, ELEMENT_RULES), [])
+
+    def test_checkbox_lines_win_over_numbered_points_in_the_same_section(self):
+        elements = rubric_split.section_elements(MIXED_SECTION, ELEMENT_RULES)
+        self.assertEqual([e["text"] for e in elements], ["Coche un", "Coche deux"])
+
+    def test_split_items_carry_their_elements(self):
+        rubric = rubric_split.split_rubric(CHECKLIST_SECTION + "\n---\n\n" + NUMBERED_SECTION, "report",
+                                           HEADING, TOTAL, LOOSE, ELEMENT_RULES)
+        self.assertEqual(len(rubric["items"][0]["elements"]), 6)
+        self.assertEqual(len(rubric["items"][1]["elements"]), 3)
+
+    def test_without_element_rules_items_have_no_elements_key(self):
+        rubric = rubric_split.split_rubric(CHECKLIST_SECTION + "\n---\n\n" + NUMBERED_SECTION, "report",
+                                           HEADING, TOTAL, LOOSE)
+        self.assertNotIn("elements", rubric["items"][0])
+
+    def test_the_element_rules_key_is_required_and_named_when_missing(self):
+        self.assertIn("rubric.element_regexes", ugs_config.REQUIRED_KEYS)
+
+
+REAL_RUBRIC = os.environ.get("UGS_REAL_RUBRIC")
+
+
+@unittest.skipUnless(REAL_RUBRIC, "UGS_REAL_RUBRIC not set: real rubric not read")
+class RealRubricElementsTest(unittest.TestCase):
+
+    def test_section_one_has_six_elements_and_counts_are_recorded(self):
+        text = Path(REAL_RUBRIC).read_text(encoding="utf-8")
+        rubric = rubric_split.split_rubric(text, "report", HEADING, TOTAL, LOOSE, ELEMENT_RULES)
+        counts = {item["id"]: len(item["elements"]) for item in rubric["items"]}
+        # Numbers only: the section id and its element count, never the rubric text.
+        print("element counts per section: %s" % counts, file=sys.stderr)
+        self.assertEqual(counts["I01"], 6)
 
 
 if __name__ == "__main__":

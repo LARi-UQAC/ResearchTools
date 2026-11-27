@@ -65,8 +65,36 @@ def _trim(lines: list) -> str:
     return "\n".join(kept)
 
 
+def section_elements(section_text: str, rules: list) -> list:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the elements a rubric section lists for grading: the lines matched by the first rule that matches
+        at least one line of the section, in rubric order.
+    Details:
+        Each rule is a regex with one capturing group, or two where the first is a point number and the last is
+        the element text. Rules are tried in order and the first to match wins, so a checklist beats numbered points.
+    Inputs:
+        section_text (str): the exact text of one rubric section.
+        rules (list[str]): the element patterns (config key rubric.element_regexes).
+    Outputs:
+        elements (list[dict]): `{"id": "E1", "text": ...}` in rubric order; empty when no rule matches.
+    --------------------------------------------------------------------------
+    """
+    for rule in rules:
+        pattern = re.compile(rule)
+        found = []
+        for line in section_text.replace("\r\n", "\n").split("\n"):
+            match = pattern.match(line)
+            if match:
+                found.append(match.group(match.lastindex).strip())
+        if found:
+            return [{"id": "E%d" % (position + 1), "text": text} for position, text in enumerate(found)]
+    return []
+
+
 def split_rubric(text: str, assessment_type: str, heading_regex: str, total_regex: str,
-                 loose_heading_regex: str) -> Optional[dict]:
+                 loose_heading_regex: str, element_rules: Optional[list] = None) -> Optional[dict]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -83,6 +111,8 @@ def split_rubric(text: str, assessment_type: str, heading_regex: str, total_rege
             in the whole text
         loose_heading_regex (str): any numbered heading, with or without points (config key
             rubric.loose_heading_regex), used to refuse a heading the strict pattern did not read
+        element_rules (list | None): element patterns (config key rubric.element_regexes); when given, each item
+            gains `elements`
     Outputs:
         rubric (dict | None): assessment_type, total_points, preamble and items (id, title, max_points, text,
         preamble), or None when fewer than two numbered sections are found.
@@ -112,8 +142,11 @@ def split_rubric(text: str, assessment_type: str, heading_regex: str, total_rege
         end = starts[position + 1][0] if position + 1 < len(starts) else len(lines)
         points = _number(match.group("points"))
         total += points
-        items.append({"id": "I%02d" % (position + 1), "title": match.group("title").strip(),
-                      "max_points": _plain(points), "text": _trim(lines[index:end]), "preamble": preamble})
+        item = {"id": "I%02d" % (position + 1), "title": match.group("title").strip(),
+                "max_points": _plain(points), "text": _trim(lines[index:end]), "preamble": preamble}
+        if element_rules is not None:
+            item["elements"] = section_elements(item["text"], element_rules)
+        items.append(item)
     stated = re.search(total_regex, text)
     if stated and _number(stated.group("total")) != total:
         raise RubricSplitError("the stated total %s differs from the sum of the items %s"

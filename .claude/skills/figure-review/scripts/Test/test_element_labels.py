@@ -479,6 +479,32 @@ class TitleLineAlignmentTest(unittest.TestCase):
         self.assertEqual(len(title["rect"]), 4)
         self.assertEqual(title["alignment"], "left")
 
+    def test_a_line_centred_on_the_text_column_is_center(self):
+        # Review round 1, finding 2: a line centred on the text column is centred, as _alignment decides for a block.
+        rect = fitz.Rect(300, 100, 400, 300)
+        column = (72, 540)
+        self.assertEqual(el.lines_alignment([(200, 420, 412, 432)], rect, self.RATIO, column), "center")
+
+    def test_a_left_table_title_above_is_no_finding_through_the_line_path(self):
+        rect = fitz.Rect(300, 300, 400, 500)
+        column = (72, 540)
+        self.assertEqual(el.lines_alignment([(72, 200, 200, 212)], rect, self.RATIO, column), "left")
+
+    def test_the_title_lines_stop_at_the_caption_when_body_text_follows_in_the_same_block(self):
+        # Review round 1, finding 8: body text after the caption, in the same block, is not part of the title.
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_textbox(fitz.Rect(100, 402, 500, 460),
+                            "Figure 1 fictitious title.\nBody text line one of the report continues here.",
+                            fontsize=10)
+        blocks = page.get_text("blocks")
+        line_boxes = [tuple(line["bbox"]) + ("".join(s["text"] for s in line["spans"]),)
+                      for block in page.get_text("dict")["blocks"] for line in block.get("lines", [])]
+        title = el.find_title(blocks, FIGURE_RECT, "figure", el.load_markers(MARKERS_PATH), None, line_boxes)
+        doc.close()
+        self.assertIsNotNone(title)
+        self.assertEqual(len(title["lines"]), 1)
+
     def test_no_lines_gives_no_line_alignment(self):
         self.assertIsNone(el.lines_alignment([], fitz.Rect(100, 100, 500, 400), self.RATIO))
 

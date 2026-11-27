@@ -184,7 +184,8 @@ def _overlaps(block: tuple, rect: "fitz.Rect") -> bool:
     return block[0] < rect.x1 and block[2] > rect.x0 and block[1] < rect.y1 and block[3] > rect.y0
 
 
-def lines_alignment(lines: List[tuple], rect: "fitz.Rect", tolerance_ratio: float) -> Optional[str]:
+def lines_alignment(lines: List[tuple], rect: "fitz.Rect", tolerance_ratio: float,
+                    column: Optional[Tuple[float, float]] = None) -> Optional[str]:
     """
     Purpose: Measure a title from its own lines against the element edges (owner, 2026-11-27, plan 28): a line is
         centred when its left gap and its right gap to the element differ by no more than the tolerance; the title
@@ -215,7 +216,14 @@ def lines_alignment(lines: List[tuple], rect: "fitz.Rect", tolerance_ratio: floa
         Raises:
             None.
         """
-        return abs((line[0] - rect.x0) - (rect.x1 - line[2])) <= tolerance
+        if abs((line[0] - rect.x0) - (rect.x1 - line[2])) <= tolerance:
+            return True
+        # Review round 1, finding 2: a line centred on the text column is centred, as _alignment decides for a block.
+        if column is not None:
+            column_centre = (column[0] + column[1]) / 2
+            column_tolerance = tolerance_ratio * (column[1] - column[0])
+            return abs((line[0] + line[2]) / 2 - column_centre) <= column_tolerance
+        return False
 
     if centred(ordered[-1]):
         return ALIGN_CENTER
@@ -237,8 +245,19 @@ def _lines_inside(block: tuple, line_boxes: Optional[List[tuple]]) -> List[tuple
     """
     if not line_boxes:
         return []
-    return [box for box in line_boxes
-            if box[0] >= block[0] - 1 and box[2] <= block[2] + 1 and box[1] >= block[1] - 1 and box[3] <= block[3] + 1]
+    inside = sorted((box for box in line_boxes
+                     if box[0] >= block[0] - 1 and box[2] <= block[2] + 1
+                     and box[1] >= block[1] - 1 and box[3] <= block[3] + 1), key=lambda box: box[1])
+    # Review round 1, finding 8: the title stops at the caption. A caption line ends with a sentence mark (the body
+    # lines after it do too, the caption paragraph being the first one), so the lines after the first sentence end
+    # are the body and are dropped. A line box without its text keeps every line (no cut).
+    title = []
+    for box in inside:
+        title.append(box)
+        text = box[4].rstrip() if len(box) > 4 and isinstance(box[4], str) else ""
+        if text.endswith((".", "!", "?", ":", ";")):
+            break
+    return title
 
 
 def _alignment(block: tuple, rect: "fitz.Rect", tolerance_ratio: float,
@@ -399,7 +418,7 @@ def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
         if candidates:
             _, block, text = candidates[0]
             lines = _lines_inside(block, line_boxes)
-            alignment = lines_alignment(lines, rect, tolerance) if lines else None
+            alignment = lines_alignment(lines, rect, tolerance, column) if lines else None
             return {
                 "text": text,
                 "position": direction,

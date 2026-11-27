@@ -834,8 +834,8 @@ def _scan_page(page: "fitz.Page", page_no: int, settings: Dict[str, Any],
         "tables_dropped": tables_dropped,
         "regions": figures,
         # The text lines of the page: a title is aligned from its own lines (plan 28, owner 2026-11-27).
-        "line_boxes": [tuple(line["bbox"]) for block in page.get_text("dict")["blocks"]
-                       for line in block.get("lines", [])],
+        "line_boxes": [tuple(line["bbox"]) + ("".join(span["text"] for span in line["spans"]),)
+                       for block in page.get_text("dict")["blocks"] for line in block.get("lines", [])],
     }
 
 

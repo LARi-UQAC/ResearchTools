@@ -204,6 +204,19 @@ its advisories accepted and recorded in `IMPROVEMENTS.md`.
 | ☑ | `PyYAML` | yaml | 6.0.3 | pdf2md `==6.0.3` | pdf2md |  | read with yaml.safe_load only |
 <!-- python-libs:end .venv-pdf2md -->
 
+### `.venv-litellm`
+
+The interpreter of the local LiteLLM proxy that `claude-augure` goes through. AugureAI serves only
+the OpenAI protocol (measured 2026-11-27: `POST /v1/messages` answers 404), so Claude Code needs a
+proxy that translates its Anthropic requests. The owner kept it apart on 2026-11-27, because the
+proxy extra of LiteLLM brings a large web stack that no skill of `.venv-skills` uses.
+
+<!-- python-libs:begin .venv-litellm -->
+| Declared | Library | Import | Pin | Declared in | Used by | Optional | Note |
+|---|---|---|---|---|---|---|---|
+| ☑ | `litellm` | (none) | 1.111.0 | scripts/local/augure/requirements.txt `[proxy]==1.111.0` | - |  |  |
+<!-- python-libs:end .venv-litellm -->
+
 ### The form service
 
 `deploy/form-service/` has its own environment, `%LOCALAPPDATA%\ResearchTools\venv-form-service`,

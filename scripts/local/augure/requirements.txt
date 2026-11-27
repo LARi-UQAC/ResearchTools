@@ -1,0 +1,3 @@
+# LiteLLM proxy for claude-augure (Issue #112), environment .venv-litellm.
+# Exact pin; pip-audit clean on 2026-11-27 before it was kept (security.md).
+litellm[proxy]==1.111.0

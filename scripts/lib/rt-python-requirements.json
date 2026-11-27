@@ -116,6 +116,18 @@
         }
       ],
       "tools": []
+    },
+    {
+      "name": ".venv-litellm",
+      "why": "The interpreter of the local LiteLLM proxy that lets claude-augure reach AugureAI, which serves only the OpenAI protocol (Issue #112, measured 2026-11-27). Kept apart by the owner on 2026-11-27: LiteLLM's proxy extra pulls a large web stack that no skill of .venv-skills needs.",
+      "requirements": [
+        {
+          "path": "scripts/local/augure/requirements.txt",
+          "why": "litellm[proxy] (the Anthropic-to-OpenAI translating proxy started by litellm-autostart.ps1)",
+          "exclude": []
+        }
+      ],
+      "tools": []
     }
   ],
   "settings": {

@@ -173,7 +173,16 @@ def annotate(src: Path, items: List[Dict], dst: Path, colors: Dict[str, str], au
                 
             rects = _find_quote_rects(page, quote)
             if not rects:
-                not_found.append(i)
+                if not rect or not item.get("on_rect"):
+                    not_found.append(i)
+                    continue
+                # Plan 28 (owner 2026-11-27): a finding whose quote no page holds is still a note, on its rectangle.
+                x0, y0, x1, y1 = rect
+                annot = page.add_rect_annot(fitz.Rect(x0, y0, x1, y1))
+                annot.set_colors(stroke=color_rgb)
+                annot.set_info(title=author, content=comment)
+                annot.update()
+                placed += 1
                 continue
                 
             # Use the first rect found

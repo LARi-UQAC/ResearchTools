@@ -62,6 +62,9 @@ its position `in_image_top` or `in_image_bottom`; the element then takes its pri
 as a text title does. A title is placed by the house rule: a figure title centred below the figure (or centred on the
 text column), a table title left-aligned above the table; a title drawn in the image is always a finding. The annex
 row `title_placement` lists the ids of the findings, and its annotations carry the comments of `title_placement_comments`.
+Alignment is measured on the title's own lines against the element edges (plan 28, owner 2026-11-27): the last line centred
+means `center`, the first line at the left edge means `left`; the tolerance is `centre_tolerance_ratio` of the element
+width. Each finding is a note on the stored title rectangle (`title.rect`), so a quote no page holds still gets its note.
 Appendix pages after the references are body pages; `assets/section_terms.json` adds the words of a section (a
 timesheet analysis, for instance) to the page search.
 

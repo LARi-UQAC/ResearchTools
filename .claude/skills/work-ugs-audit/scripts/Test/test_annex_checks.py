@@ -553,6 +553,72 @@ class TestTitlePlacementRow(unittest.TestCase):
             self.assertEqual(set(labels["title_placement_comments"]), {"figure_misplaced", "table_misplaced", "in_image"})
 
 
+class TestPlacementDrawnOnItsRectangle(unittest.TestCase):
+    """Plan 28 Task 3 (owner 2026-11-27): every title_placement finding is a note on the PDF, on the title rectangle."""
+
+    def test_the_annotation_carries_the_title_rectangle_when_there_is_one(self):
+        element = {"element_id": "F10", "element_type": "figure", "page": 1, "rect": [0, 0, 1, 1],
+                   "title": {"text": "Figure 10 x", "position": "below", "alignment": "left",
+                             "rect": [10, 20, 300, 40], "lines": [[10, 300]]}}
+        annotations = ugs_assemble.title_placement_annotations([element], "en")
+        self.assertEqual(annotations[0]["rect"], [10, 20, 300, 40])
+
+    def test_without_a_title_rectangle_the_element_rectangle_is_kept(self):
+        element = {"element_id": "F10", "element_type": "figure", "page": 1, "rect": [5, 6, 7, 8],
+                   "title": {"text": "Figure 10 x", "position": "below", "alignment": "left"}}
+        annotations = ugs_assemble.title_placement_annotations([element], "en")
+        self.assertEqual(annotations[0]["rect"], [5, 6, 7, 8])
+
+    def test_a_finding_whose_quote_is_absent_is_still_drawn_on_its_rectangle(self):
+        import fitz
+        import tempfile
+        import pdf_annotate
+        folder = Path(tempfile.mkdtemp())
+        src, dst = folder / "src.pdf", folder / "dst.pdf"
+        doc = fitz.open()
+        doc.new_page().insert_text((72, 100), "Fictive page text.")
+        doc.save(src)
+        doc.close()
+        annotation = {"page": 1, "kind": "figure", "code": "title_placement", "quote": "Absent words not on page",
+                      "rect": [60, 90, 300, 110], "comment": "Fictive comment.", "on_rect": True}
+        result = pdf_annotate.annotate(src, [annotation], dst, {"figure": "#E69F00"}, "Author")
+        self.assertEqual(result["placed"], 1)
+        self.assertEqual(result["not_found"], [])
+        doc = fitz.open(dst)
+        page = doc[0]
+        annots = list(page.annots())
+        self.assertEqual(len(annots), 1)
+        doc.close()
+
+    def test_a_figure_note_with_an_absent_quote_is_still_reported_not_drawn(self):
+        import fitz
+        import tempfile
+        import pdf_annotate
+        folder = Path(tempfile.mkdtemp())
+        src, dst = folder / "src.pdf", folder / "dst.pdf"
+        doc = fitz.open()
+        doc.new_page().insert_text((72, 100), "Fictive page text.")
+        doc.save(src)
+        doc.close()
+        annotation = {"page": 1, "kind": "figure", "code": "F1", "quote": "Absent words not on page",
+                      "rect": [60, 90, 300, 110], "comment": "Fictive comment."}
+        result = pdf_annotate.annotate(src, [annotation], dst, {"figure": "#E69F00"}, "Author")
+        self.assertEqual(result["placed"], 0)
+        self.assertEqual(result["not_found"], [0])
+
+    def test_every_id_of_the_title_placement_row_has_one_annotation(self):
+        elements = [{"element_id": "F1", "element_type": "figure", "page": 1, "rect": [0, 0, 1, 1],
+                     "title": {"text": "Figure 1 x", "position": "below", "alignment": "right"}},
+                    {"element_id": "F2", "element_type": "figure", "page": 2, "rect": [0, 0, 1, 1],
+                     "title": {"text": "Figure 2 x", "position": "above", "alignment": "left"}},
+                    {"element_id": "F3", "element_type": "figure", "page": 2, "rect": [0, 0, 1, 1],
+                     "title": {"text": "Figure 3 x", "position": "below", "alignment": "center"}}]
+        row = ugs_assemble.title_placement_row(elements)
+        annotations = ugs_assemble.title_placement_annotations(elements, "en")
+        self.assertEqual(row["detail"]["ids"], ["F1", "F2"])
+        self.assertEqual(len(annotations), len(row["detail"]["ids"]))
+
+
 class TestNoDuplicateKeys(unittest.TestCase):
     """N2: every JSON data file of the skill loads with no duplicate key, which json would otherwise keep silently."""
 

@@ -265,9 +265,12 @@ def title_placement_annotations(elements: List[dict], language: str) -> List[dic
         if code is None:
             continue
         quote = None if code == "in_image" else (record["title"].get("text") or None)
+        # The note sits on the title rectangle when it is stored (plan 28), else on the element rectangle; a quote no
+        # page holds is drawn on that rectangle by pdf_annotate, so no finding goes without its note.
+        rect = record["title"].get("rect") or record.get("rect")
         # The annotation colours have no table kind (annotation.colors): a table is annotated as a figure, as title_kind does.
         annotations.append({"page": record.get("page"), "kind": "figure", "code": code, "quote": quote,
-                            "rect": record.get("rect"), "comment": comments[code]})
+                            "rect": rect, "comment": comments[code], "on_rect": True})
     return annotations
 
 

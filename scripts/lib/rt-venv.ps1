@@ -148,21 +148,57 @@ function Get-RtVenvMissingBase {
     return $home_
 }
 
+function Assert-RtVenvName {
+    <#
+    .SYNOPSIS
+        Refuse an environment folder name that is not a bare folder name (R24).
+
+    .DESCRIPTION
+        A name joined onto a root must not be able to leave it: a separator, a drive
+        colon, `.`, `..`, or an empty or blank value is refused before any path is built.
+
+    .PARAMETER Name
+        The folder name to check, for example .venv-skills or .venv-litellm.
+
+    .OUTPUTS
+        None. Throws a RuntimeException naming the value and the rule when refused.
+    #>
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Name)
+
+    $bad = [string]::IsNullOrWhiteSpace($Name) -or ($Name -match '[\\/:]') -or ($Name -eq '.') -or ($Name -eq '..')
+    if ($bad) {
+        throw "-VenvName '$Name' is not a bare folder name (no \ / :, not . or .., not empty): refused."
+    }
+}
+
 function Get-RtVenvCandidates {
     <#
     .SYNOPSIS
         The environment locations to try, in order, each with what was found there.
 
+    .PARAMETER RepoRoot
+        The clone (or worktree) the calling script belongs to.
+
+    .PARAMETER MainRoot
+        The main clone, when the caller already asked git for it. Empty means ask here.
+
+    .PARAMETER VenvName
+        The bare folder name of the environment to look for. Defaults to .venv-skills.
+        Refused (throws) when it is not a bare folder name.
+
     .OUTPUTS
-        PSCustomObject[] with Source, Venv, Python, State. State is one of
-        present, empty (the folder exists but holds no interpreter), absent.
+        PSCustomObject[] with Source, Venv, Python, State, MissingBase. State is one of
+        present, broken (its base interpreter is gone), empty (the folder exists but holds no
+        interpreter), absent.
     #>
     param(
         [Parameter(Mandatory = $true)][string]$RepoRoot,
         # Already known by the caller, so git is asked once per resolution, not twice.
-        [AllowEmptyString()][string]$MainRoot = ""
+        [AllowEmptyString()][string]$MainRoot = "",
+        [AllowEmptyString()][string]$VenvName = $script:RtVenvDirName
     )
 
+    Assert-RtVenvName -Name $VenvName
     $main  = if ([string]::IsNullOrWhiteSpace($MainRoot)) { Get-RtMainRepoRoot -RepoRoot $RepoRoot } else { $MainRoot }
     $roots = @(@{ Source = "venv"; Root = $RepoRoot })
     $same  = ([System.IO.Path]::GetFullPath($main).TrimEnd('\', '/') -ieq
@@ -170,7 +206,7 @@ function Get-RtVenvCandidates {
     if (-not $same) { $roots += @{ Source = "main-repo-venv"; Root = $main } }
 
     foreach ($r in $roots) {
-        $venv   = Join-Path $r.Root $script:RtVenvDirName
+        $venv   = Join-Path $r.Root $VenvName
         $python = Join-Path $venv "Scripts\python.exe"
         $posix  = Join-Path $venv "bin/python"
         $state  = "absent"
@@ -195,9 +231,10 @@ function Resolve-RtVenvPython {
         Decide which interpreter to run, or refuse and say why.
 
     .DESCRIPTION
-        Order: an explicit -Python, then .venv-skills of RepoRoot, then .venv-skills
-        of the main clone when RepoRoot is a linked worktree. PATH is consulted only
-        with -AllowPathFallback. No link into the worktree is ever created or needed.
+        Order: an explicit -Python, then VenvName (default .venv-skills) of RepoRoot,
+        then VenvName of the main clone when RepoRoot is a linked worktree. PATH is
+        consulted only with -AllowPathFallback. No link into the worktree is ever
+        created or needed. A VenvName that is not a bare folder name throws.
 
     .PARAMETER RepoRoot
         The clone (or worktree) the calling script belongs to.
@@ -209,6 +246,10 @@ function Resolve-RtVenvPython {
     .PARAMETER AllowPathFallback
         Accept the first python on PATH when no environment exists.
 
+    .PARAMETER VenvName
+        The bare folder name of the environment to look for. Defaults to .venv-skills.
+        Any other environment (for example .venv-litellm) is looked for the same way.
+
     .OUTPUTS
         PSCustomObject: Python (path, or $null on refusal), Source (explicit, venv,
         main-repo-venv, path-fallback, none), Message (what to print: a refusal
@@ -218,12 +259,13 @@ function Resolve-RtVenvPython {
     param(
         [Parameter(Mandatory = $true)][string]$RepoRoot,
         [AllowEmptyString()][string]$Python = "",
-        [switch]$AllowPathFallback
+        [switch]$AllowPathFallback,
+        [AllowEmptyString()][string]$VenvName = $script:RtVenvDirName
     )
 
     $main    = Get-RtMainRepoRoot -RepoRoot $RepoRoot
     $rebuild = "& '" + (Join-Path $main "setup.ps1") + "' -InstallPython"
-    $cands   = @(Get-RtVenvCandidates -RepoRoot $RepoRoot -MainRoot $main)
+    $cands   = @(Get-RtVenvCandidates -RepoRoot $RepoRoot -MainRoot $main -VenvName $VenvName)
 
     function New-Result($path, $source, $message) {
         [pscustomobject]@{
@@ -243,7 +285,7 @@ function Resolve-RtVenvPython {
         if ($c.State -eq "present") { return (New-Result $c.Python $c.Source "") }
     }
 
-    $lines = @("no suite interpreter: .venv-skills holds no Scripts\python.exe. Looked at:")
+    $lines = @("no suite interpreter: $VenvName holds no Scripts\python.exe. Looked at:")
     foreach ($c in $cands) {
         $why = if ($c.State -eq "empty") { "folder exists but is EMPTY or damaged (a recursive delete leaves exactly this)" }
                elseif ($c.State -eq "broken") { "BROKEN: its base interpreter folder is gone ($($c.MissingBase))" }
@@ -262,7 +304,7 @@ function Resolve-RtVenvPython {
         $lines += "  -AllowPathFallback was given but there is no python on PATH either."
     }
 
-    $lines += "Only .venv-skills is looked for. A root .venv is not used (dropped on purpose 2026-10-16: a missing environment must be said, not replaced)."
+    $lines += "Only $VenvName is looked for. A root .venv is not used (dropped on purpose 2026-10-16: a missing environment must be said, not replaced)."
     $lines += "Rebuild the environment with:"
     $lines += "  $rebuild"
     $lines += "Or pass -Python <path to an interpreter>, or -AllowPathFallback to accept PATH knowingly."

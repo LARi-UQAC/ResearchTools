@@ -158,6 +158,46 @@ Check "an explicit existing -Python is used"         ($ex.Python -eq $fake -and 
 $exBad = Resolve-RtVenvPython -RepoRoot $Wt -Python (Join-Path $Scratch "absent-python.exe")
 Check "an explicit -Python that does not exist is refused, not skipped" ($null -eq $exBad.Python -and $exBad.Message -match "absent-python")
 
+# --- a named environment: -VenvName (plan3 task 1, LiteLLM autostart) ----------------------
+# The same rules as .venv-skills: the worktree's own environment wins, the main clone's is
+# reached by absolute path with no link, nothing is found means a refusal that names the
+# folder, PATH is never used silently, and a name that is not a bare folder name is refused.
+# Invoke-Named catches the throw a pre-change build gives for an unknown parameter, so the
+# checks FAIL instead of stopping the verifier.
+function Invoke-Named([hashtable]$Splat) {
+    try { return (Resolve-RtVenvPython @Splat) } catch { return $null }
+}
+function New-NamedFakeVenv([string]$Root, [string]$Name) {
+    $scripts = Join-Path $Root "$Name\Scripts"
+    New-Item -ItemType Directory -Path $scripts -Force | Out-Null
+    Set-Content -Path (Join-Path $scripts "python.exe") -Value "stub" -Encoding ASCII
+}
+function Find-RtPathPython { return "C:\fictitious\pathpython\python.exe" }
+
+New-NamedFakeVenv $Main ".venv-litellm"
+$lit = Invoke-Named @{ RepoRoot = $Wt; VenvName = ".venv-litellm" }
+Check "-VenvName .venv-litellm: a worktree finds the main clone's interpreter" ($null -ne $lit -and $lit.Python -ieq (Join-Path $mainFull ".venv-litellm\Scripts\python.exe") -and $lit.Source -eq "main-repo-venv")
+Check "-VenvName: no folder or link is created in the worktree"              (-not (Test-Path (Join-Path $Wt ".venv-litellm")))
+
+New-NamedFakeVenv $Wt ".venv-litellm"
+$litOwn = Invoke-Named @{ RepoRoot = $Wt; VenvName = ".venv-litellm" }
+Check "-VenvName: the worktree's own .venv-litellm wins"                     ($null -ne $litOwn -and $litOwn.Source -eq "venv" -and $litOwn.Python -ieq (Join-Path $Wt ".venv-litellm\Scripts\python.exe"))
+Remove-Item (Join-Path $Wt ".venv-litellm") -Recurse -Force
+
+Remove-Item (Join-Path $Main ".venv-litellm") -Recurse -Force
+$litNone = Invoke-Named @{ RepoRoot = $Wt; VenvName = ".venv-litellm" }
+Check "-VenvName with no environment anywhere: Python is null, Source none" ($null -ne $litNone -and $null -eq $litNone.Python -and $litNone.Source -eq "none")
+Check "-VenvName refusal names .venv-litellm, not .venv-skills"            ($null -ne $litNone -and $litNone.Message -match [regex]::Escape(".venv-litellm") -and $litNone.Message -notmatch "\.venv-skills holds")
+Check "-VenvName refusal does NOT use PATH"                                 ($null -ne $litNone -and $litNone.Message -notmatch "pathpython")
+
+foreach ($bad in @('..\x', 'C:\x', '..', ' ')) {
+    $threw = $false; $msg = ""
+    try { Resolve-RtVenvPython -RepoRoot $Wt -VenvName $bad | Out-Null } catch { $threw = $true; $msg = $_.Exception.Message }
+    # Our own wording, not PowerShell's "parameter cannot be found ... 'VenvName'" (which a build
+    # without the parameter also throws, and which must not count as a pass).
+    Check "-VenvName '$bad' is refused with 'not a bare folder name' naming VenvName" ($threw -and $msg -match "not a bare folder name" -and $msg -match "VenvName")
+}
+
 # --- the REAL runner, executed: a refusal must stop it and clear the stale stamp -------
 # Code-review finding: in run-offline-tests.ps1 the local `$python` was the SAME variable as
 # the `[string]$Python` parameter (PowerShell is case-insensitive), which turned a $null

@@ -563,6 +563,16 @@ class TestItemComment(unittest.TestCase):
         self.assertIn("« mot1 mot2 mot3 mot4 mot5 mot6 mot7 mot8 mot9 mot10 mot11 mot12... »", text)
         self.assertNotIn("mot13", text)
 
+    def test_one_note_per_item_on_the_earliest_page_and_the_other_quotes_are_highlights_only(self):
+        evidence = [{"page": 3, "quote": "Quote C words here"}, {"page": 1, "quote": "Quote A words here"},
+                    {"page": 2, "quote": "Quote B words here"}, {"page": 1, "quote": "Quote D words here"}]
+        annotations = ugs_assemble.grade_annotations(RUBRIC_ONE, {"items": [dict(ITEM_PARTIAL, evidence=evidence)]},
+                                                     "fr")
+        self.assertEqual(len(annotations), 4)
+        notes = [annotation for annotation in annotations if annotation["comment"]]
+        self.assertEqual(len(notes), 1)
+        self.assertEqual((notes[0]["page"], notes[0]["quote"]), (1, "Quote A words here"))
+
     def test_the_word_limit_is_read_from_the_configuration(self):
         from ugs_config import load, default_path
         self.assertEqual(load(default_path())["grade.element_label_words"], 12)

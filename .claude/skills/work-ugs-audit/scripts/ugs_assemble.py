@@ -412,14 +412,18 @@ def grade_annotations(rubric: dict, grade: dict, language: str) -> List[dict]:
         if max_points is None:
             continue
 
-        for evidence in item.get("evidence", []):
+        # One note per item (owner, 2026-11-27): the earliest quote, in page then document order, carries the comment;
+        # the other quotes of the item are highlights with no note.
+        ordered = sorted(enumerate(item.get("evidence", [])), key=lambda pair: (pair[1].get("page") or 0, pair[0]))
+        note = item_comment(item, max_points, labels)
+        for position, (_, evidence) in enumerate(ordered):
             annotations.append({
                 "page": evidence.get("page"),
                 "kind": "technical",
                 "code": item_id,
                 "quote": evidence.get("quote"),
                 "rect": None,
-                "comment": item_comment(item, max_points, labels)
+                "comment": note if position == 0 else ""
             })
     return annotations
 

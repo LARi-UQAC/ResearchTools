@@ -21,3 +21,19 @@ Cet élément n'est pas facultatif dans la grille : liste les éléments qu'il d
 ## en_not_applicable
 
 This item is not optional in the rubric: list the elements it asks for, with their verdicts, instead of answering not_applicable, and carry no score and no evidence in this answer.
+
+## fr_mismatch
+
+Tes éléments ne correspondent pas à ceux de la liste de cette section. Donne un verdict pour chaque identifiant de la liste, et seulement ceux-là, une fois chacun : present, partial ou absent.
+
+## en_mismatch
+
+Your elements do not match the list of this section. Give one verdict for each id of the list, and only those, once each: present, partial or absent.
+
+## fr_comment
+
+Ton commentaire parle du rapport entier. Réécris-le en une ou deux phrases qui parlent de cette section seulement, en commençant par « Cette section » ou par le nom de la section.
+
+## en_comment
+
+Your comment speaks of the whole report. Write it again in one or two sentences about this section only, opening with "This section" or with the name of the section.

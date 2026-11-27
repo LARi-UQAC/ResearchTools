@@ -146,8 +146,12 @@
     "provenance": "computed: ceil(1568/28) * ceil(1568/28) patches for the largest allowed image, used until vision_probe has measured the local model"
   },
   "grade.score_step": {
-    "value": 0.25,
-    "provenance": "chosen by the session 2026-11-26 (plan 25, Task 1): points are the level fraction times the maximum, rounded to the nearest multiple of this step (ties up); quarter points keep 0.88 x 0.5 = 0.44 distinct from 0.5 only when rounded, and 0.88 x 10 = 8.8 becomes 8.75"
+    "value": 0.001,
+    "provenance": "owner 2026-11-27: one partial element of four is exactly 12.5 percent of the section, so the points are rounded to a thousandth of a point (nearest, ties up); replaces the quarter point of plan 25"
+  },
+  "grade.comment_forbidden_openings": {
+    "value": ["le rapport", "ce rapport", "the report", "this report"],
+    "provenance": "owner 2026-11-27: a comment must speak of the section (cette section, this section), never of the whole report; compared case-folded on the first words of the comment"
   },
   "grade.quote_min_chars": {
     "value": 20,

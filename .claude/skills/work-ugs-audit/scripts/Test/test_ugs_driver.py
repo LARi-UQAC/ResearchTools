@@ -76,8 +76,14 @@ def answer_for_points(points):
     Raises:
         None.
     """
-    element = {"element": "Introduction", "verdict": "present", "page": 1, "quote": "Introduction text of the fictitious report"}
-    return {"status": "rated", "elements": [element], "exceptional": points >= 9.5}
+    # Points now come from the elements (2026-11-27): eight elements, all present gives 10; seven present and one
+    # absent gives 8.75, the score the old level gave, so the batch statistics of these tests stay unchanged.
+    quote = "Introduction text of the fictitious report"
+    present = 8 if points >= 9.5 else 7
+    elements = [{"element": "Element %d" % (index + 1), "verdict": "present" if index < present else "absent",
+                 "page": 1 if index < present else None, "quote": quote if index < present else None}
+                for index in range(8)]
+    return {"status": "rated", "elements": elements, "exceptional": points >= 9.5}
 
 
 class FakeModel:

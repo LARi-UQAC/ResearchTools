@@ -27,6 +27,13 @@
       "not_applicable": "Non applicable",
       "not_run": "Non exécuté"
     },
+    "element_verdicts": {
+      "present": "présent",
+      "partial": "partiel",
+      "absent": "absent"
+    },
+    "lost_points": "Points perdus",
+    "all_elements_present": "Tous les éléments de la grille sont présents.",
     "validation_values": {
       "timeout": "Pas de réponse du modèle dans le délai",
       "evidence_missing": "Preuve absente",
@@ -38,6 +45,8 @@
       "over_budget": "Dépasse le budget de jetons",
       "elements_missing": "Aucun élément nommé : le modèle n'a pas listé les éléments demandés",
       "not_applicable_with_score": "Non applicable avec un score ou une preuve : la réponse ne doit contenir ni score ni preuve",
+      "elements_mismatch": "Éléments qui ne correspondent pas à ceux de la grille : un verdict par identifiant, et seulement ceux-là",
+      "comment_scope": "Commentaire sur le rapport entier : phrase retirée, le commentaire parle de la section",
       "elements_too_few": "Trop peu d'éléments nommés : la réponse liste moins d'éléments que la grille n'en demande"
     },
     "checks_title": "Contrôles de références croisées",
@@ -106,6 +115,13 @@
       "not_applicable": "Not applicable",
       "not_run": "Not run"
     },
+    "element_verdicts": {
+      "present": "present",
+      "partial": "partial",
+      "absent": "absent"
+    },
+    "lost_points": "Points lost",
+    "all_elements_present": "Every element of the rubric is present.",
     "validation_values": {
       "timeout": "The model did not answer in time",
       "evidence_missing": "Evidence missing",
@@ -117,6 +133,8 @@
       "over_budget": "Over the token budget",
       "elements_missing": "No element named: the model did not list the elements the item asks for",
       "not_applicable_with_score": "Not applicable with a score or evidence: the answer must carry neither",
+      "elements_mismatch": "Elements that do not match the rubric: one verdict per id, and only those",
+      "comment_scope": "Comment on the whole report: sentence removed, the comment speaks of the section",
       "elements_too_few": "Too few elements named: the answer lists fewer elements than the rubric asks for"
     },
     "checks_title": "Cross-reference checks",

@@ -21,6 +21,7 @@ import ugs_grade  # noqa: E402
 from ugs_grade import GRADE_CODES, GradeScale, grade_item, with_level_score, check_grade_answer  # noqa: E402
 from ugs_text import StepContext  # noqa: E402
 from ugs_bridge import NotRun  # noqa: E402
+from ugs_config import default_path  # noqa: E402
 import grade_total  # noqa: E402
 
 PAGES = ["The first page describes the fictive engine test in detail.",
@@ -37,7 +38,8 @@ TEST_SCALE = GradeScale(
 )
 STEP = Decimal("0.25")
 QUOTE = {"min_chars": 12, "min_words": 3, "min_word_share": 0.9, "window_factor": 1.3, "page_window": 1, "max_words": 24}
-SETTINGS = {"quote": QUOTE, "unverified_as": "partial", "step": STEP, "max_elements": 12}
+SETTINGS = {"quote": QUOTE, "unverified_as": "partial", "step": STEP, "max_elements": 12,
+            "comment_openings": ["le rapport", "ce rapport", "the report", "this report"]}
 
 
 class FakeCall:
@@ -69,7 +71,11 @@ def make_ctx():
                 "## fr_evidence\nCite une preuve exacte.\n\n"
                 "## en_evidence\nCite an exact quote.\n\n"
                 "## fr_not_applicable\nNon facultatif.\n\n"
-                "## en_not_applicable\nNot optional.\n"
+                "## en_not_applicable\nNot optional.\n\n"
+                "## fr_mismatch\nMismatch.\n\n"
+                "## en_mismatch\nMismatch.\n\n"
+                "## fr_comment\nComment.\n\n"
+                "## en_comment\nComment.\n"
             ),
         },
         schemas={"grade_item": {"type": "object"}, "rubric": {"type": "object"}},
@@ -407,7 +413,7 @@ class TestMissingField(unittest.TestCase):
     def test_record_key_order_is_saved(self):
         record = self.grade(_rated([_present()]))
         self.assertEqual(list(record.keys()), ["item_id", "status", "score", "comment", "evidence", "missing", "audit",
-                                               "flag", "model_score", "validation", "attempts", "level", "elements_ignored", "elements"])
+                                               "flag", "model_score", "validation", "attempts", "level", "elements_ignored", "losses", "elements"])
 
 
 class TestGradeScaleFile(unittest.TestCase):
@@ -479,7 +485,147 @@ class TestTotals(unittest.TestCase):
         record = grade_item(item, PAGES, FakeCall([_rated([_present()])]), make_ctx(), "en", "", settings=SETTINGS)
         result = grade_total.compute({"assessment_type": "lab_report", "total_points": 10, "items": [item]},
                                      {"report_id": "R01", "items": [record]})
-        self.assertEqual(float(result["total"]), 8.75)
+        # One element present gives the whole maximum: the points come from the elements, not from a level (2026-11-27).
+        self.assertEqual(float(result["total"]), 10.0)
+
+
+FINE_STEP = Decimal("0.001")
+OPENINGS = ["le rapport", "ce rapport", "the report", "this report"]
+SETTINGS_FINE = dict(SETTINGS, step=FINE_STEP, comment_openings=OPENINGS)
+ITEM_FOUR = {"id": "I01", "title": "Intro", "max_points": 1,
+             "elements": [{"id": "E1", "text": "Contexte"}, {"id": "E2", "text": "Objectif"},
+                          {"id": "E3", "text": "Methode"}, {"id": "E4", "text": "Resultat"}]}
+GOOD_QUOTE = "The first page describes the fictive engine test"
+SECOND_QUOTE = "The second page gives the fictive conclusion"
+
+
+def _rubric_element(identifier, verdict, page=1, quote=GOOD_QUOTE):
+    """Return one element of an answer to an item that has rubric elements (fictitious)."""
+    return {"id": identifier, "verdict": verdict, "page": page, "quote": quote}
+
+
+def _four_answer(last_verdict="partial", comment="Cette section est presque complete."):
+    """Return an answer naming E1 to E4, the last one with the given verdict."""
+    last_page, last_quote = (2, SECOND_QUOTE) if last_verdict == "partial" else (1, GOOD_QUOTE)
+    return {"status": "rated", "comment": comment, "elements": [
+        _rubric_element("E1", "present"), _rubric_element("E2", "present"), _rubric_element("E3", "present"),
+        _rubric_element("E4", last_verdict, last_page, last_quote)]}
+
+
+class TestElementPoints(unittest.TestCase):
+    """The points are the share of the maximum that the element credits give (owner, 2026-11-27)."""
+
+    def test_four_elements_one_partial_on_one_point_is_0_875(self):
+        elements = [{"effective": "present"}] * 3 + [{"effective": "partial"}]
+        self.assertEqual(ugs_grade.points_for_elements(elements, Decimal(1), TEST_SCALE, FINE_STEP), Decimal("0.875"))
+
+    def test_all_present_is_the_maximum_and_all_absent_is_zero(self):
+        present = [{"effective": "present"}] * 4
+        absent = [{"effective": "absent"}] * 4
+        self.assertEqual(ugs_grade.points_for_elements(present, Decimal(1), TEST_SCALE, FINE_STEP), Decimal(1))
+        self.assertEqual(ugs_grade.points_for_elements(absent, Decimal(1), TEST_SCALE, FINE_STEP), Decimal(0))
+
+    def test_three_elements_one_absent_on_half_a_point_is_0_333(self):
+        elements = [{"effective": "present"}] * 2 + [{"effective": "absent"}]
+        self.assertEqual(ugs_grade.points_for_elements(elements, Decimal("0.5"), TEST_SCALE, FINE_STEP),
+                         Decimal("0.333"))
+
+    def test_a_partial_element_costs_half_its_share_and_the_loss_is_named(self):
+        elements = [{"id": "E1", "element": "Contexte", "effective": "present"},
+                    {"id": "E2", "element": "Objectif", "effective": "present"},
+                    {"id": "E3", "element": "Methode", "effective": "present"},
+                    {"id": "E4", "element": "Resultat", "effective": "partial"}]
+        losses = ugs_grade.element_losses(elements, Decimal(1), TEST_SCALE)
+        self.assertEqual(losses, [{"id": "E4", "text": "Resultat", "verdict": "partial", "lost": 0.125,
+                                   "unverified": False}])
+
+    def test_the_points_are_read_from_elements_not_from_the_level(self):
+        record = grade_item(ITEM_FOUR, PAGES, FakeCall([_four_answer()]), make_ctx(), "fr", "",
+                            settings=SETTINGS_FINE)
+        self.assertEqual(record["score"], 0.875)
+        self.assertEqual(record["losses"][0]["text"], "Resultat")
+        self.assertEqual(record["losses"][0]["lost"], 0.125)
+
+    def test_the_maximum_is_kept_when_every_element_is_present(self):
+        answer = _four_answer(last_verdict="present")
+        record = grade_item(ITEM_FOUR, PAGES, FakeCall([answer]), make_ctx(), "fr", "", settings=SETTINGS_FINE)
+        self.assertEqual(record["score"], 1)
+        self.assertEqual(record["losses"], [])
+
+    def test_an_unverified_present_element_is_partial_and_is_flagged_in_its_loss(self):
+        answer = _four_answer(last_verdict="present")
+        answer["elements"][3]["quote"] = "Totally unrelated words appear in this quote"
+        record = grade_item(ITEM_FOUR, PAGES, FakeCall([answer]), make_ctx(), "fr", "", settings=SETTINGS_FINE)
+        self.assertEqual(record["score"], 0.875)
+        self.assertTrue(record["losses"][0]["unverified"])
+
+
+class TestRubricElementIds(unittest.TestCase):
+    """An answer names exactly the element ids of its rubric item; a mismatch is asked again, then refused."""
+
+    def test_a_wrong_id_set_is_elements_mismatch_before_any_score(self):
+        answer = _four_answer()
+        answer["elements"][3]["id"] = "E9"
+        prepared = with_level_score(answer, ITEM_FOUR, TEST_SCALE, FINE_STEP, PAGES, QUOTE, "partial", 12)
+        code, _ = check_grade_answer(prepared, ITEM_FOUR, PAGES)
+        self.assertEqual(code, "elements_mismatch")
+
+    def test_a_mismatch_is_asked_again_once_then_not_run(self):
+        bad = _four_answer()
+        bad["elements"][3]["id"] = "E9"
+        call = FakeCall([bad, bad])
+        record = grade_item(ITEM_FOUR, PAGES, call, make_ctx(), "fr", "", settings=SETTINGS_FINE)
+        self.assertEqual(len(call.calls), 2)
+        self.assertEqual(record["validation"], "elements_mismatch")
+        self.assertEqual(record["status"], "not_run")
+        self.assertIsNone(record["score"])
+
+    def test_the_prompt_names_the_element_ids_and_the_real_prompt_asks_for_this_section(self):
+        call = FakeCall([_four_answer()])
+        grade_item(ITEM_FOUR, PAGES, call, make_ctx(), "fr", "", settings=SETTINGS_FINE)
+        self.assertIn("E1: Contexte", call.calls[0])
+        real = (PROMPTS_DIR / "grade_item.md").read_text(encoding="utf-8")
+        self.assertIn("cette section", real.lower())
+        self.assertIn("this section", real.lower())
+        self.assertNotIn("le rapport est", real.lower())
+
+
+class TestCommentScope(unittest.TestCase):
+    """A comment opening on the whole report is asked again once, then its sentence is dropped."""
+
+    def test_a_forbidden_opening_is_asked_again_then_the_sentence_is_dropped(self):
+        bad = _four_answer(comment="Le rapport est complet.")
+        call = FakeCall([bad, bad])
+        record = grade_item(ITEM_FOUR, PAGES, call, make_ctx(), "fr", "", settings=SETTINGS_FINE)
+        self.assertEqual(len(call.calls), 2)
+        self.assertEqual(record["comment"], "")
+        self.assertEqual(record["comment_code"], "comment_scope")
+        self.assertEqual(record["validation"], "ok")
+        self.assertEqual(record["status"], "rated")
+
+    def test_a_second_answer_that_complies_keeps_its_comment(self):
+        bad = _four_answer(comment="Le rapport est complet.")
+        good = _four_answer(comment="Cette section est presque complete.")
+        record = grade_item(ITEM_FOUR, PAGES, FakeCall([bad, good]), make_ctx(), "fr", "", settings=SETTINGS_FINE)
+        self.assertEqual(record["comment"], "Cette section est presque complete.")
+        self.assertNotIn("comment_code", record)
+
+    def test_the_openings_come_from_the_configuration(self):
+        openings = ugs_grade.read_comment_openings(default_path())
+        self.assertIn("le rapport", openings)
+        self.assertIn("the report", openings)
+        self.assertIn("ce rapport", openings)
+
+
+class TestGradeConfigPoints(unittest.TestCase):
+    """The rounding step is the owner's 0.001 point, and the new codes are in the table."""
+
+    def test_the_score_step_is_one_thousandth_of_a_point(self):
+        self.assertEqual(ugs_grade.read_grade_step(default_path()), Decimal("0.001"))
+
+    def test_the_new_codes_are_in_the_table(self):
+        self.assertIn("elements_mismatch", GRADE_CODES)
+        self.assertIn("comment_scope", GRADE_CODES)
 
 
 if __name__ == "__main__":

@@ -175,7 +175,7 @@ class TestAuditReport(unittest.TestCase):
         result = audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "")
         item = result["items"][0]
         self.assertEqual(item["audit"], "agree")
-        self.assertEqual(item["score"], 8.75)  # plan 25: complete_correct of 10 points
+        self.assertEqual(item["score"], 10)  # every element present: the whole maximum (2026-11-27)
         self.assertFalse(item["flag"])
 
     def test_disagree_twice_keeps_the_first_record_and_flags(self):

@@ -234,7 +234,7 @@ class TestGradeReport(unittest.TestCase):
         self.assertEqual(result["items"][0]["item_id"], "I01")
         self.assertEqual(result["items"][0]["score"], 10)  # From existing
         self.assertEqual(result["items"][1]["item_id"], "I02")
-        self.assertEqual(result["items"][1]["score"], 8.75)  # complete_correct of 10 points
+        self.assertEqual(result["items"][1]["score"], 10)  # every element present: the whole maximum (2026-11-27)
         self.assertEqual(len(call.calls), 1)
 
     def test_on_item_is_called_once_per_new_item(self):

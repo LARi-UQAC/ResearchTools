@@ -35,6 +35,7 @@
           "type": "object",
           "required": ["element", "verdict"],
           "properties": {
+            "id": {"type": "string"},
             "element": {"type": "string"},
             "verdict": {"type": "string", "enum": ["present", "partial", "absent"]},
             "page": {"type": ["integer", "null"], "minimum": 1},

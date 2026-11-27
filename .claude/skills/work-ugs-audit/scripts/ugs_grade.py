@@ -44,6 +44,8 @@ GRADE_CODES = (
     "timeout",
     "not_applicable_not_allowed",
     "not_applicable_with_score",
+    "elements_mismatch",
+    "comment_scope",
 )
 
 # The refusals asked again with a template of the prompts folder: each code names its section of
@@ -51,10 +53,16 @@ GRADE_CODES = (
 RETRY_SECTION_BY_CODE = {
     "elements_missing": "elements",
     "elements_too_few": "elements",
+    "elements_mismatch": "mismatch",
     "evidence_missing": "evidence",
     "not_applicable_not_allowed": "not_applicable",
     "not_applicable_with_score": "not_applicable",
+    "comment_scope": "comment",
 }
+
+# The credit of a verdict in the points (owner, 2026-11-27): present 1, partial the partial weight, absent 0.
+CREDIT_FULL = Decimal(1)
+COMMENT_OPENINGS_KEY = "grade.comment_forbidden_openings"
 
 # The bridge's retryable refusals carry no answer at all; each maps to the code the record reports.
 NO_ANSWER_CODES = {
@@ -261,6 +269,76 @@ def points_for_level(level: str, max_points: Any, fractions: Dict[str, Decimal],
     return min(float(units * step), float(maximum))
 
 
+def _credit(verdict: Any, scale: GradeScale) -> Decimal:
+    """
+    Purpose: Give the credit of one effective verdict: present 1, partial the partial weight, absent or unknown 0.
+    Inputs:
+        verdict: Any - The effective verdict of an element.
+        scale: GradeScale - The partial weight.
+    Outputs:
+        Decimal - The credit, from 0 to 1.
+    Raises:
+        None.
+    """
+    if verdict == "present":
+        return CREDIT_FULL
+    if verdict == "partial":
+        return scale.partial_weight
+    return Decimal(0)
+
+
+def points_for_elements(elements: List[dict], max_points: Any, scale: GradeScale, step: Decimal) -> Decimal:
+    """
+    Purpose: Give the points of an item from its elements (owner, 2026-11-27): the maximum times the sum of the element
+        credits over the number of elements, rounded to the nearest multiple of the step, a tie going up.
+    Inputs:
+        elements: List[dict] - The prepared elements, each with its effective verdict.
+        max_points: Any - The maximum of the item.
+        scale: GradeScale - The partial weight.
+        step: Decimal - The rounding step, from read_grade_step.
+    Outputs:
+        Decimal - The points, from 0 to the maximum; zero when there is no element.
+    Raises:
+        None.
+    """
+    if not elements:
+        return Decimal(0)
+    maximum = Decimal(str(max_points))
+    credit = sum(_credit(entry.get("effective"), scale) for entry in elements)
+    value = min(maximum * credit / len(elements), maximum)
+    units = (value / step).to_integral_value(rounding=ROUND_HALF_UP)
+    return min(units * step, maximum)
+
+
+def element_losses(elements: List[dict], max_points: Any, scale: GradeScale) -> List[dict]:
+    """
+    Purpose: Name every element that cost points, with the points it cost (owner, 2026-11-27: the comment names each
+        lost fraction). An element marked present whose quote no tier verified is listed as its partial verdict with
+        unverified set, so the student sees why it cost.
+    Inputs:
+        elements: List[dict] - The prepared elements, each with its id, element text, verdict and effective verdict.
+        max_points: Any - The maximum of the item.
+        scale: GradeScale - The partial weight.
+    Outputs:
+        List[dict] - One entry per element that is not present: id, text, verdict (the effective one), lost (points)
+            and unverified (bool). Empty when every element is present.
+    Raises:
+        None.
+    """
+    if not elements:
+        return []
+    maximum = Decimal(str(max_points))
+    losses = []
+    for entry in elements:
+        effective = entry.get("effective")
+        if effective == "present":
+            continue
+        lost = maximum * (CREDIT_FULL - _credit(effective, scale)) / len(elements)
+        losses.append({"id": entry.get("id"), "text": entry.get("element"), "verdict": effective,
+                       "lost": float(lost), "unverified": entry.get("verdict") == "present" and not entry.get("verified")})
+    return losses
+
+
 def count_verdicts(elements: List[dict]) -> Dict[str, int]:
     """
     Purpose: Count the effective verdicts of an item's elements: an element marked present whose quote no tier verified
@@ -327,6 +405,22 @@ def level_for_elements(elements: List[dict], exceptional: bool, scale: GradeScal
     return ABSENT_LEVEL
 
 
+def _ids_match(elements: List[Any], rubric: List[dict]) -> bool:
+    """
+    Purpose: Tell whether the answer names exactly the element ids of the rubric item, each once (owner, 2026-11-27).
+    Inputs:
+        elements: List[Any] - The elements of the answer, as the model gave them.
+        rubric: List[dict] - The rubric elements, each with its id.
+    Outputs:
+        bool - True when the sets of ids are equal and no id is repeated.
+    Raises:
+        None.
+    """
+    given = [entry.get("id") if isinstance(entry, dict) else None for entry in elements]
+    wanted = [ref["id"] for ref in rubric]
+    return len(given) == len(wanted) and sorted(given, key=str) == sorted(wanted, key=str)
+
+
 def _elements_are_list_of_objects(elements: Any) -> bool:
     """
     Purpose: Tell whether an answer's elements are a non-empty list of objects, before any verdict is read.
@@ -353,7 +447,49 @@ def read_grade_settings(path: Path = None) -> Dict[str, Any]:
     """
     config = default_path() if path is None else Path(path)
     return {"quote": quote_match.read_quote_settings(config), "unverified_as": read_unverified_as(config),
-            "step": read_grade_step(config), "max_elements": read_max_elements(config)}
+            "step": read_grade_step(config), "max_elements": read_max_elements(config),
+            "comment_openings": read_comment_openings(config)}
+
+
+def read_comment_openings(path: Path) -> List[str]:
+    """
+    Purpose: Read the openings a comment may not start with: a comment on the whole report instead of its section
+        (owner, 2026-11-27), case-folded at the time of the check.
+    Inputs:
+        path: Path - The configuration JSON, normally ugs_config.default_path().
+    Outputs:
+        List[str] - The forbidden openings, case-folded, non-empty.
+    Raises:
+        ValueError: If the file is unreadable, the key is absent or the value is not a non-empty list of text (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read {path}: {exc}") from exc
+    entry = raw.get(COMMENT_OPENINGS_KEY) if isinstance(raw, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise ValueError(f"missing key '{COMMENT_OPENINGS_KEY}' in {path}")
+    value = entry["value"]
+    if not isinstance(value, list) or not value or not all(isinstance(text, str) and text.strip() for text in value):
+        raise ValueError(f"'{COMMENT_OPENINGS_KEY}' must be a non-empty list of text in {path}")
+    return [text.strip().casefold() for text in value]
+
+
+def opens_forbidden(comment: Any, openings: List[str]) -> bool:
+    """
+    Purpose: Tell whether a comment opens on a forbidden opening, compared case-folded on its first words.
+    Inputs:
+        comment: Any - The comment of an answer; a non-text value never opens anything.
+        openings: List[str] - The forbidden openings, case-folded.
+    Outputs:
+        bool - True when the comment starts with one of the openings.
+    Raises:
+        None.
+    """
+    if not isinstance(comment, str):
+        return False
+    head = " ".join(comment.split()).casefold()
+    return any(head.startswith(opening) for opening in openings)
 
 
 # The keys of a rated answer that only the code computes (review round 1, security): the model's values are never kept.
@@ -406,7 +542,8 @@ def prepare_elements(elements: List[dict], pages: List[str], settings: Dict[str,
     prepared: List[dict] = []
     for element in kept:
         verdict = element.get("verdict")
-        entry = {"element": element.get("element"), "verdict": verdict, "page": element.get("page"),
+        entry = {"id": element.get("id"), "element": element.get("element"), "verdict": verdict,
+                 "page": element.get("page"),
                  "quote": element.get("quote"), "verified": False, "tier": None, "page_corrected": False,
                  "tiers_tried": []}
         if verdict in PRESENT_VERDICTS:
@@ -470,7 +607,17 @@ def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal,
     answer = {key: value for key, value in answer.items() if key not in MODEL_DERIVED_KEYS}
     if not _elements_are_list_of_objects(answer.get("elements")):
         return answer
-    elements, ignored = prepare_elements(answer["elements"], pages, settings, unverified_as, max_elements)
+    source, cap = answer["elements"], max_elements
+    rubric = item.get("elements") or []
+    if rubric:
+        # The rubric defines the elements (owner, 2026-11-27): each answer element is matched by id, its name is the
+        # rubric text, and the cap of model-named elements does not apply. A mismatch is left for check_grade_answer.
+        if not _ids_match(source, rubric):
+            return answer
+        by_id = {entry.get("id"): entry for entry in source}
+        source = [dict(by_id[ref["id"]], element=ref["text"], id=ref["id"]) for ref in rubric]
+        cap = len(rubric)
+    elements, ignored = prepare_elements(source, pages, settings, unverified_as, cap)
     claimed = answer.get("exceptional") is True and all(entry["effective"] == "present" for entry in elements)
     level = level_for_elements(elements, claimed, scale)
     computed = dict(answer)
@@ -478,7 +625,8 @@ def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal,
     computed["exceptional"] = claimed
     computed["elements_ignored"] = ignored
     computed["level"] = level
-    computed["score"] = points_for_level(level, item.get("max_points", 0), scale.fractions, step)
+    computed["score"] = float(points_for_elements(elements, item.get("max_points", 0), scale, step))
+    computed["losses"] = element_losses(elements, item.get("max_points", 0), scale)
     computed["evidence"] = [{"element": entry["element"], "page": entry["page"], "quote": entry["quote"]}
                             for entry in elements if entry["verified"] and entry["effective"] in PRESENT_VERDICTS]
     return computed
@@ -616,6 +764,8 @@ def check_grade_answer(
         return "elements_missing", "a rated item names the elements it requires"
     if not isinstance(elements, list):
         return "schema_invalid", "elements must be a list"
+    if item.get("elements") and not _ids_match(elements, item["elements"]):
+        return "elements_mismatch", "the answer must give a verdict for exactly the element ids of the item"
     for entry in elements:
         if not isinstance(entry, dict) or not isinstance(entry.get("element"), str) \
                 or entry.get("verdict") not in VERDICTS:
@@ -732,8 +882,9 @@ def _record_from_answer(
         "attempts": attempts,
         "level": answer.get("level") if usable else None,
         "elements_ignored": answer.get("elements_ignored", 0) if usable else 0,
+        "losses": answer.get("losses", []) if usable else [],
         "elements": [] if not isinstance(elements, list) else [
-            {"element": entry.get("element"), "verdict": entry.get("verdict"),
+            {"id": entry.get("id"), "element": entry.get("element"), "verdict": entry.get("verdict"),
              "effective": entry.get("effective"), "verified": entry.get("verified"), "tier": entry.get("tier"),
              "tiers_tried": entry.get("tiers_tried", []), "page": entry.get("page"),
              "page_corrected": entry.get("page_corrected", False)}
@@ -812,6 +963,25 @@ def _verified_count(answer: dict) -> int:
     return sum(1 for entry in elements if isinstance(entry, dict) and entry.get("verified"))
 
 
+def _item_text(item: dict) -> str:
+    """
+    Purpose: The ITEM text of the grader prompt: the rubric section, then its elements with their ids when the rubric
+        lists them (owner, 2026-11-27), so the model answers each id.
+    Inputs:
+        item: dict - The rubric item, with its optional elements (id and text).
+    Outputs:
+        str - The text of the item for the prompt.
+    Raises:
+        None.
+    """
+    text = item_prompt_text(item)
+    rubric = item.get("elements") or []
+    if not rubric:
+        return text
+    lines = ["%s: %s" % (ref["id"], ref["text"]) for ref in rubric]
+    return text + "\n\nElements to judge, one verdict for each id:\n" + "\n".join(lines)
+
+
 def grade_item(
     item: dict,
     pages: List[str],
@@ -856,7 +1026,7 @@ def grade_item(
     # Estimate overhead: token count of filled prompt with empty sections
     prompt_template = ctx.prompts["grade_item"]
     overhead_prompt = fill(prompt_template, {
-        "ITEM": item_prompt_text(item),
+        "ITEM": _item_text(item),
         "SECTIONS": "",
         "LEVELS": str(ctx.levels),
         "LANGUAGE_OF_REPORT": language,
@@ -884,10 +1054,12 @@ def grade_item(
     unverified_as = settings["unverified_as"]
     max_elements = settings["max_elements"]
     step = settings["step"]
+    openings = settings["comment_openings"]
 
     last_error_reason = None
     last_retry_note = ""
     code = "schema_invalid"
+    scope_asked = False  # a comment on the whole report is asked again once, then its sentence is dropped
     best = None  # (answer, code, verified count): the answer with the most verified elements across the attempts
     for attempt in range(ctx.grade_retries + 1):
         current_note = calibration_note
@@ -897,7 +1069,7 @@ def grade_item(
             current_note = f"{calibration_note}\nPrevious refusal: {last_error_reason}" if calibration_note else f"Previous refusal: {last_error_reason}"
 
         prompt = fill(prompt_template, {
-            "ITEM": item_prompt_text(item),
+            "ITEM": _item_text(item),
             "SECTIONS": sections_text,
             "LEVELS": str(ctx.levels),
             "LANGUAGE_OF_REPORT": language,
@@ -920,6 +1092,17 @@ def grade_item(
 
         answer = with_level_score(answer, item, scale, step, pages, quote_settings, unverified_as, max_elements)
         code, message = check_grade_answer(answer, item, pages)
+        if code == "ok" and opens_forbidden(answer.get("comment"), openings):
+            if not scope_asked:
+                scope_asked = True
+                last_error_reason = message = "the comment opens on the whole report, not on this section"
+                last_retry_note = _retry_note(ctx, "comment_scope", language)
+                continue
+            # Asked again and still on the whole report: the model sentence is dropped, the code justification stays.
+            record = _record_from_answer(item_id, dict(answer, comment=""), "ok", attempt + 1,
+                                         item.get("max_points", 0), missing_max_chars)
+            record["comment_code"] = "comment_scope"
+            return record
         if code == "ok":
             return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0), missing_max_chars)
         support = _verified_count(answer)

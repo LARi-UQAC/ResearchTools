@@ -25,6 +25,10 @@ class ScoreNotReproduced(ValueError):
     """
 
     code = "score_not_reproduced"
+    # The ledger note has at most 60 characters and names the remedy (review round 2, finding 4).
+    ledger_note = "error=score_not_reproduced; run --recompute"
+    REMEDY = ("re-run the section scores with grade_total.py RUBRIC GRADE --recompute --write OUT --yes, then rerun "
+              "assemble on OUT")
 
 
 def check_scores(rubric: dict, grade: dict) -> None:
@@ -45,7 +49,8 @@ def check_scores(rubric: dict, grade: dict) -> None:
     result = recompute(rubric, grade, ugs_grade.load_grade_scale(), ugs_grade.read_grade_step(default_path()))
     differing = [item["item_id"] for item in result["items"] if item["match"] is False]
     if differing:
-        raise ScoreNotReproduced("stored score not reproduced for items: " + ", ".join(differing))
+        raise ScoreNotReproduced("stored score not reproduced for items: " + ", ".join(differing)
+                                 + "; remedy: " + ScoreNotReproduced.REMEDY)
 from pdf_annotate import annotate
 from pdf_annex import DEFAULT_LABELS, TITLE_KIND_CODES, TITLE_PLACEMENT_CHECK_ID, render_rows, build_html, append_annex, load_labels, render_checks, item_comment
 from ref_check import check_all, _default_resolver

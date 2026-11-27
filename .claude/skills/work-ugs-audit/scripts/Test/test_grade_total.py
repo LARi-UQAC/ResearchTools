@@ -331,6 +331,19 @@ class SplitRubricRecomputeTests(unittest.TestCase):
                 self.assertEqual(gt.main([str(rubric_path), str(grade_path), "--recompute"]), 0)
 
 
+class ErrorCodeTests(unittest.TestCase):
+    """Review round 2, finding 9: each refusal class carries the code the ledger note writes."""
+
+    def test_grade_and_rubric_errors_carry_their_codes(self):
+        from rubric_check import RubricError
+        self.assertEqual(GradeError.code, "grade_error")
+        self.assertEqual(RubricError.code, "rubric_error")
+
+    def test_the_annex_error_carries_its_code(self):
+        from pdf_annex import AnnexError
+        self.assertEqual(AnnexError.code, "annex_error")
+
+
 class StoredScoreAbsentTests(unittest.TestCase):
     """Review round 2, finding 8: a null stored score with elements is reported no_stored_score."""
 

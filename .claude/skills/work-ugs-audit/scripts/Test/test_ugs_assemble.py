@@ -658,6 +658,19 @@ class ScoreReproductionTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "score_not_reproduced")
         self.assertFalse((self.report_dir / "annotated.pdf").exists())
 
+    def test_the_message_and_the_ledger_note_name_the_remedy(self):
+        # Review round 2, finding 4: the message names the command and the ledger note stays within the 60-character mark.
+        from ugs_assemble import ScoreNotReproduced
+        with self.assertRaises(ScoreNotReproduced) as ctx:
+            ugs_assemble.check_scores(self.rubric, self.grade)
+        message = str(ctx.exception)
+        self.assertIn("grade_total.py", message)
+        self.assertIn("--recompute --write", message)
+        self.assertIn("--yes", message)
+        self.assertIn("assemble", message)
+        self.assertLessEqual(len(ScoreNotReproduced.ledger_note), 60)
+        self.assertIn("run --recompute", ScoreNotReproduced.ledger_note)
+
     def test_a_matching_stored_score_passes_the_check(self):
         self.grade["items"][0]["score"] = 25.0
         ugs_assemble.check_scores(self.rubric, self.grade)  # no exception

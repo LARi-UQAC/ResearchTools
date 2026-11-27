@@ -43,6 +43,7 @@ PLACEHOLDER_RE = re.compile(r"\{\{([A-Z_]+)\}\}")
 
 
 class AnnexError(ValueError):
+    code = "annex_error"  # the ledger note of a run blocked by it (review round 2, finding 9)
     """
     Purpose: Error raised when annex generation fails.
     """

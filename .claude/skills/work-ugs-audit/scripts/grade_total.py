@@ -17,6 +17,8 @@ VERDICTS = ("present", "partial", "absent")
 class GradeError(ValueError):
     """Raised when a grade record does not match its rubric or holds an invalid score."""
 
+    code = "grade_error"  # the ledger note of a run blocked by it (review round 2, finding 9)
+
 
 def _load(path: str) -> dict:
     """

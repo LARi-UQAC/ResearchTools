@@ -568,7 +568,9 @@ def run_report(
             raise
         except Exception as exc:  # noqa: BLE001 - an ordinary failure blocks this report only
             # Plan 29: an exception that names a code (ScoreNotReproduced) blocks the line with that code.
-            job.mark(_failure_label(job, name), "!", "error=" + getattr(exc, "code", type(exc).__name__))
+            # Review round 2, finding 9: GradeError, RubricError and AnnexError name their code; a ledger_note wins.
+            note = getattr(exc, "ledger_note", None) or "error=" + getattr(exc, "code", type(exc).__name__)
+            job.mark(_failure_label(job, name), "!", note)
             steps[name] = "blocked"
             return {"report_id": report_id, "status": "failed", "steps": steps}
     return {"report_id": report_id, "status": "done", "steps": steps}

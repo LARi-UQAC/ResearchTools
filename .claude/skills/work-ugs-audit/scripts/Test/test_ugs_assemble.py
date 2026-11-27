@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import json
 import unittest
 import tempfile
@@ -93,14 +94,15 @@ class TestUgsAssemble(unittest.TestCase):
 
     def test_grade_annotations_one_per_evidence_entry(self):
         annotations = ugs_assemble.grade_annotations(self.rubric, self.grade, "en")
-        self.assertEqual(len(annotations), 1)
+        # The evidence note and the page fallback entry of the note (review round 1, finding 1).
+        self.assertEqual(len(annotations), 2)
         self.assertEqual(annotations[0]["page"], 1)
         self.assertEqual(annotations[0]["kind"], "technical")
         self.assertEqual(annotations[0]["code"], "I01")
         self.assertEqual(annotations[0]["quote"], "Hello")
         self.assertIsNone(annotations[0]["rect"])
-        # The note is the item comment: the score, the sentence, then the element sentence (2026-11-27).
-        self.assertEqual(annotations[0]["comment"], "I01 45 / 50: Good Every element of the rubric is present.")
+        # Review round 1, finding 4: a record with no losses and no elements gets no element sentence at all.
+        self.assertEqual(annotations[0]["comment"], "I01 45 / 50: Good")
 
     def test_unrated_items_make_no_annotation(self):
         # I02 is not_run, so no annotation for it.
@@ -229,8 +231,8 @@ class TestUgsAssemble(unittest.TestCase):
         # Check annotations.json content
         with open(self.report_dir / "annotations.json", "r", encoding="utf-8") as f:
             annotations = json.load(f)
-            # 1 from grade, 1 from language, 1 from figures
-            self.assertEqual(len(annotations), 3)
+            # 1 from grade, 1 from its page fallback (review round 1, finding 1), 1 from language, 1 from figures
+            self.assertEqual(len(annotations), 4)
 
     @patch('ugs_assemble.annotate')
     @patch('ugs_assemble.append_annex')
@@ -549,7 +551,7 @@ class TestItemComment(unittest.TestCase):
 
     def test_english_labels_for_an_english_report(self):
         text = item_comment(ITEM_PARTIAL, 1, self.labels("en"), max_words=12)
-        self.assertIn("Points lost : « Resultat » partial -0.125", text)
+        self.assertIn('Points lost: "Resultat" partial -0.125', text)
 
     def test_the_note_and_the_annex_carry_the_same_text(self):
         note = ugs_assemble.grade_annotations(RUBRIC_ONE, {"items": [ITEM_PARTIAL]}, "fr")[0]["comment"]
@@ -568,14 +570,151 @@ class TestItemComment(unittest.TestCase):
                     {"page": 2, "quote": "Quote B words here"}, {"page": 1, "quote": "Quote D words here"}]
         annotations = ugs_assemble.grade_annotations(RUBRIC_ONE, {"items": [dict(ITEM_PARTIAL, evidence=evidence)]},
                                                      "fr")
-        self.assertEqual(len(annotations), 4)
-        notes = [annotation for annotation in annotations if annotation["comment"]]
+        # Four quotes and the page fallback entry (review round 1, finding 1): the fallback is not an evidence note.
+        self.assertEqual(len(annotations), 5)
+        notes = [annotation for annotation in annotations if annotation["comment"] and not annotation.get("fallback")]
         self.assertEqual(len(notes), 1)
         self.assertEqual((notes[0]["page"], notes[0]["quote"]), (1, "Quote A words here"))
 
     def test_the_word_limit_is_read_from_the_configuration(self):
         from ugs_config import load, default_path
         self.assertEqual(load(default_path())["grade.element_label_words"], 12)
+
+
+class TestGroupAComment(unittest.TestCase):
+    """Review round 1, group A (findings 4, 6, 10, 11): the comment's sentences, decimals and marks."""
+
+    @staticmethod
+    def labels(language):
+        """Return the annex labels of one language."""
+        return load_labels(DEFAULT_LABELS, language)
+
+    def test_a_record_without_losses_key_does_not_claim_every_element_is_present(self):
+        item = {"item_id": "I01", "status": "rated", "score": 0.5, "comment": "Old record."}
+        text = item_comment(item, 1, self.labels("en"), max_words=12)
+        self.assertNotIn("Every element of the rubric is present.", text)
+        self.assertEqual(text, "I01 0.5 / 1: Old record.")
+
+    def test_a_record_without_losses_derives_them_from_its_elements(self):
+        elements = [{"id": "E1", "element": "Contexte", "effective": "present", "verified": True, "verdict": "present"},
+                    {"id": "E2", "element": "Objectif", "effective": "absent", "verified": False, "verdict": "absent"}]
+        item = {"item_id": "I01", "status": "rated", "score": 0.5, "comment": "Old.", "elements": elements}
+        text = item_comment(item, 1, self.labels("en"), max_words=12)
+        self.assertIn('"Objectif" absent -0.5', text)
+
+    def test_three_partial_elements_of_one_point_display_losses_that_add_up(self):
+        losses = [{"id": "E%d" % n, "text": "Element %d" % n, "verdict": "partial", "lost": 1 / 6, "unverified": False}
+                  for n in (1, 2, 3)]
+        item = {"item_id": "I01", "status": "rated", "score": 0.5, "comment": "Half.", "losses": losses}
+        text = item_comment(item, 1, self.labels("en"), max_words=12)
+        values = [float(v) for v in re.findall(r" -(\d+\.\d+)", text)]
+        self.assertEqual(len(values), 3)
+        self.assertAlmostEqual(sum(values), 0.5, places=9)
+        self.assertIn('"Element 1" partial -', text)
+        self.assertIn("; ", text)
+
+    def test_an_unverified_quote_of_a_partial_element_is_marked(self):
+        losses = [{"id": "E4", "text": "Resultat", "verdict": "absent", "lost": 0.25, "unverified": True}]
+        item = {"item_id": "I01", "status": "rated", "score": 0.75, "comment": "x.", "losses": losses}
+        text = item_comment(item, 1, self.labels("en"), max_words=12)
+        self.assertIn("quote not verified", text)
+
+    def test_the_title_kind_note_is_drawn_on_the_title_rectangle(self):
+        code = sorted(ugs_assemble.TITLE_KIND_CODES)[0]
+        figures = {"figures": [{"page": 2, "title_kind_mismatch": code, "caption": "Figure x",
+                                "rect": [0, 0, 9, 9], "title": {"rect": [5, 6, 7, 8]}}]}
+        annotations = ugs_assemble.title_kind_annotations(figures, "en")
+        self.assertEqual(annotations[0]["rect"], [5, 6, 7, 8])
+        self.assertTrue(annotations[0]["on_rect"])
+
+
+def _pdf_with_text(folder, text):
+    """Write a one-page fictitious PDF carrying one line of text and return its path."""
+    import fitz
+    path = folder / "src.pdf"
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 100), text)
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def _contents_on_page(path):
+    """Return the note contents of every annotation of page 1 (text only, the test fixture is fictitious)."""
+    import fitz
+    doc = fitz.open(path)
+    contents = [annot.info.get("content", "") for annot in doc[0].annots()]
+    doc.close()
+    return contents
+
+
+class TestNoteCarrier(unittest.TestCase):
+    """Review round 1, group A (finding 1): the note of an item reaches the PDF through a placed quote, else the page."""
+
+    COLOURS = {"technical": "#0072B2", "figure": "#E69F00"}
+
+    def setUp(self):
+        import tempfile
+        self.folder = Path(tempfile.mkdtemp())
+        self.src = _pdf_with_text(self.folder, "Fictive page text.")
+
+    def item(self, item_id, evidence):
+        """Return one rated grade record with the given evidence, fictitious (R34)."""
+        return {"item_id": item_id, "status": "rated", "score": 1, "comment": "Note of %s." % item_id,
+                "evidence": evidence, "losses": []}
+
+    def annotate(self, grade_items):
+        """Run grade_annotations and pdf_annotate on the fictitious PDF; return the result and the contents."""
+        import pdf_annotate
+        rubric = {"items": [{"id": g["item_id"], "title": "T", "max_points": 1} for g in grade_items]}
+        annotations = ugs_assemble.grade_annotations(rubric, {"items": grade_items}, "en")
+        dst = self.folder / "dst.pdf"
+        result = pdf_annotate.annotate(self.src, annotations, dst, self.COLOURS, "Author")
+        return result, _contents_on_page(dst)
+
+    def test_the_note_moves_to_the_next_quote_when_the_first_is_unplaceable(self):
+        evidence = [{"page": 1, "quote": "Absent words not on page"}, {"page": 1, "quote": "Fictive page text."}]
+        result, contents = self.annotate([self.item("I01", evidence)])
+        self.assertEqual(result["placed"], 1)
+        self.assertEqual(len(contents), 1)
+        self.assertTrue(contents[0].startswith("I01 ") and contents[0].endswith("Note of I01.") or "Note of I01." in contents[0])
+
+    def test_a_second_item_whose_only_quote_is_a_duplicate_keeps_its_note_on_the_page(self):
+        evidence = [{"page": 1, "quote": "Fictive page text."}]
+        result, contents = self.annotate([self.item("I01", evidence), self.item("I02", evidence)])
+        self.assertEqual(result["placed"], 2)
+        self.assertEqual(len(contents), 2)
+        self.assertTrue(any("Note of I01." in c for c in contents) and any("Note of I02." in c for c in contents))
+
+    def test_an_item_with_no_placeable_quote_gets_a_note_on_the_first_evidence_page(self):
+        evidence = [{"page": 1, "quote": "Absent words not on page"}]
+        result, contents = self.annotate([self.item("I03", evidence)])
+        self.assertEqual(result["placed"], 1)
+        self.assertEqual(len(contents), 1)
+        self.assertIn("Note of I03.", contents[0])
+
+
+class TestGroupAPdfAnnotation(unittest.TestCase):
+    """Review round 1, group A (findings 1 and 12): an empty, infinite or off-page rectangle never raises."""
+
+    def test_bad_rectangles_are_reported_and_the_other_notes_are_drawn(self):
+        import tempfile
+        import fitz
+        import pdf_annotate
+        folder = Path(tempfile.mkdtemp())
+        src = _pdf_with_text(folder, "Fictive page text.")
+        dst = folder / "dst.pdf"
+        items = [
+            {"page": 1, "kind": "figure", "code": "F1", "quote": None, "rect": [5, 5, 5, 5], "comment": "Empty."},
+            {"page": 1, "kind": "figure", "code": "F2", "quote": None, "rect": [1000, 1000, 1100, 1100],
+             "comment": "Off page."},
+            {"page": 1, "kind": "figure", "code": "F3", "quote": None, "rect": [60, 90, 300, 110],
+             "comment": "Drawn."},
+        ]
+        result = pdf_annotate.annotate(src, items, dst, {"figure": "#E69F00"}, "Author")
+        self.assertEqual(result["placed"], 1)
+        self.assertEqual(result["not_found"], [0, 1])
+        self.assertEqual(_contents_on_page(dst), ["Drawn."])
 
 
 if __name__ == "__main__":

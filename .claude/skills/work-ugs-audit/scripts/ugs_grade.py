@@ -335,7 +335,8 @@ def element_losses(elements: List[dict], max_points: Any, scale: GradeScale) -> 
             continue
         lost = maximum * (CREDIT_FULL - _credit(effective, scale)) / len(elements)
         losses.append({"id": entry.get("id"), "text": entry.get("element"), "verdict": effective,
-                       "lost": float(lost), "unverified": entry.get("verdict") == "present" and not entry.get("verified")})
+                       "lost": float(lost),
+                       "unverified": entry.get("verdict") in PRESENT_VERDICTS and not entry.get("verified")})
     return losses
 
 

@@ -34,6 +34,10 @@
     },
     "lost_points": "Points perdus",
     "unverified_quote": "citation non vérifiée",
+    "label_colon": " : ",
+    "loss_separator": " ; ",
+    "quote_open": "« ",
+    "quote_close": " »",
     "all_elements_present": "Tous les éléments de la grille sont présents.",
     "validation_values": {
       "timeout": "Pas de réponse du modèle dans le délai",
@@ -123,6 +127,10 @@
     },
     "lost_points": "Points lost",
     "unverified_quote": "quote not verified",
+    "label_colon": ": ",
+    "loss_separator": "; ",
+    "quote_open": "\"",
+    "quote_close": "\"",
     "all_elements_present": "Every element of the rubric is present.",
     "validation_values": {
       "timeout": "The model did not answer in time",

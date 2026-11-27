@@ -98,9 +98,36 @@ def _find_quote_rects(page: fitz.Page, quote: str) -> List[fitz.Rect]:
     return []
 
 
+def _usable_rect(rect, page: "fitz.Page"):
+    """
+    Purpose: Give a rectangle as a fitz.Rect when it can carry a note on this page (review round 1, finding 12).
+    Details: An empty, infinite, unreadable or off-page rectangle gives None, so it is reported and never raises.
+    Inputs:
+        rect: Any - the x0, y0, x1, y1 of the item, or None.
+        page: fitz.Page - the page the note goes on.
+    Outputs:
+        Optional[fitz.Rect] - the rectangle, or None when it is unusable.
+    Raises:
+        None.
+    """
+    if not rect:
+        return None
+    try:
+        value = fitz.Rect(*[float(v) for v in rect])
+    except (TypeError, ValueError):
+        return None
+    if value.is_empty or value.is_infinite or not page.rect.intersects(value):
+        return None
+    return value
+
+
 def annotate(src: Path, items: List[Dict], dst: Path, colors: Dict[str, str], author: str) -> Dict:
     """
     Purpose: Annotate a PDF copy with quotes and rectangles.
+    Details: An item with a note_group carries its note on the first of its quotes that is placed; the others are
+        highlights with no note. An item with fallback set (its note_group has no placed quote) is drawn on the
+        page rectangle, unless one of its quotes already carried the note (review round 1, finding 1). A rectangle
+        that is empty, infinite or off page is reported in not_found (finding 12).
     Inputs:
         src: Path - Source PDF.
         items: List[Dict] - List of annotation items.
@@ -112,112 +139,129 @@ def annotate(src: Path, items: List[Dict], dst: Path, colors: Dict[str, str], au
     Raises:
         AnnotateError: If dst resolves to src.
     """
-    src_resolved = src.resolve()
-    dst_resolved = dst.resolve()
-    
+    src_resolved = Path(src).resolve()
+    dst_resolved = Path(dst).resolve()
     if src_resolved == dst_resolved:
-        raise AnnotateError("Destination must differ from source.")
-    
+        raise AnnotateError("Destination must differ from source")
     if not src_resolved.exists():
         raise AnnotateError(f"Source file not found: {src_resolved}")
-        
+
     doc = fitz.open(src_resolved)
-    
+
     placed = 0
     not_found = []
     duplicates = []
-    
+    carried = set()  # the note groups whose note is on the PDF already
+    fallbacks = []
+
     # Track quotes found per page to detect duplicates
     # Map: (page, normalized_quote) -> count
     quote_counts = {}
-    
+
+    def colour(kind: str) -> tuple:
+        """Return the stroke colour of a kind as an RGB tuple, refusing an unknown kind (F1)."""
+        if kind not in colors:
+            raise AnnotateError(f"no colour for the annotation kind {kind!r} in annotation.colors")
+        value = colors[kind].lstrip("#")
+        return (int(value[0:2], 16) / 255.0, int(value[2:4], 16) / 255.0, int(value[4:6], 16) / 255.0)
+
+    def content_for(item: Dict) -> str:
+        """Return the note this item writes: the group's note on its first placed quote only."""
+        group = item.get("note_group")
+        if group is None:
+            return item.get("comment", "")
+        return "" if group in carried else item.get("note", item.get("comment", ""))
+
     for i, item in enumerate(items):
+        if item.get("fallback"):
+            fallbacks.append(i)
+            continue
         page_num = item.get("page")
         if page_num is None or page_num < 1 or page_num > doc.page_count:
             not_found.append(i)
             continue
-            
+
         page = doc[page_num - 1]
-        
-        kind = item.get("kind", "technical")
-        comment = item.get("comment", "")
+        color_rgb = colour(item.get("kind", "technical"))
         quote = item.get("quote")
         rect = item.get("rect")
-        
-        if kind not in colors:  # F1: an unknown kind is refused, never painted in a default colour
-            raise AnnotateError(f"no colour for the annotation kind {kind!r} in annotation.colors")
-        color_hex = colors[kind]
-        # Convert hex to RGB tuple (0.0-1.0)
-        color_hex = color_hex.lstrip('#')
-        r = int(color_hex[0:2], 16) / 255.0
-        g = int(color_hex[2:4], 16) / 255.0
-        b = int(color_hex[4:6], 16) / 255.0
-        color_rgb = (r, g, b)
-        
+        comment = content_for(item)
+
         if quote:
             norm_quote = normalize(quote)
             key = (page_num, norm_quote)
-            
-            # Check for duplicates
+
             if key in quote_counts:
+                # A duplicate is reported and never placed, so it cannot be the carrier of a note.
                 quote_counts[key] += 1
-                if quote_counts[key] > 1:
-                    duplicates.append(i)
-                # Plan says: "A quote found twice on the page: the first is used and the duplicate is reported."
-                # So if it's the second time, we report it as duplicate. Do we place it?
-                # "the first is used" implies the second is NOT placed? Or just reported?
-                # "duplicates (indexes found more than once)"
-                # Let's assume we do NOT place the duplicate, just report it.
-                # And it is not in not_found.
+                duplicates.append(i)
                 continue
-                
+
             rects = _find_quote_rects(page, quote)
             if not rects:
-                if not rect or not item.get("on_rect"):
+                target = _usable_rect(rect, page) if item.get("on_rect") else None
+                if target is None:
                     not_found.append(i)
                     continue
-                # Plan 28 (owner 2026-11-27): a finding whose quote no page holds is still a note, on its rectangle.
-                x0, y0, x1, y1 = rect
-                annot = page.add_rect_annot(fitz.Rect(x0, y0, x1, y1))
+                annot = page.add_rect_annot(target)
                 annot.set_colors(stroke=color_rgb)
                 annot.set_info(title=author, content=comment)
                 annot.update()
                 placed += 1
+                if item.get("note_group") is not None and comment:
+                    carried.add(item["note_group"])
                 continue
-                
-            # Use the first rect found
-            target_rect = rects[0]
-            
-            # Record that we found it
-            if key not in quote_counts:
-                quote_counts[key] = 1
-                
-            # Add highlight annotation
-            annot = page.add_highlight_annot(target_rect)
+
+            quote_counts[key] = 1
+            annot = page.add_highlight_annot(rects[0])
             annot.set_colors(stroke=color_rgb)
             annot.set_info(title=author, content=comment)
             annot.update()
-            
             placed += 1
-            
+            if item.get("note_group") is not None and comment:
+                carried.add(item["note_group"])
+
         elif rect:
-            # Rect item
-            x0, y0, x1, y1 = rect
-            target_rect = fitz.Rect(x0, y0, x1, y1)
-            
-            # Add rectangle annotation
-            annot = page.add_rect_annot(target_rect)
+            target = _usable_rect(rect, page)
+            if target is None:
+                not_found.append(i)
+                continue
+            annot = page.add_rect_annot(target)
             annot.set_colors(stroke=color_rgb)
             annot.set_info(title=author, content=comment)
             annot.update()
-            
             placed += 1
+            if item.get("note_group") is not None and comment:
+                carried.add(item["note_group"])
         else:
             not_found.append(i)
-            
+
+    for i in fallbacks:
+        item = items[i]
+        group = item.get("note_group")
+        if group in carried or not item.get("note"):
+            continue
+        page_num = item.get("page")
+        if page_num is None or page_num < 1 or page_num > doc.page_count:
+            not_found.append(i)
+            continue
+        page = doc[page_num - 1]
+        margin = 36  # the note sits on the page, inside its margins
+        target = _usable_rect((page.rect.x0 + margin, page.rect.y0 + margin, page.rect.x1 - margin,
+                               page.rect.y1 - margin), page)
+        if target is None:
+            not_found.append(i)
+            continue
+        annot = page.add_rect_annot(target)
+        annot.set_colors(stroke=colour(item.get("kind", "technical")))
+        annot.set_info(title=author, content=item["note"])
+        annot.update()
+        placed += 1
+        carried.add(group)
+
     doc.save(dst_resolved)
     doc.close()
-    
+
     return {
         "placed": placed,
         "not_found": not_found,

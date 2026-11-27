@@ -159,9 +159,11 @@ def title_kind_annotations(figures: dict, language: str) -> List[dict]:
         code = record.get("title_kind_mismatch")
         if code not in TITLE_KIND_CODES:
             continue
+        # Review round 1, finding 6: drawn on the stored title rectangle, as the placement notes are.
+        rect = (record.get("title") or {}).get("rect") or record.get("rect")
         annotations.append({"page": record.get("page"), "kind": "figure", "code": code,
-                            "quote": record.get("caption") or None, "rect": record.get("rect"),
-                            "comment": comments[code]})
+                            "quote": record.get("caption") or None, "rect": rect,
+                            "comment": comments[code], "on_rect": True})
     return annotations
 
 
@@ -426,7 +428,22 @@ def grade_annotations(rubric: dict, grade: dict, language: str) -> List[dict]:
                 "code": item_id,
                 "quote": evidence.get("quote"),
                 "rect": None,
-                "comment": note if position == 0 else ""
+                "comment": note if position == 0 else "",
+                "note": note,
+                "note_group": item_id,
+            })
+        if ordered:
+            # Review round 1, finding 1: when no quote of the item can be placed, its note goes on the first page.
+            annotations.append({
+                "page": ordered[0][1].get("page"),
+                "kind": "technical",
+                "code": item_id,
+                "quote": None,
+                "rect": None,
+                "comment": note,
+                "note": note,
+                "note_group": item_id,
+                "fallback": True,
             })
     return annotations
 

@@ -539,6 +539,14 @@ class TestElementPoints(unittest.TestCase):
         self.assertEqual(losses, [{"id": "E4", "text": "Resultat", "verdict": "partial", "lost": 0.125,
                                    "unverified": False}])
 
+    def test_a_partial_whose_quote_did_not_verify_is_marked_unverified_in_its_loss(self):
+        # Review round 1, finding 11: an engaged verdict (present or partial) whose quote did not verify is flagged.
+        elements = [{"id": "E1", "element": "Contexte", "effective": "present", "verdict": "present", "verified": True},
+                    {"id": "E2", "element": "Objectif", "effective": "absent", "verdict": "partial", "verified": False}]
+        losses = ugs_grade.element_losses(elements, Decimal(1), TEST_SCALE)
+        self.assertEqual(len(losses), 1)
+        self.assertTrue(losses[0]["unverified"])
+
     def test_the_points_are_read_from_elements_not_from_the_level(self):
         record = grade_item(ITEM_FOUR, PAGES, FakeCall([_four_answer()]), make_ctx(), "fr", "",
                             settings=SETTINGS_FINE)

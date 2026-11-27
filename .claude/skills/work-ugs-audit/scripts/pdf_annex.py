@@ -4,6 +4,7 @@ import io
 import json
 import re
 import html
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from pathlib import Path
 from typing import Optional, List, Dict
 
@@ -11,7 +12,7 @@ import fitz
 
 # The validation codes are owned by ugs_grade (R2): the annex only labels them.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ugs_grade import GRADE_CODES
+from ugs_grade import GRADE_CODES, element_losses, load_grade_scale
 from crossref_checks import (CHECK_IDS, CITATION_CHECK_ID, COUNT_CHECK_IDS, APPENDIX_CHECK_ID, UNTITLED_CHECK_ID, TITLE_KIND_CHECK_ID,
                          STATUS_OK, STATUS_NOT_OK, STATUS_NOT_APPLICABLE)
 
@@ -288,7 +289,8 @@ def load_labels(path: Path, language: str) -> dict:
         raise AnnexError(f"key {where}.element_verdicts must be an object in {path}")
     labels["element_verdicts"] = {key: _require_text(verdicts, key, path, f"{where}.element_verdicts")
                                   for key in ELEMENT_VERDICT_KEYS}
-    for key in ("lost_points", "all_elements_present", "unverified_quote"):
+    for key in ("lost_points", "all_elements_present", "unverified_quote", "label_colon", "loss_separator",
+                "quote_open", "quote_close"):
         labels[key] = _require_text(block, key, path, where)
 
     labels.update(_load_check_labels(block, path, where))
@@ -362,7 +364,7 @@ def _validation_text(code: str, labels: dict) -> str:
 ELEMENT_LABEL_WORDS_KEY = "grade.element_label_words"
 
 
-def _points_text(value) -> str:
+def _points_text(value, decimals: int) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -373,8 +375,66 @@ def _points_text(value) -> str:
         text (str): the figure, for example 0.875, 0.125 or 1.
     --------------------------------------------------------------------------
     """
-    text = ("%.3f" % float(value)).rstrip("0").rstrip(".")
+    quantum = Decimal(1).scaleb(-decimals)
+    text = format(Decimal(str(value)).quantize(quantum, rounding=ROUND_HALF_UP), "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
     return text or "0"
+
+
+def _share_losses(losses: list, target: Decimal, decimals: int) -> list:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Round the lost points of the elements to the displayed decimals so that they add up to the points lost in
+        total (largest remainder), so the student can add them up (review round 1, finding 10).
+    Inputs:
+        losses (list[dict]): the losses, each with lost (points).
+        target (Decimal): the points lost by the item, maximum minus score.
+        decimals (int): the decimals shown.
+    Outputs:
+        shown (list[Decimal]): one value per loss, in the order of losses.
+    --------------------------------------------------------------------------
+    """
+    quantum = Decimal(1).scaleb(-decimals)
+    units = [Decimal(str(loss["lost"])) / quantum for loss in losses]
+    floors = [unit.to_integral_value(rounding=ROUND_FLOOR) for unit in units]
+    total = (target / quantum).to_integral_value(rounding=ROUND_HALF_UP)
+    deficit = int(total - sum(floors))
+    order = sorted(range(len(units)), key=lambda k: units[k] - floors[k], reverse=True)
+    shown = list(floors)
+    for step in range(abs(deficit)):
+        if deficit > 0:
+            shown[order[step % len(order)]] += 1
+        else:
+            shown[order[::-1][step % len(order)]] -= 1
+    return [value * quantum for value in shown]
+
+
+def read_score_decimals(path: Path = DEFAULT_LABELS.parent / "ugs_config.json") -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read how many decimals a point figure shows: the decimals of grade.score_step (review round 1, finding 10).
+    Inputs:
+        path (Path): the configuration JSON, normally ugs_config.default_path().
+    Outputs:
+        decimals (int): the number of decimals of the step, zero or more.
+    Raises:
+        AnnexError: if the file is unreadable or the key is absent or not a positive number (R3).
+    --------------------------------------------------------------------------
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AnnexError(f"cannot read {path}: {exc}") from exc
+    entry = raw.get("grade.score_step") if isinstance(raw, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise AnnexError(f"missing key 'grade.score_step' in {path}")
+    value = entry["value"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise AnnexError(f"'grade.score_step' must be a positive number in {path}")
+    return max(0, -Decimal(str(value)).as_tuple().exponent)
 
 
 def _cut_words(text: str, max_words: int) -> str:
@@ -421,7 +481,8 @@ def read_element_label_words(path: Path = DEFAULT_LABELS.parent / "ugs_config.js
     return value
 
 
-def item_comment(item: dict, max_points, labels: dict, max_words: Optional[int] = None) -> str:
+def item_comment(item: dict, max_points, labels: dict, max_words: Optional[int] = None,
+                 decimals: Optional[int] = None) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -444,20 +505,31 @@ def item_comment(item: dict, max_points, labels: dict, max_words: Optional[int] 
     """
     if max_words is None:
         max_words = read_element_label_words()
+    if decimals is None:
+        decimals = read_score_decimals()
     comment = " ".join(str(item.get("comment") or "").split())
-    head = "%s %s / %s:" % (item["item_id"], _points_text(item.get("score") or 0), max_points)
+    score = item.get("score") or 0
+    head = "%s %s / %s:" % (item["item_id"], _points_text(score, decimals), max_points)
     text = head + (" " + comment if comment else "")
-    losses = item.get("losses") or []
+    losses = item.get("losses")
+    if losses is None:
+        # Review round 1, finding 4: a record without the losses key derives them from its elements, else no sentence.
+        if not item.get("elements"):
+            return text
+        losses = element_losses(item["elements"], max_points, load_grade_scale())
     if not losses:
         return text + " " + labels["all_elements_present"]
+    target = Decimal(str(max_points)) - Decimal(str(score))
+    shown = _share_losses(losses, target, decimals)
     parts = []
-    for loss in losses:
-        part = "« %s » %s -%s" % (_cut_words(str(loss.get("text") or ""), max_words),
-                                  labels["element_verdicts"][loss["verdict"]], _points_text(loss["lost"]))
+    for loss, value in zip(losses, shown):
+        part = "%s%s%s %s -%s" % (labels["quote_open"], _cut_words(str(loss.get("text") or ""), max_words),
+                                  labels["quote_close"], labels["element_verdicts"][loss["verdict"]],
+                                  _points_text(value, decimals))
         if loss.get("unverified"):
             part += " (%s)" % labels["unverified_quote"]
         parts.append(part)
-    return text + " " + labels["lost_points"] + " : " + " ; ".join(parts)
+    return text + " " + labels["lost_points"] + labels["label_colon"] + labels["loss_separator"].join(parts)
 
 
 def render_rows(rubric: dict, grade: dict, totals: dict, labels: Optional[dict] = None) -> str:

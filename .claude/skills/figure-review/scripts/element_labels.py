@@ -184,6 +184,63 @@ def _overlaps(block: tuple, rect: "fitz.Rect") -> bool:
     return block[0] < rect.x1 and block[2] > rect.x0 and block[1] < rect.y1 and block[3] > rect.y0
 
 
+def lines_alignment(lines: List[tuple], rect: "fitz.Rect", tolerance_ratio: float) -> Optional[str]:
+    """
+    Purpose: Measure a title from its own lines against the element edges (owner, 2026-11-27, plan 28): a line is
+        centred when its left gap and its right gap to the element differ by no more than the tolerance; the title
+        is "center" when its last line is centred, "left" when its first line starts within the tolerance of the
+        element left edge, and "right" otherwise. A single line spanning the width is "center".
+    Details: The tolerance is tolerance_ratio of the element width, the shipped centre_tolerance_ratio.
+    Inputs:
+        lines: List[tuple] - the title lines as (x0, y0, x1, y1), in any order.
+        rect: fitz.Rect - the element rectangle.
+        tolerance_ratio: float - the share of the element width within which a gap counts as equal.
+    Outputs:
+        Optional[str] - "left", "center" or "right", or None when there is no line.
+    Raises:
+        None.
+    """
+    if not lines:
+        return None
+    tolerance = tolerance_ratio * rect.width
+    ordered = sorted(lines, key=lambda line: line[1])
+
+    def centred(line: tuple) -> bool:
+        """
+        Purpose: Tell whether one title line is centred on the element.
+        Inputs:
+            line: tuple - (x0, y0, x1, y1) of the line.
+        Outputs:
+            bool - True when the left and right gaps differ by no more than the tolerance.
+        Raises:
+            None.
+        """
+        return abs((line[0] - rect.x0) - (rect.x1 - line[2])) <= tolerance
+
+    if centred(ordered[-1]):
+        return ALIGN_CENTER
+    if ordered[0][0] - rect.x0 <= tolerance:
+        return ALIGN_LEFT
+    return ALIGN_RIGHT
+
+
+def _lines_inside(block: tuple, line_boxes: Optional[List[tuple]]) -> List[tuple]:
+    """
+    Purpose: Give the page lines that lie inside a text block's rectangle (one pixel of slack for rounding).
+    Inputs:
+        block: tuple - a block tuple of page.get_text("blocks").
+        line_boxes: Optional[List[tuple]] - the (x0, y0, x1, y1) of every text line of the page, or None.
+    Outputs:
+        List[tuple] - the lines inside the block, empty when none were given.
+    Raises:
+        None.
+    """
+    if not line_boxes:
+        return []
+    return [box for box in line_boxes
+            if box[0] >= block[0] - 1 and box[2] <= block[2] + 1 and box[1] >= block[1] - 1 and box[3] <= block[3] + 1]
+
+
 def _alignment(block: tuple, rect: "fitz.Rect", tolerance_ratio: float,
                column: Optional[Tuple[float, float]] = None) -> str:
     """
@@ -300,7 +357,8 @@ def _median(values: List[float], middle: int) -> float:
 
 
 def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
-               markers: Dict[str, Any], column: Optional[Tuple[float, float]] = None) -> Optional[Dict[str, str]]:
+               markers: Dict[str, Any], column: Optional[Tuple[float, float]] = None,
+               line_boxes: Optional[List[tuple]] = None) -> Optional[Dict[str, Any]]:
     """
     Purpose: Find the title of a figure or a table: the nearest text block that opens with a marker
         word of its type, looking below first for a figure and above first for a table.
@@ -340,10 +398,14 @@ def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
         candidates = sorted(found[direction], key=lambda item: item[0])
         if candidates:
             _, block, text = candidates[0]
+            lines = _lines_inside(block, line_boxes)
+            alignment = lines_alignment(lines, rect, tolerance) if lines else None
             return {
                 "text": text,
                 "position": direction,
-                "alignment": _alignment(block, rect, tolerance, column),
+                "alignment": alignment or _alignment(block, rect, tolerance, column),
+                "rect": [block[0], block[1], block[2], block[3]],
+                "lines": [[box[0], box[2]] for box in sorted(lines, key=lambda box: box[1])],
             }
     return None
 

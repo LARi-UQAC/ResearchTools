@@ -833,6 +833,9 @@ def _scan_page(page: "fitz.Page", page_no: int, settings: Dict[str, Any],
         "tables": tables,
         "tables_dropped": tables_dropped,
         "regions": figures,
+        # The text lines of the page: a title is aligned from its own lines (plan 28, owner 2026-11-27).
+        "line_boxes": [tuple(line["bbox"]) for block in page.get_text("dict")["blocks"]
+                       for line in block.get("lines", [])],
     }
 
 
@@ -933,7 +936,8 @@ def _render_element(page: "fitz.Page", rect: "fitz.Rect", out_root: Path, file_n
 
 
 def _take_title(available: List[tuple], rect: "fitz.Rect", element_type: str,
-                markers: Dict[str, Any], column: Optional[Tuple[float, float]] = None) -> Optional[Dict[str, str]]:
+                markers: Dict[str, Any], column: Optional[Tuple[float, float]] = None,
+                line_boxes: Optional[List[tuple]] = None) -> Optional[Dict[str, str]]:
     """
     Purpose: Find the title of one element among the blocks not yet given to another element, and remove
         the block it came from, so that each title is attached to at most one element (plan 3 review focus).
@@ -947,7 +951,7 @@ def _take_title(available: List[tuple], rect: "fitz.Rect", element_type: str,
     Raises:
         MarkerError: If the markers are incomplete.
     """
-    title = element_labels.find_title(available, rect, element_type, markers, column)
+    title = element_labels.find_title(available, rect, element_type, markers, column, line_boxes)
     if title is None:
         return None
     matches = [block for block in available if element_labels._clean(block[4]) == title["text"]]
@@ -1095,7 +1099,7 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
             column = element_labels.text_column(scan["blocks"], markers)  # plan 24 task 2: the alignment reference
             for item in items:
                 if item["kind"] == "table":
-                    item["title"] = _take_title(available, item["rect"], "table", markers, column)
+                    item["title"] = _take_title(available, item["rect"], "table", markers, column, scan["line_boxes"])
                     item["notes"] = element_labels.find_notes(scan["blocks"], item["rect"], markers)
             # Review R3 (R02 page 47): a second pass gives an untitled table the nearest table title still free.
             for item in items:
@@ -1110,7 +1114,7 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                     # Review R1 (R01 pages 42 and 44): a ruled grid with no table title but an unclaimed figure
                     # title within reach is a figure, and takes that title.
                     if item["title"] is None:
-                        figure_title = _take_title(available, item["rect"], "figure", markers, column)
+                        figure_title = _take_title(available, item["rect"], "figure", markers, column, scan["line_boxes"])
                         if figure_title is not None:
                             item["kind"] = "figure"
                             item["title"] = figure_title
@@ -1119,11 +1123,11 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
             for item in items:
                 if item["kind"] == "figure":
                     if item["title"] is None:
-                        item["title"] = _take_title(available, item["rect"], "figure", markers, column)
+                        item["title"] = _take_title(available, item["rect"], "figure", markers, column, scan["line_boxes"])
                     # Plan 7 (E4) and review I1: a region with no figure title becomes a table_image only when it
                     # is a raster or tall enough to hold text lines; a thin vector band stays a figure.
                     if item["title"] is None and (item["raster"] or item["rect"].height >= settings["table_image_min_height_pt"]):
-                        table_title = _take_title(available, item["rect"], "table", markers, column)
+                        table_title = _take_title(available, item["rect"], "table", markers, column, scan["line_boxes"])
                         if table_title is not None:
                             item["kind"] = "table_image"
                             item["title"] = table_title

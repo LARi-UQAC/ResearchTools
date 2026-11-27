@@ -4,6 +4,7 @@ Every page is built in the test with PyMuPDF from fictitious text (R34). No netw
 Run as: python .claude/skills/figure-review/scripts/Test/test_element_labels.py
 """
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -418,6 +419,101 @@ class TextColumnAlignmentTest(unittest.TestCase):
         with self.assertRaises(el.MarkerError) as raised:
             el.text_column([], markers)
         self.assertIn("column_min_words", str(raised.exception))
+
+
+class TitleLineAlignmentTest(unittest.TestCase):
+    """Alignment is measured on the title lines against the element edges (owner, 2026-11-27, plan 28).
+
+    The tolerance is centre_tolerance_ratio of the element width (the shipped key, element_markers.json); the plan
+    named a title_alignment_tolerance_pt key that is not in any configuration file.
+    """
+
+    RATIO = 0.1  # the shipped centre_tolerance_ratio of element_markers.json, value only for the fictitious cases
+
+    def align(self, lines, rect):
+        """Return the alignment of fictitious title lines (x0, y0, x1, y1) against an element rectangle."""
+        return el.lines_alignment(lines, rect, self.RATIO)
+
+    def test_a_two_line_left_title_whose_first_line_fills_the_width_is_left(self):
+        rect = fitz.Rect(100, 100, 500, 400)
+        lines = [(100, 420, 480, 432), (100, 436, 260, 448)]
+        self.assertEqual(self.align(lines, rect), "left")
+
+    def test_a_centred_short_title_above_a_wide_figure_is_center(self):
+        rect = fitz.Rect(100, 100, 500, 400)
+        self.assertEqual(self.align([(240, 420, 360, 432)], rect), "center")
+
+    def test_a_centred_title_on_a_narrow_element_is_center(self):
+        rect = fitz.Rect(200, 100, 400, 300)
+        self.assertEqual(self.align([(240, 320, 360, 332)], rect), "center")
+
+    def test_f11_reproduction_is_left(self):
+        # Fictitious coordinates equal to the measured ones of R01: element 85.1 to 527.5, title line 85.1 to 343.2.
+        rect = fitz.Rect(85.1, 409.0, 527.5, 697.0)
+        self.assertEqual(self.align([(85.1, 527.5, 343.2, 539.5)], rect), "left")
+
+    def test_f12_reproduction_is_center(self):
+        rect = fitz.Rect(85.1, 292.0, 527.0, 527.0)
+        self.assertEqual(self.align([(195.6, 540.0, 419.4, 552.0)], rect), "center")
+
+    def test_f10_reproduction_is_left(self):
+        rect = fitz.Rect(85.1, 84.3, 527.5, 372.4)
+        self.assertEqual(self.align([(85.1, 340.0, 342.5, 352.0)], rect), "left")
+
+    def test_a_title_that_is_neither_centred_nor_at_the_left_edge_is_right(self):
+        rect = fitz.Rect(100, 100, 500, 400)
+        self.assertEqual(self.align([(380, 420, 490, 432)], rect), "right")
+
+    def test_find_title_returns_its_rectangle_and_lines_for_elements_json(self):
+        doc = fitz.open()
+        page = doc.new_page()
+        _write_text(page, fitz.Rect(100, 402, 500, 422), "Figure 1 fictitious title", "left")
+        blocks = page.get_text("blocks")
+        line_boxes = [tuple(line["bbox"]) for block in page.get_text("dict")["blocks"]
+                      for line in block.get("lines", [])]
+        title = el.find_title(blocks, FIGURE_RECT, "figure", el.load_markers(MARKERS_PATH), None, line_boxes)
+        doc.close()
+        self.assertIsNotNone(title)
+        self.assertEqual(title["position"], "below")
+        self.assertEqual(len(title["lines"]), 1)
+        self.assertEqual(len(title["rect"]), 4)
+        self.assertEqual(title["alignment"], "left")
+
+    def test_no_lines_gives_no_line_alignment(self):
+        self.assertIsNone(el.lines_alignment([], fitz.Rect(100, 100, 500, 400), self.RATIO))
+
+
+REAL_WORK = os.environ.get("UGS_REAL_WORK")
+REAL_PDF = os.environ.get("UGS_REAL_R01")
+
+
+@unittest.skipUnless(REAL_WORK and REAL_PDF, "UGS_REAL_WORK and UGS_REAL_R01 not set: real R01 not read")
+class RealR01TitleAlignmentTest(unittest.TestCase):
+    """The owner's reading of four figure titles of R01 (ids only, no title text is printed)."""
+
+    EXPECTED = {"F10": "left", "F11": "left", "F12": "center", "F15": "center"}
+
+    def test_the_four_titles_are_aligned_as_the_owner_reads_them(self):
+        import json
+        import re
+        elements = {e["element_id"]: e for e in json.loads(
+            (Path(REAL_WORK) / "R01" / "elements.json").read_text(encoding="utf-8"))}
+        doc = fitz.open(REAL_PDF)
+        for element_id, expected in self.EXPECTED.items():
+            record = elements[element_id]
+            page = doc[record["page"] - 1]
+            title = re.sub(r"\s+", " ", record["title"]["text"]).strip().lower()
+            lines, seen = [], set()
+            for block in page.get_text("dict")["blocks"]:
+                for line in block.get("lines", []):
+                    text = re.sub(r"\s+", " ", "".join(s["text"] for s in line["spans"])).strip().lower()
+                    box = tuple(round(v, 1) for v in line["bbox"])
+                    if text and text in title and box not in seen:
+                        seen.add(box)
+                        lines.append(line["bbox"])
+            rect = fitz.Rect(record["rect"])
+            self.assertEqual(el.lines_alignment(lines, rect, 0.1), expected, element_id)
+        doc.close()
 
 
 if __name__ == "__main__":

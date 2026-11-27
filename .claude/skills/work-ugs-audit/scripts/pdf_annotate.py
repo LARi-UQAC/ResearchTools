@@ -246,13 +246,12 @@ def annotate(src: Path, items: List[Dict], dst: Path, colors: Dict[str, str], au
             not_found.append(i)
             continue
         page = doc[page_num - 1]
-        margin = 36  # the note sits on the page, inside its margins
-        target = _usable_rect((page.rect.x0 + margin, page.rect.y0 + margin, page.rect.x1 - margin,
-                               page.rect.y1 - margin), page)
-        if target is None:
+        # Review round 2, finding 6: a small text note at the top margin, never a page-sized square.
+        margin = 36
+        if not page.rect.contains(fitz.Point(margin, margin)):
             not_found.append(i)
             continue
-        annot = page.add_rect_annot(target)
+        annot = page.add_text_annot(fitz.Point(margin, margin), item["note"], icon="Note")
         annot.set_colors(stroke=colour(item.get("kind", "technical")))
         annot.set_info(title=author, content=item["note"])
         annot.update()

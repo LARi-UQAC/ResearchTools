@@ -764,6 +764,31 @@ class TestNoteCarrier(unittest.TestCase):
         self.assertIn("Note of I03.", contents[0])
 
 
+class TestFallbackNoteIsSmall(unittest.TestCase):
+    """Review round 2, finding 6: the page fallback of a note is a small text note, never a page-sized square."""
+
+    def test_the_fallback_annotation_rectangle_is_small(self):
+        import tempfile
+        import fitz
+        import pdf_annotate
+        folder = Path(tempfile.mkdtemp())
+        src = _pdf_with_text(folder, "Fictive page text.")
+        dst = folder / "dst.pdf"
+        item = {"page": 1, "kind": "technical", "code": "I04", "quote": None, "rect": None, "comment": "x",
+                "note": "Note of I04.", "note_group": "I04", "fallback": True}
+        result = pdf_annotate.annotate(src, [item], dst, {"technical": "#0072B2"}, "Author")
+        self.assertEqual(result["placed"], 1)
+        doc = fitz.open(dst)
+        page = doc[0]
+        annots = list(page.annots())
+        widths = [annot.rect.width for annot in annots]
+        contents = [annot.info.get("content", "") for annot in annots]
+        doc.close()
+        self.assertEqual(len(widths), 1)
+        self.assertLess(widths[0], 60)
+        self.assertEqual(contents, ["Note of I04."])
+
+
 class TestGroupAPdfAnnotation(unittest.TestCase):
     """Review round 1, group A (findings 1 and 12): an empty, infinite or off-page rectangle never raises."""
 

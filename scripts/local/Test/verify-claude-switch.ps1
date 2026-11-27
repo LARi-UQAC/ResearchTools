@@ -149,6 +149,61 @@ try {
         return ""
     }
 
+    # --- AugureAI route (Issue #112): every effect shadowed, so no registry, network or key is read (R21) ---
+    $script:AugureUser = @{}
+    $script:AugureUserReads = @()
+    $script:AugureProxyUp = $true
+    $script:AugureChoice = "1"
+    $script:AugureMenuAsked = 0
+    $script:AugurePyExit = 0
+    $script:AugurePyStdout = ""
+    $script:AugurePyCall = $null
+
+    function Read-AugureUserEnv {
+        param([Parameter(Mandatory)][string]$Name)
+        $script:AugureUserReads += $Name
+        if ($script:AugureUser.ContainsKey($Name)) { return $script:AugureUser[$Name] }
+        return $null
+    }
+    function Read-AugureChoice {
+        param([Parameter(Mandatory)][string]$Prompt)
+        $script:AugureMenuAsked++
+        return $script:AugureChoice
+    }
+    function Test-AugureProxy {
+        param([Parameter(Mandatory)][string]$Url, [Parameter(Mandatory)][int]$TimeoutSec)
+        return $script:AugureProxyUp
+    }
+    function Invoke-AugureModelList {
+        param([Parameter(Mandatory)][string]$Python, [Parameter(Mandatory)][string[]]$Arguments,
+              [Parameter(Mandatory)][hashtable]$Environment, [Parameter(Mandatory)][int]$TimeoutMs)
+        $script:AugurePyCall = @{ Python = $Python; Arguments = @($Arguments); Environment = $Environment }
+        return @{ ExitCode = $script:AugurePyExit; Stdout = $script:AugurePyStdout; Stderr = "" }
+    }
+    # Fictitious listing: rosedale-1 and ossington-5 are the two ids of the live account (2026-11-27);
+    # rosedale-2 is a fictitious second selectable id used only for the model menu.
+    function New-AugureReport {
+        param([object[]]$Selectable = @(), [object[]]$Refused = @())
+        $report = @{ profile = "dev"; selectable = @($Selectable); refused = @($Refused) }
+        return ($report | ConvertTo-Json -Depth 5 -Compress)
+    }
+    function Get-AugurePyField {
+        param([Parameter(Mandatory)][string]$Name)
+        if ($script:AugurePyCall) { return $script:AugurePyCall[$Name] }
+        return $null
+    }
+    function Set-AugureFixture {
+        $script:AugureUser = @{ "AUGUREAI_API_KEY" = "user-api-key"; "AUGURE_MCP_KEY" = "user-mcp-key"; "LITELLM_MASTER_KEY" = "user-master-key" }
+        $script:AugureUserReads = @()
+        $script:AugureProxyUp = $true
+        $script:AugureChoice = "1"
+        $script:AugureMenuAsked = 0
+        $script:AugurePyExit = 0
+        $script:AugurePyCall = $null
+        $script:AugurePyStdout = New-AugureReport -Selectable @(@{ id = "rosedale-1"; context_window = 1048576 }) -Refused @(@{ id = "ossington-5"; reason = "context window 262144 is below the required 1048576 (augure-models.json)" })
+    }
+    Set-AugureFixture
+
     # --- 0. Regression: the FIRST call in a freshly dot-sourced shell must not crash
     # reading $script:EnvSaved before it has ever been set (Set-StrictMode would turn
     # that into a terminating error - this is the bug the explicit init line exists for).
@@ -218,32 +273,35 @@ try {
     Check "cloud clears model"       (-not (Test-Path Env:\ANTHROPIC_MODEL))
     Check "claude still invoked by claude-cloud" ($script:claudeCallCount -eq 1)
 
-    # --- 6b. claude-augure refuses without AUGUREAI_API_KEY, touches nothing ---
+    # --- 6b. claude-augure refuses without the User-scope AUGUREAI_API_KEY, touches nothing ---
     Clear-SwitchEnv
-    Remove-Item Env:\AUGUREAI_API_KEY -ErrorAction SilentlyContinue
+    Set-AugureFixture
+    $script:AugureUser.Remove("AUGUREAI_API_KEY")
     $script:claudeCallCount = 0
-    claude-augure
-    Check "missing AUGUREAI_API_KEY blocks claude-augure" ($script:claudeCallCount -eq 0)
-    Check "missing AUGUREAI_API_KEY sets no env vars"     (-not (Test-Path Env:\ANTHROPIC_BASE_URL))
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "missing User AUGUREAI_API_KEY blocks claude-augure" ($script:claudeCallCount -eq 0)
+    Check "missing User AUGUREAI_API_KEY sets no env vars"     (-not (Test-Path Env:\ANTHROPIC_BASE_URL))
 
-    # --- 6c. claude-augure: base url + key set, stale Ollama vars cleared, claude invoked ---
+    # --- 6c. claude-augure: proxy + master key, ANTHROPIC_API_KEY removed, claude invoked ---
     Clear-SwitchEnv
-    $env:AUGUREAI_API_KEY = "augure-secret-key"
+    Set-AugureFixture
     $script:claudeCallCount = 0
-    claude-augure
-    Check "augure sets its own base url"      ($env:ANTHROPIC_BASE_URL -eq "https://api.augureai.ca/v1")
-    Check "augure sets ANTHROPIC_API_KEY from AUGUREAI_API_KEY" ($env:ANTHROPIC_API_KEY -eq "augure-secret-key")
-    Check "augure invoked claude once"        ($script:claudeCallCount -eq 1)
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "augure sets the proxy base url"       ($env:ANTHROPIC_BASE_URL -eq "http://127.0.0.1:4000")
+    Check "augure removes ANTHROPIC_API_KEY"     (-not (Test-Path Env:\ANTHROPIC_API_KEY))
+    Check "augure auth token is the master key"  ($env:ANTHROPIC_AUTH_TOKEN -eq "user-master-key")
+    Check "augure invoked claude once"           ($script:claudeCallCount -eq 1)
 
     # Ollama's own vars must not survive a prior claude-ollama call once augure runs.
     Clear-SwitchEnv
     $script:FakeOllamaUp = $true
     $script:FakeInstalled = @("resolved-tag:test")
     claude-ollama -Model "resolved-tag:test"
+    Set-AugureFixture
     $script:claudeCallCount = 0
-    claude-augure
-    Check "augure clears a stale Ollama auth token"   (-not (Test-Path Env:\ANTHROPIC_AUTH_TOKEN))
-    Check "augure clears a stale Ollama model"        (-not (Test-Path Env:\ANTHROPIC_MODEL))
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "augure replaces a stale Ollama auth token" ($env:ANTHROPIC_AUTH_TOKEN -eq "user-master-key")
+    Check "augure replaces a stale Ollama model"      ($env:ANTHROPIC_MODEL -eq "augure-dev/rosedale-1")
     Check "augure clears a stale Ollama timeout"      (-not (Test-Path Env:\API_TIMEOUT_MS))
     Check "augure clears a stale offline-mode flag"   (-not (Test-Path Env:\CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC))
 
@@ -253,6 +311,7 @@ try {
     # overwrite the saved value with whatever was present at THAT point (nothing useful),
     # and claude-cloud would restore the wrong thing.
     Clear-SwitchEnv
+    Set-AugureFixture
     $env:ANTHROPIC_API_KEY = "sk-original-cloud-key"
     claude-ollama -Model "resolved-tag:test"
     claude-augure
@@ -261,6 +320,7 @@ try {
 
     # Same chain, reversed order.
     Clear-SwitchEnv
+    Set-AugureFixture
     $env:ANTHROPIC_API_KEY = "sk-original-cloud-key-2"
     claude-augure
     claude-ollama -Model "resolved-tag:test"
@@ -273,6 +333,7 @@ try {
     # before it was ever saved, so claude-cloud "restored" the deletion instead of the
     # original.
     Clear-SwitchEnv
+    Set-AugureFixture
     $env:ANTHROPIC_MODEL = "my-custom-model"
     claude-augure
     claude-cloud
@@ -342,13 +403,14 @@ try {
 
     Clear-SwitchEnv
     claude-ollama
-    $env:AUGUREAI_API_KEY = "augure-secret-key"
-    claude-augure
-    Check "claude-augure clears the window variable" (-not (Test-Path Env:\CLAUDE_CODE_MAX_CONTEXT_TOKENS))
+    Set-AugureFixture
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "claude-augure sets the window from the model's context_window" ($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS -eq "1048576")
 
     Clear-SwitchEnv
     $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = "222"
     claude-ollama
+    Set-AugureFixture
     claude-augure
     claude-cloud
     Check "ollama -> augure -> cloud restores the ORIGINAL window variable" ($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS -eq "222")
@@ -378,6 +440,141 @@ try {
     $env:ANTHROPIC_API_KEY = "sk-untouched"
     claude-cloud
     Check "claude-cloud never touches a key it didn't save" ($env:ANTHROPIC_API_KEY -eq "sk-untouched")
+
+    # --- 10. claude-augure, Issue #112: profile, keys, proxy, model and routing variables ---
+    $productionText = Get-Content -Raw -Encoding UTF8 $ScriptUnderTest
+    Check "the hard-coded AugureBaseUrl is gone from the script" (-not ($productionText -match 'AugureBaseUrl'))
+    Check "no window literal in the script (the window comes from augure-models.json)" (-not ($productionText -match '1048576'))
+    Check "comment says separating the keys is one line of augure-profiles.json" ($productionText -match 'one line of augure-profiles\.json')
+
+    # 10a. profile menu when -Profile is absent; answer 2 selects chat
+    Clear-SwitchEnv; Set-AugureFixture; $script:AugureChoice = "2"; $script:claudeCallCount = 0
+    $null = & { claude-augure } *>&1
+    Check "profile menu asked once when -Profile is absent" ($script:AugureMenuAsked -eq 1)
+    Check "menu answer 2 selects the chat profile" (@(Get-AugurePyField 'Arguments') -contains "chat")
+    Check "the switch starts claude once with the chosen profile" ($script:claudeCallCount -eq 1)
+
+    # 10b. unknown profile refused, nothing read
+    Clear-SwitchEnv; Set-AugureFixture; $script:claudeCallCount = 0
+    $said = & { claude-augure -Profile nope } *>&1 | Out-String
+    Check "unknown -Profile refused, claude not started" ($script:claudeCallCount -eq 0)
+    Check "unknown -Profile names the profile" ($said -match "nope")
+    Check "unknown -Profile reads no key" ($script:AugureUserReads.Count -eq 0)
+
+    # 10c. missing and empty MCP key refused, naming the variable
+    Clear-SwitchEnv; Set-AugureFixture; $script:AugureUser.Remove("AUGURE_MCP_KEY"); $script:claudeCallCount = 0
+    $said = & { claude-augure -Profile dev } *>&1 | Out-String
+    Check "missing MCP key refused, claude not started" ($script:claudeCallCount -eq 0)
+    Check "missing MCP key named in the refusal" ($said -match "AUGURE_MCP_KEY")
+    Check "missing MCP key: the model listing never runs" ($null -eq $script:AugurePyCall)
+
+    Clear-SwitchEnv; Set-AugureFixture; $script:AugureUser["AUGURE_MCP_KEY"] = ""; $script:claudeCallCount = 0
+    $said = & { claude-augure -Profile dev } *>&1 | Out-String
+    Check "empty MCP key refused, claude not started" ($script:claudeCallCount -eq 0)
+    Check "empty MCP key named in the refusal" ($said -match "AUGURE_MCP_KEY")
+
+    # 10d. proxy down refused, naming the autostart launcher
+    Clear-SwitchEnv; Set-AugureFixture; $script:AugureProxyUp = $false; $script:claudeCallCount = 0
+    $said = & { claude-augure -Profile dev } *>&1 | Out-String
+    Check "proxy down refused, claude not started" ($script:claudeCallCount -eq 0)
+    Check "proxy down names litellm-autostart.ps1" ($said -match "litellm-autostart\.ps1")
+    Check "proxy down: no model listing" ($null -eq $script:AugurePyCall)
+
+    # 10e. listing exits 2 with an empty selectable list: refused with every reason
+    Clear-SwitchEnv; Set-AugureFixture; $script:AugurePyExit = 2
+    $script:AugurePyStdout = New-AugureReport -Selectable @() -Refused @(@{ id = "ossington-5"; reason = "context window 262144 is below the required 1048576" })
+    $script:claudeCallCount = 0
+    $said = & { claude-augure -Profile dev } *>&1 | Out-String
+    Check "empty listing refused, claude not started" ($script:claudeCallCount -eq 0)
+    Check "empty listing prints the refused reason" ($said -match "262144 is below")
+
+    # 10f. -Model not selectable refused with the window reason
+    Clear-SwitchEnv; Set-AugureFixture; $script:claudeCallCount = 0
+    $said = & { claude-augure -Profile dev -Model "ossington-5" } *>&1 | Out-String
+    Check "-Model refused by window stops the switch" ($script:claudeCallCount -eq 0)
+    Check "-Model refusal states the window reason" ($said -match "262144 is below")
+    Check "-Model refusal sets no variable" (-not (Test-Path Env:\ANTHROPIC_BASE_URL))
+
+    # 10g. one selectable model: used without a question, and printed
+    Clear-SwitchEnv; Set-AugureFixture; $script:claudeCallCount = 0
+    $said = & { claude-augure -Profile dev } *>&1 | Out-String
+    Check "one selectable model asks no question" ($script:AugureMenuAsked -eq 0)
+    Check "one selectable model is printed" ($said -match "rosedale-1")
+    Check "one selectable model starts claude" ($script:claudeCallCount -eq 1)
+
+    # 10h. final routing variables
+    Check "base url is the proxy on 127.0.0.1:4000" ($env:ANTHROPIC_BASE_URL -eq "http://127.0.0.1:4000")
+    Check "ANTHROPIC_MODEL is augure-dev/rosedale-1" ($env:ANTHROPIC_MODEL -eq "augure-dev/rosedale-1")
+    Check "ANTHROPIC_SMALL_FAST_MODEL is augure-dev/rosedale-1" ($env:ANTHROPIC_SMALL_FAST_MODEL -eq "augure-dev/rosedale-1")
+    Check "CLAUDE_CODE_MAX_CONTEXT_TOKENS is the model window 1048576" ($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS -eq "1048576")
+    Check "ANTHROPIC_API_KEY removed" (-not (Test-Path Env:\ANTHROPIC_API_KEY))
+    Check "ANTHROPIC_AUTH_TOKEN is the master key" ($env:ANTHROPIC_AUTH_TOKEN -eq "user-master-key")
+
+    # 10i. every refusal leaves every routing variable as it was
+    Clear-SwitchEnv
+    $env:ANTHROPIC_BASE_URL = "https://keep.example.test"
+    $env:ANTHROPIC_API_KEY = "sk-keep"
+    $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = "77"
+    $before = Save-RealEnv
+    $keptAll = $true
+    $refusals = @(
+        { Set-AugureFixture; $script:AugureUser.Remove("AUGURE_MCP_KEY"); claude-augure -Profile dev },
+        { Set-AugureFixture; $script:AugureProxyUp = $false; claude-augure -Profile dev },
+        { Set-AugureFixture; $script:AugurePyExit = 1; claude-augure -Profile dev },
+        { Set-AugureFixture; claude-augure -Profile dev -Model "ossington-5" },
+        { Set-AugureFixture; claude-augure -Profile nope },
+        { Set-AugureFixture; $script:AugureChoice = "9"; claude-augure }
+    )
+    foreach ($refusal in $refusals) {
+        $null = & $refusal *>&1
+        $after = Save-RealEnv
+        foreach ($name in $RoutingVars) { if ($after[$name] -ne $before[$name]) { $keptAll = $false } }
+    }
+    Check "every refusal leaves every routing variable unchanged" $keptAll
+
+    # 10j. the User-scope value is read; a stale process copy never stands in for it
+    Clear-SwitchEnv; Set-AugureFixture
+    $env:AUGUREAI_API_KEY = "stale-process-copy"
+    $script:AugureUser["AUGUREAI_API_KEY"] = "fresh-user-value"; $script:claudeCallCount = 0
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "AUGUREAI_API_KEY is read at User scope" ($script:AugureUserReads -contains "AUGUREAI_API_KEY")
+    Check "a User value lets the switch proceed despite a stale process copy" ($script:claudeCallCount -eq 1)
+    Set-AugureFixture
+    $env:AUGUREAI_API_KEY = "stale-process-copy"
+    $script:AugureUser.Remove("AUGUREAI_API_KEY"); $script:claudeCallCount = 0
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "a process copy is never used in place of an absent User value" ($script:claudeCallCount -eq 0)
+    Remove-Item Env:\AUGUREAI_API_KEY -ErrorAction SilentlyContinue
+
+    # 10k. out-of-range and non-numeric menu answers refused, never a default
+    Clear-SwitchEnv; Set-AugureFixture; $script:AugureChoice = "9"; $script:claudeCallCount = 0
+    $said = & { claude-augure } *>&1 | Out-String
+    Check "profile answer out of range refused, claude not started" ($script:claudeCallCount -eq 0 -and $null -eq $script:AugurePyCall)
+    Check "out-of-range profile answer is stated" ($said -match "between 1 and 2")
+    Clear-SwitchEnv; Set-AugureFixture; $script:AugureChoice = "x"; $script:claudeCallCount = 0
+    $said = & { claude-augure } *>&1 | Out-String
+    Check "non-numeric profile answer refused" ($script:claudeCallCount -eq 0 -and $said -match "between 1 and 2")
+
+    # 10l. several models: a menu, out-of-range refused, in-range chosen
+    Clear-SwitchEnv; Set-AugureFixture
+    $script:AugurePyStdout = New-AugureReport -Selectable @(@{ id = "rosedale-1"; context_window = 1048576 }, @{ id = "rosedale-2"; context_window = 1048576 })
+    $script:AugureChoice = "5"; $script:claudeCallCount = 0
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "model answer out of range refused, nothing set" ($script:claudeCallCount -eq 0 -and -not (Test-Path Env:\ANTHROPIC_BASE_URL))
+    Clear-SwitchEnv; Set-AugureFixture
+    $script:AugurePyStdout = New-AugureReport -Selectable @(@{ id = "rosedale-1"; context_window = 1048576 }, @{ id = "rosedale-2"; context_window = 1048576 })
+    $script:AugureChoice = "2"
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "model answer 2 selects the second listed model" ($env:ANTHROPIC_MODEL -eq "augure-dev/rosedale-2")
+
+    # 10m. the MCP key reaches the child environment only, never its arguments or the session
+    Clear-SwitchEnv; Set-AugureFixture
+    $null = & { claude-augure -Profile dev } *>&1
+    $pyArgs = @(Get-AugurePyField 'Arguments') -join " "
+    $childEnvMap = Get-AugurePyField 'Environment'
+    Check "MCP key value absent from the python arguments" (-not ($pyArgs -match "user-mcp-key"))
+    Check "MCP key handed to the child environment under its name" ($null -ne $childEnvMap -and $childEnvMap["AUGURE_MCP_KEY"] -eq "user-mcp-key")
+    Check "MCP key never placed in the session environment" (-not (Test-Path Env:\AUGURE_MCP_KEY))
 
     Clear-SwitchEnv
 } finally {

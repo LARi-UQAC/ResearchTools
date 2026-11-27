@@ -7,8 +7,11 @@ from decimal import Decimal
 from pathlib import Path
 
 from rubric_check import RubricError, validate, _decimal, _fmt
+import ugs_grade  # plan 29: the one formula of the section score, shared with the grade step (R18)
+from ugs_config import default_path
 
 STATUSES = ("rated", "not_applicable", "not_run")
+VERDICTS = ("present", "partial", "absent")
 
 
 class GradeError(ValueError):
@@ -128,6 +131,115 @@ def compute(rubric: dict, grade: dict) -> dict:
     }
 
 
+def _recompute_item(item_id: str, entry: dict, rubric_item: dict, scale, step: Decimal) -> dict:
+    """
+    Purpose: Recompute the score of one rated item from its elements with the grade step's own functions (plan 29).
+    Inputs: item_id (str): the item; entry (dict): its grade or hand-written entry; rubric_item (dict): the rubric item;
+        scale (GradeScale) and step (Decimal): as read by ugs_grade.
+    Outputs: dict: item_id, max_points, stored_score, recomputed_score (str or None), losses, and match (true, false or
+        "not_recomputed" when the item is not rated, has no elements or no stored score).
+    Raises: GradeError: an unknown verdict (naming the item and the element), or an element count or id set that differs
+        from the rubric's elements of this item.
+    """
+    maximum = _decimal(rubric_item["max_points"], item_id)
+    base = {"item_id": item_id, "max_points": _fmt(maximum),
+            "stored_score": None if entry.get("score") is None else _fmt(_decimal(entry["score"], item_id)),
+            "recomputed_score": None, "losses": [], "match": "not_recomputed"}
+    elements = entry.get("elements")
+    if entry.get("status") != "rated" or not elements:
+        return base
+    if not isinstance(elements, list) or not all(isinstance(el, dict) for el in elements):
+        raise GradeError(f"item {item_id} elements must be a list of objects")
+    text_of = {ref["id"]: ref.get("text", ref["id"]) for ref in rubric_item.get("elements") or []}
+    prepared = []
+    for element in elements:
+        identifier = element.get("id")
+        verdict = element.get("verdict")
+        effective = element.get("effective", verdict)
+        for value in (verdict, effective):
+            if value not in VERDICTS:
+                raise GradeError(f"item {item_id} element {identifier} has the verdict {value!r}")
+        prepared.append({"id": identifier, "element": element.get("element") or text_of.get(identifier, identifier),
+                         "verdict": verdict, "effective": effective, "verified": element.get("verified", True)})
+    if rubric_item.get("elements") is not None:
+        wanted = sorted(str(ref["id"]) for ref in rubric_item["elements"])
+        given = sorted(str(el["id"]) for el in prepared)
+        if given != wanted:
+            raise GradeError(f"item {item_id} gives {len(given)} elements, the rubric lists {len(wanted)}: "
+                             f"ids differ")
+    score = ugs_grade.points_for_elements(prepared, maximum, scale, step)
+    base["recomputed_score"] = _fmt(score)
+    base["losses"] = ugs_grade.element_losses(prepared, maximum, scale)
+    if entry.get("score") is None:
+        return base
+    base["match"] = Decimal(str(entry["score"])) == score
+    return base
+
+
+def recompute(rubric: dict, grade: dict, scale, step: Decimal) -> dict:
+    """
+    Purpose: Recompute every section score and the final score of one grade from its elements (plan 29, owner
+        2026-11-27): the section scores come from ugs_grade, the totals from compute.
+    Inputs: rubric (dict): the rubric; grade (dict): a grade.json or a hand-written file of the same shape; scale and
+        step: as read by ugs_grade.load_grade_scale and ugs_grade.read_grade_step.
+    Outputs: dict: report_id, items (see _recompute_item), total, max_rated, percent, complete, not_run, and
+        grade_recomputed (the grade with the recomputed scores and losses, for --write), exit_code (0 or 1).
+    Raises: GradeError, RubricError: as compute and _recompute_item.
+    """
+    validate(rubric)
+    if not isinstance(grade, dict) or not isinstance(grade.get("items"), list):
+        raise GradeError("grade needs an items list")
+    rubric_items = {item["id"]: item for item in rubric["items"]}
+    entries = {entry.get("item_id"): entry for entry in grade["items"] if isinstance(entry, dict)}
+    _check_ids(list(rubric_items), [entry.get("item_id") for entry in grade["items"]])
+    items = [_recompute_item(item_id, entries[item_id], rubric_items[item_id], scale, step)
+             for item_id in rubric_items]
+    written = json.loads(json.dumps(grade))
+    by_id = {entry["item_id"]: entry for entry in written["items"]}
+    for item in items:
+        if item["recomputed_score"] is not None:
+            by_id[item["item_id"]]["score"] = float(item["recomputed_score"])
+            by_id[item["item_id"]]["losses"] = item["losses"]
+    totals = compute(rubric, written)
+    mismatch = any(item["match"] is False for item in items)
+    return {"report_id": grade["report_id"], "items": items, "total": totals["total"],
+            "max_rated": totals["max_rated"], "percent": totals["percent"], "complete": totals["complete"],
+            "not_run": totals["not_run"], "grade_recomputed": written, "exit_code": 1 if mismatch else 0}
+
+
+def _main_recompute(args) -> int:
+    """
+    Purpose: Run --recompute: print the recomputed scores (JSON with --json, text otherwise) and write OUT when asked.
+    Inputs: args (argparse.Namespace): rubric, grade, json, write, yes.
+    Outputs: int: 0 when every stored score matches, 1 on a mismatch, 2 on a refusal (R12).
+    Raises: None (refusals are returned as exit code 2).
+    """
+    rubric = _load(args.rubric)
+    grade = _load(args.grade)
+    scale = ugs_grade.load_grade_scale()
+    step = ugs_grade.read_grade_step(default_path())
+    result = recompute(rubric, grade, scale, step)
+    if args.write:
+        out, source = Path(args.write).resolve(), Path(args.grade).resolve()
+        if out == source:
+            raise GradeError("--write must not name the input file")
+        if args.yes:
+            out.write_text(json.dumps(result["grade_recomputed"], ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"written: {out}", file=sys.stderr)
+        else:
+            print(f"dry run: would write {out} (add --yes)", file=sys.stderr)
+    shown = {key: value for key, value in result.items() if key not in ("grade_recomputed", "exit_code")}
+    if args.json:
+        print(json.dumps(dict(shown, items=result["items"], exit_code=result["exit_code"]), ensure_ascii=False,
+                         indent=2))
+    else:
+        for item in result["items"]:
+            print(f"{item['item_id']}: stored {item['stored_score']} recomputed {item['recomputed_score']} "
+                  f"match {item['match']}")
+        print(f"total {result['total']} of {result['max_rated']}")
+    return result["exit_code"]
+
+
 def main(argv=None) -> int:
     """
     Purpose: Compute the totals of one grade from the command line.
@@ -138,8 +250,16 @@ def main(argv=None) -> int:
     parser.add_argument("rubric", help="path to rubric.json")
     parser.add_argument("grade", help="path to grade.json")
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
+    parser.add_argument("--recompute", action="store_true",
+                        help="recompute every section and the final score from the elements (plan 29)")
+    parser.add_argument("--write", metavar="OUT", help="with --recompute: the grade with the recomputed scores")
+    parser.add_argument("--yes", action="store_true", help="with --write: really write OUT (dry run without it)")
     args = parser.parse_args(argv)
     try:
+        if args.write and not args.recompute:
+            raise GradeError("--write needs --recompute")
+        if args.recompute:
+            return _main_recompute(args)
         result = compute(_load(args.rubric), _load(args.grade))
     except (GradeError, RubricError) as exc:
         if args.json:

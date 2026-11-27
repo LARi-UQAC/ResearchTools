@@ -172,5 +172,119 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(gt.main([str(rubric_path), str(root / "missing.json")]), 2)
 
 
+def _rubric_four():
+    """Return a fictitious rubric of one 1-point section whose four elements are listed (plan 29)."""
+    item = _item("I01", 1)
+    item["elements"] = [{"id": "E%d" % n, "text": "Fictitious element %d" % n} for n in (1, 2, 3, 4)]
+    return {"assessment_type": "lab_report", "total_points": 1, "items": [item]}
+
+
+def _el(identifier, verdict):
+    """Return one fictitious element of a grade item, as a hand-written file gives it."""
+    return {"id": identifier, "verdict": verdict}
+
+
+def _rated_elements(last_verdict, stored=None):
+    """Return a fictitious grade of I01 with four elements, the last one with the given verdict."""
+    item = {"item_id": "I01", "status": "rated", "score": stored, "comment": "Fictitious.", "evidence": [],
+            "elements": [_el("E1", "present"), _el("E2", "present"), _el("E3", "present"), _el(
+                "E4", last_verdict)]}
+    return {"report_id": "R01", "items": [item]}
+
+
+class RecomputeTests(unittest.TestCase):
+    """Plan 29 Task 1: the section and the final scores are recomputed from the elements (owner, 2026-11-27)."""
+
+    def run_cli(self, argv):
+        """Run the command with the given arguments; return (exit code, parsed JSON or None, stderr text)."""
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = gt.main(argv)
+        text = out.getvalue()
+        try:
+            return code, json.loads(text), err.getvalue()
+        except ValueError:
+            return code, None, err.getvalue()
+
+    def test_a_hand_written_four_element_section_with_one_partial_recomputes_to_0_875(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            rubric = root / "rubric.json"
+            rubric.write_text(json.dumps(_rubric_four()), encoding="utf-8")
+            hand = root / "hand.json"
+            hand.write_text(json.dumps(_rated_elements("partial")), encoding="utf-8")
+            code, result, _ = self.run_cli([str(rubric), str(hand), "--recompute", "--json"])
+        self.assertEqual(code, 0)
+        item = result["items"][0]
+        self.assertEqual(item["recomputed_score"], "0.875")
+        self.assertEqual([(loss["id"], loss["lost"]) for loss in item["losses"]], [("E4", 0.125)])
+        self.assertEqual(result["total"], "0.875")
+        self.assertEqual(result["max_rated"], "1")
+
+    def test_a_stored_score_edited_by_hand_is_a_mismatch_and_exits_1(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            rubric = root / "rubric.json"
+            rubric.write_text(json.dumps(_rubric_four()), encoding="utf-8")
+            edited = root / "edited.json"
+            edited.write_text(json.dumps(_rated_elements("partial", stored=1.0)), encoding="utf-8")
+            code, result, _ = self.run_cli([str(rubric), str(edited), "--recompute", "--json"])
+        self.assertEqual(code, 1)
+        self.assertIs(result["items"][0]["match"], False)
+        self.assertEqual(result["items"][0]["stored_score"], "1")
+
+    def test_an_unknown_verdict_is_refused_naming_the_item_and_the_element(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            rubric = root / "rubric.json"
+            rubric.write_text(json.dumps(_rubric_four()), encoding="utf-8")
+            bad = root / "bad.json"
+            bad.write_text(json.dumps(_rated_elements("maybe")), encoding="utf-8")
+            code, _, err = self.run_cli([str(rubric), str(bad), "--recompute"])
+        self.assertEqual(code, 2)
+        self.assertIn("I01", err)
+        self.assertIn("E4", err)
+
+    def test_an_element_count_different_from_the_rubric_is_refused_naming_the_item(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            rubric = root / "rubric.json"
+            rubric.write_text(json.dumps(_rubric_four()), encoding="utf-8")
+            short = _rated_elements("partial")
+            short["items"][0]["elements"] = short["items"][0]["elements"][:3]
+            path = root / "short.json"
+            path.write_text(json.dumps(short), encoding="utf-8")
+            code, _, err = self.run_cli([str(rubric), str(path), "--recompute"])
+        self.assertEqual(code, 2)
+        self.assertIn("I01", err)
+
+    def test_write_without_yes_changes_nothing_and_with_yes_writes_a_reproducible_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            rubric = root / "rubric.json"
+            rubric.write_text(json.dumps(_rubric_four()), encoding="utf-8")
+            hand = root / "hand.json"
+            hand.write_text(json.dumps(_rated_elements("partial")), encoding="utf-8")
+            out = root / "grade_recomputed.json"
+            self.run_cli([str(rubric), str(hand), "--recompute", "--write", str(out)])
+            self.assertFalse(out.exists())
+            self.run_cli([str(rubric), str(hand), "--recompute", "--write", str(out), "--yes"])
+            self.assertTrue(out.exists())
+            code, result, _ = self.run_cli([str(rubric), str(out), "--recompute", "--json"])
+        self.assertEqual(code, 0)
+        self.assertIs(result["items"][0]["match"], True)
+
+    def test_write_onto_the_input_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            rubric = root / "rubric.json"
+            rubric.write_text(json.dumps(_rubric_four()), encoding="utf-8")
+            hand = root / "hand.json"
+            hand.write_text(json.dumps(_rated_elements("partial")), encoding="utf-8")
+            code, _, _ = self.run_cli([str(rubric), str(hand), "--recompute", "--write", str(hand), "--yes"])
+            self.assertEqual(code, 2)
+            self.assertIn("E4", hand.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -580,6 +580,14 @@ class TestRubricElementIds(unittest.TestCase):
         code, _ = check_grade_answer(prepared, ITEM_FOUR, PAGES)
         self.assertEqual(code, "elements_mismatch")
 
+    def test_an_omitted_element_id_is_elements_mismatch(self):
+        # Review round 1, group D: the answer omits E4 (it names E1 to E3 only), so the id set differs.
+        answer = _four_answer()
+        answer["elements"] = answer["elements"][:3]
+        prepared = with_level_score(answer, ITEM_FOUR, TEST_SCALE, FINE_STEP, PAGES, QUOTE, "partial", 12)
+        code, _ = check_grade_answer(prepared, ITEM_FOUR, PAGES)
+        self.assertEqual(code, "elements_mismatch")
+
     def test_a_mismatch_is_asked_again_once_then_not_run(self):
         bad = _four_answer()
         bad["elements"][3]["id"] = "E9"

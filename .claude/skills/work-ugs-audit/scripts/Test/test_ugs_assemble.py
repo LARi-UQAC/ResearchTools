@@ -576,6 +576,16 @@ class TestItemComment(unittest.TestCase):
         self.assertEqual(len(notes), 1)
         self.assertEqual((notes[0]["page"], notes[0]["quote"]), (1, "Quote A words here"))
 
+    def test_an_item_with_no_evidence_has_no_annotation_and_the_annex_lists_it_once(self):
+        # Review round 1, group D (plan 27 review focus): no evidence, no note; the annex keeps one row per item.
+        from pdf_annex import render_rows
+        rubric = {"items": [{"id": "I01", "title": "A", "max_points": 1}, {"id": "I02", "title": "B", "max_points": 1}]}
+        grade = {"items": [dict(ITEM_PARTIAL, item_id="I01", evidence=[]),
+                           dict(ITEM_PARTIAL, item_id="I02", evidence=[])]}
+        self.assertEqual(ugs_assemble.grade_annotations(rubric, grade, "en"), [])
+        rows = render_rows(rubric, grade, {}, None)
+        self.assertEqual(rows.count("<tr>"), 2)
+
     def test_the_word_limit_is_read_from_the_configuration(self):
         from ugs_config import load, default_path
         self.assertEqual(load(default_path())["grade.element_label_words"], 12)

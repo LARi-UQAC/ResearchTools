@@ -15,6 +15,8 @@ SCRIPTS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS))
 import grade_total as gt  # noqa: E402
 from grade_total import GradeError  # noqa: E402
+import ugs_grade  # noqa: E402
+from ugs_config import default_path  # noqa: E402
 
 
 def _item(item_id, points):
@@ -284,6 +286,61 @@ class RecomputeTests(unittest.TestCase):
             code, _, _ = self.run_cli([str(rubric), str(hand), "--recompute", "--write", str(hand), "--yes"])
             self.assertEqual(code, 2)
             self.assertIn("E4", hand.read_text(encoding="utf-8"))
+
+
+def _split_rubric_two_sections():
+    """Return the rubric split by rubric_split from fictitious text: section 1 lists a checklist, section 2 none."""
+    import rubric_split
+    import ugs_config
+    cfg = ugs_config.load(ugs_config.default_path())
+    text = ("## 1. Resume (/1)\n\nLe resume contient :\n\n- [ ] Contexte\n- [ ] Objectif\n\n---\n\n"
+            "## 2. Methode (/1)\n\nSimple prose, no checklist here.\n")
+    return rubric_split.split_rubric(text, "lab_report", cfg["rubric.section_heading_regex"], cfg["rubric.total_regex"],
+                                     cfg["rubric.loose_heading_regex"], cfg["rubric.element_regexes"])
+
+
+class SplitRubricRecomputeTests(unittest.TestCase):
+    """Review round 2, finding 1: a section that lists no element is recomputed from its own stored elements."""
+
+    def test_a_checklist_section_and_a_model_named_section_both_recompute(self):
+        rubric = _split_rubric_two_sections()
+        self.assertEqual(rubric["items"][1]["elements"], [])
+        grade = {"report_id": "R01", "items": [
+            {"item_id": "I01", "status": "rated", "score": 0.5, "elements": [
+                {"id": "E1", "verdict": "present"}, {"id": "E2", "verdict": "absent"}]},
+            {"item_id": "I02", "status": "rated", "score": 1.0, "elements": [
+                {"element": "Alpha", "verdict": "present"}, {"element": "Beta", "verdict": "present"},
+                {"element": "Gamma", "verdict": "present"}]}]}
+        result = gt.recompute(rubric, grade, ugs_grade.load_grade_scale(), ugs_grade.read_grade_step(default_path()))
+        self.assertEqual([item["match"] for item in result["items"]], [True, True])
+        self.assertEqual(result["exit_code"], 0)
+
+    def test_the_command_exits_0_on_the_split_rubric(self):
+        rubric = _split_rubric_two_sections()
+        grade = {"report_id": "R01", "items": [
+            {"item_id": "I01", "status": "rated", "score": 0.5, "elements": [
+                {"id": "E1", "verdict": "present"}, {"id": "E2", "verdict": "absent"}]},
+            {"item_id": "I02", "status": "rated", "score": 1.0, "elements": [
+                {"element": "Alpha", "verdict": "present"}]}]}
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            rubric_path, grade_path = root / "rubric.json", root / "grade.json"
+            rubric_path.write_text(json.dumps(rubric), encoding="utf-8")
+            grade_path.write_text(json.dumps(grade), encoding="utf-8")
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                self.assertEqual(gt.main([str(rubric_path), str(grade_path), "--recompute"]), 0)
+
+
+class StoredScoreAbsentTests(unittest.TestCase):
+    """Review round 2, finding 8: a null stored score with elements is reported no_stored_score."""
+
+    def test_a_null_stored_score_with_elements_is_no_stored_score(self):
+        rubric = _rubric_four()
+        grade = _rated_elements("partial")
+        grade["items"][0]["score"] = None
+        result = gt.recompute(rubric, grade, ugs_grade.load_grade_scale(), ugs_grade.read_grade_step(default_path()))
+        self.assertEqual(result["items"][0]["match"], "no_stored_score")
+        self.assertEqual(result["exit_code"], 0)
 
 
 if __name__ == "__main__":

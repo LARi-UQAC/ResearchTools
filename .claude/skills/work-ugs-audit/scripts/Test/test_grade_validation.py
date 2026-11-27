@@ -726,6 +726,50 @@ class TestMinimumModelElements(unittest.TestCase):
         self.assertEqual(ugs_grade.read_min_model_elements(default_path()), 3)
 
 
+class TestFewElementsCommentScope(unittest.TestCase):
+    """Review round 2, finding 2: the comment-scope check applies on the elements_few paths too."""
+
+    def grade(self, responses, retries):
+        """Grade the model-named item with the minimum of three elements and the given retries."""
+        ctx = make_ctx()
+        ctx.grade_retries = retries
+        return grade_item(ITEM_MODEL, PAGES, FakeCall(responses), ctx, "fr", "", settings=SETTINGS_FEW)
+
+    def test_a_second_few_answer_with_the_forbidden_opening_drops_the_sentence(self):
+        record = self.grade([_model_answer(["Alpha"]), _model_answer(["Alpha", "Beta"],
+                                                                     comment="Le rapport est complet.")], retries=1)
+        self.assertEqual(record["validation"], "elements_few")
+        self.assertEqual(record["comment"], "")
+        self.assertEqual(record["comment_code"], "comment_scope")
+
+    def test_the_few_fallback_with_the_forbidden_opening_drops_the_sentence(self):
+        record = self.grade([_model_answer(["Alpha", "Beta"], comment="Le rapport est complet.")], retries=0)
+        self.assertEqual(record["validation"], "elements_few")
+        self.assertEqual(record["comment"], "")
+        self.assertEqual(record["comment_code"], "comment_scope")
+
+    def test_scope_then_few_keeps_the_compliant_comment_of_the_few_fallback(self):
+        # The few answer is the fallback (it replaces the scope candidate); its own comment complies, so it stays.
+        record = self.grade([_model_answer(["Alpha", "Beta", "Gamma"], comment="Le rapport est complet."),
+                             _model_answer(["Alpha", "Beta"])], retries=1)
+        self.assertEqual(record["validation"], "elements_few")
+        self.assertEqual(record["comment"], "Cette section est presque complete.")
+        self.assertNotIn("comment_code", record)
+
+    def test_few_then_scope_drops_the_sentence_of_the_scope_answer(self):
+        record = self.grade([_model_answer(["Alpha", "Beta"]),
+                             _model_answer(["Alpha", "Beta", "Gamma"], comment="Le rapport est complet.")], retries=1)
+        self.assertEqual(record["validation"], "ok")
+        self.assertEqual(record["comment"], "")
+        self.assertEqual(record["comment_code"], "comment_scope")
+
+    def test_elements_few_is_not_flagged_so_it_does_not_block_the_ledger(self):
+        # Review round 2, finding 7: the annex marks it, the ledger step is not blocked by a flag.
+        record = self.grade([_model_answer(["Alpha"]), _model_answer(["Alpha"])], retries=1)
+        self.assertEqual(record["validation"], "elements_few")
+        self.assertFalse(record["flag"])
+
+
 class TestGroupBOpeningsAndRules(unittest.TestCase):
     """Review round 1, group B, finding 9: an opening is a whole word after the punctuation is stripped."""
 

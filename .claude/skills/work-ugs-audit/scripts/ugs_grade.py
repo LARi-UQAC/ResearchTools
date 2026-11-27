@@ -1017,6 +1017,32 @@ def _scope_record(item_id: str, answer: dict, attempts: int, max_points: Any, mi
     return record
 
 
+def _few_record(item_id: str, answer: dict, attempts: int, max_points: Any, missing_max_chars: int,
+                openings: List[str]) -> dict:
+    """
+    Purpose: Build the record of a model-named answer with too few elements (elements_few), with the comment-scope
+        check applied as on every other path (review round 2, finding 2): a comment on the whole report loses its
+        sentence and gets comment_code comment_scope.
+    Inputs:
+        item_id: str - The rubric item identifier.
+        answer: dict - The prepared answer.
+        attempts: int - The number of model calls made.
+        max_points: Any - The maximum of the rubric item.
+        missing_max_chars: int - The limit of the missing text.
+        openings: List[str] - The forbidden openings of a comment, case-folded.
+    Outputs:
+        dict - The grade record, rated, validation elements_few.
+    Raises:
+        None.
+    """
+    if opens_forbidden(answer.get("comment"), openings):
+        record = _record_from_answer(item_id, dict(answer, comment=""), "elements_few", attempts, max_points,
+                                     missing_max_chars)
+        record["comment_code"] = "comment_scope"
+        return record
+    return _record_from_answer(item_id, answer, "elements_few", attempts, max_points, missing_max_chars)
+
+
 def _item_text(item: dict) -> str:
     """
     Purpose: The ITEM text of the grader prompt: the rubric section, then its elements with their ids when the rubric
@@ -1156,8 +1182,7 @@ def grade_item(
                 last_error_reason = message = "the item names fewer elements than the minimum"
                 last_retry_note = _retry_note(ctx, "elements_few", language)
                 continue
-            return _record_from_answer(item_id, answer, "elements_few", attempt + 1,
-                                       item.get("max_points", 0), missing_max_chars)
+            return _few_record(item_id, answer, attempt + 1, item.get("max_points", 0), missing_max_chars, openings)
         if code == "ok" and opens_forbidden(answer.get("comment"), openings):
             if not scope_asked:
                 scope_asked = True
@@ -1182,8 +1207,7 @@ def grade_item(
         answer, soft_code = soft
         if soft_code == "comment_scope":
             return _scope_record(item_id, answer, attempts, item.get("max_points", 0), missing_max_chars)
-        return _record_from_answer(item_id, answer, "elements_few", attempts, item.get("max_points", 0),
-                                   missing_max_chars)
+        return _few_record(item_id, answer, attempts, item.get("max_points", 0), missing_max_chars, openings)
     if best is None:
         return _no_answer_record(item_id, code, attempts, "")
     return _record_from_answer(item_id, best[0], best[1], attempts, item.get("max_points", 0), missing_max_chars)

@@ -161,7 +161,9 @@ def _recompute_item(item_id: str, entry: dict, rubric_item: dict, scale, step: D
                 raise GradeError(f"item {item_id} element {identifier} has the verdict {value!r}")
         prepared.append({"id": identifier, "element": element.get("element") or text_of.get(identifier, identifier),
                          "verdict": verdict, "effective": effective, "verified": element.get("verified", True)})
-    if rubric_item.get("elements") is not None:
+    # Review round 2, finding 1: a section that lists no element (split_rubric gives []) is recomputed from its own
+    # stored elements; the id check applies only where the rubric lists elements.
+    if rubric_item.get("elements"):
         wanted = sorted(str(ref["id"]) for ref in rubric_item["elements"])
         given = sorted(str(el["id"]) for el in prepared)
         if given != wanted:
@@ -171,6 +173,8 @@ def _recompute_item(item_id: str, entry: dict, rubric_item: dict, scale, step: D
     base["recomputed_score"] = _fmt(score)
     base["losses"] = ugs_grade.element_losses(prepared, maximum, scale)
     if entry.get("score") is None:
+        # Review round 2, finding 8: elements but no stored score is reported as such.
+        base["match"] = "no_stored_score"
         return base
     base["match"] = Decimal(str(entry["score"])) == score
     return base

@@ -662,6 +662,23 @@ class ScoreReproductionTest(unittest.TestCase):
         self.grade["items"][0]["score"] = 25.0
         ugs_assemble.check_scores(self.rubric, self.grade)  # no exception
 
+    def test_a_split_rubric_with_a_model_named_section_passes_the_check(self):
+        # Review round 2, finding 1: split_rubric gives [] to a section that lists no element; the run must not abort.
+        import rubric_split
+        import ugs_config
+        cfg = ugs_config.load(ugs_config.default_path())
+        text = ("## 1. Resume (/1)\n\n- [ ] Contexte\n- [ ] Objectif\n\n---\n\n"
+                "## 2. Methode (/1)\n\nSimple prose, no checklist here.\n")
+        rubric = rubric_split.split_rubric(text, "lab_report", cfg["rubric.section_heading_regex"],
+                                           cfg["rubric.total_regex"], cfg["rubric.loose_heading_regex"],
+                                           cfg["rubric.element_regexes"])
+        grade = {"report_id": "R01", "items": [
+            {"item_id": "I01", "status": "rated", "score": 0.5, "elements": [
+                {"id": "E1", "verdict": "present"}, {"id": "E2", "verdict": "absent"}]},
+            {"item_id": "I02", "status": "rated", "score": 1.0, "elements": [
+                {"element": "Alpha", "verdict": "present"}, {"element": "Beta", "verdict": "present"}]}]}
+        ugs_assemble.check_scores(rubric, grade)  # no exception
+
     def test_an_item_without_elements_is_not_recomputed_and_passes(self):
         ugs_assemble.check_scores(self.rubric, {"report_id": "R01", "items": [
             {"item_id": "I01", "status": "rated", "score": 45.0, "comment": "", "evidence": []},

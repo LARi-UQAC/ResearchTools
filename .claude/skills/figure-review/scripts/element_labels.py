@@ -13,7 +13,7 @@ DEFAULT_MARKERS_PATH = Path(__file__).resolve().parent.parent / "assets" / "elem
 PREFIX_KEYS = ("figure_prefixes", "table_prefixes", "note_prefixes")
 # Numeric entries, each {"value": number, "provenance": str} (R4).
 NUMERIC_KEYS = ("max_title_distance_pt", "max_note_distance_pt", "centre_tolerance_ratio", "column_min_words",
-                "title_line_gap_ratio")
+                "title_line_gap_ratio", "title_line_min_width_pt")
 
 # Element type to the prefix list it must start with.
 ELEMENT_PREFIX_KEYS = {"figure": "figure_prefixes", "table": "table_prefixes"}
@@ -186,7 +186,7 @@ def _overlaps(block: tuple, rect: "fitz.Rect") -> bool:
 
 
 def lines_alignment(lines: List[tuple], rect: "fitz.Rect", tolerance_ratio: float,
-                    column: Optional[Tuple[float, float]] = None) -> Optional[str]:
+                    column: Optional[Tuple[float, float]] = None, min_width: float = 0.0) -> Optional[str]:
     """
     Purpose: Measure a title from its own lines against the element edges (owner, 2026-11-27, plan 28): a line is
         centred when its left gap and its right gap to the element differ by no more than the tolerance; the title
@@ -202,6 +202,8 @@ def lines_alignment(lines: List[tuple], rect: "fitz.Rect", tolerance_ratio: floa
     Raises:
         None.
     """
+    # Review round 2 follow-up (2026-11-27): a stray sliver narrower than min_width is not a title line.
+    lines = [line for line in lines if line[2] - line[0] >= min_width]
     if not lines:
         return None
     tolerance = tolerance_ratio * rect.width
@@ -233,7 +235,8 @@ def lines_alignment(lines: List[tuple], rect: "fitz.Rect", tolerance_ratio: floa
     return ALIGN_RIGHT
 
 
-def _lines_inside(block: tuple, line_boxes: Optional[List[tuple]], gap_ratio: float = 0.5) -> List[tuple]:
+def _lines_inside(block: tuple, line_boxes: Optional[List[tuple]], gap_ratio: float = 0.5,
+                  min_width: float = 0.0) -> List[tuple]:
     """
     Purpose: Give the page lines that lie inside a text block's rectangle (one pixel of slack for rounding).
     Inputs:
@@ -246,9 +249,14 @@ def _lines_inside(block: tuple, line_boxes: Optional[List[tuple]], gap_ratio: fl
     """
     if not line_boxes:
         return []
+    # Review round 2 follow-up (2026-11-27): a sliver narrower than min_width, or a line with no letter or digit (a
+    # glyph or a border fragment), is not title text and is never a title line.
     inside = sorted((box for box in line_boxes
                      if box[0] >= block[0] - 1 and box[2] <= block[2] + 1
-                     and box[1] >= block[1] - 1 and box[3] <= block[3] + 1), key=lambda box: box[1])
+                     and box[1] >= block[1] - 1 and box[3] <= block[3] + 1
+                     and box[2] - box[0] >= min_width
+                     and (len(box) < 5 or not isinstance(box[4], str) or any(ch.isalnum() for ch in box[4]))),
+                    key=lambda box: box[1])
     # Review round 1, finding 8: the title stops at the caption. Review round 2, finding 5: it stops also at a vertical
     # gap larger than gap_ratio of the caption line height (a blank line), and at a sentence end (. ! ?). A colon does
     # not end a title (a caption may wrap on one). A line box without its text keeps every line (no cut).
@@ -424,8 +432,9 @@ def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
         candidates = sorted(found[direction], key=lambda item: item[0])
         if candidates:
             _, block, text = candidates[0]
-            lines = _lines_inside(block, line_boxes, _marker_value(markers, "title_line_gap_ratio"))
-            alignment = lines_alignment(lines, rect, tolerance, column) if lines else None
+            min_width = _marker_value(markers, "title_line_min_width_pt")
+            lines = _lines_inside(block, line_boxes, _marker_value(markers, "title_line_gap_ratio"), min_width)
+            alignment = lines_alignment(lines, rect, tolerance, column, min_width) if lines else None
             return {
                 "text": text,
                 "position": direction,

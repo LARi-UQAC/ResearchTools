@@ -15,6 +15,7 @@ import fitz
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import element_labels as el  # noqa: E402
+import figure_extract  # noqa: E402  (the real-data test follows the production block split)
 
 MARKERS_PATH = Path(__file__).parent.parent.parent / "assets" / "element_markers.json"
 TITLE_BOX_HEIGHT = 20
@@ -529,6 +530,23 @@ class TitleLineAlignmentTest(unittest.TestCase):
     def test_a_caption_that_wraps_on_a_mid_sentence_colon_keeps_both_lines(self):
         self.assertEqual(len(self._title_lines("Figure 1 fictitious title:\nthe second line of the caption")), 2)
 
+    def test_a_sliver_at_the_right_edge_is_not_a_title_line(self):
+        # Measured on R01 F11 (prepare output): lines [528,531] then [85,343] on an element 85 to 528. The 3 pt sliver
+        # sits above the real line and is not title text, so the title is left-aligned.
+        rect = fitz.Rect(85, 409, 528, 697)
+        min_width = el._marker_value(el.load_markers(MARKERS_PATH), "title_line_min_width_pt")
+        lines = [(528, 687, 531, 697), (85, 700, 343, 712)]
+        self.assertEqual(el.lines_alignment(lines, rect, self.RATIO, None, min_width), "left")
+
+    def test_a_line_with_no_letter_or_digit_is_not_a_title_line(self):
+        block = (85, 687, 531, 712, "Figure 1 fictitious title", 0, 0)
+        line_boxes = [(528, 687, 531, 697, "|"), (85, 700, 343, 712, "Figure 1 fictitious title")]
+        title = el.find_title([block], fitz.Rect(85, 300, 528, 680), "figure", el.load_markers(MARKERS_PATH),
+                              None, line_boxes)
+        self.assertIsNotNone(title)
+        self.assertEqual(len(title["lines"]), 1)
+        self.assertEqual(title["alignment"], "left")
+
     def test_no_lines_gives_no_line_alignment(self):
         self.assertIsNone(el.lines_alignment([], fitz.Rect(100, 100, 500, 400), self.RATIO))
 
@@ -543,26 +561,32 @@ class RealR01TitleAlignmentTest(unittest.TestCase):
 
     EXPECTED = {"F10": "left", "F11": "left", "F12": "center", "F15": "center"}
 
-    def test_the_four_titles_are_aligned_as_the_owner_reads_them(self):
+    def test_the_stored_prepare_output_gives_the_owner_reading(self):
+        # The production path: title.alignment as prepare wrote it to elements.json (ids only, no title text printed).
+        import json
+        elements = {e["element_id"]: e for e in json.loads(
+            (Path(REAL_WORK) / "R01" / "elements.json").read_text(encoding="utf-8"))}
+        for element_id, expected in self.EXPECTED.items():
+            self.assertEqual(elements[element_id]["title"]["alignment"], expected, element_id)
+
+    def test_find_title_on_the_page_gives_the_owner_reading(self):
+        # The same production function (find_title) on the R01 page, with the stored element rectangles.
         import json
         import re
         elements = {e["element_id"]: e for e in json.loads(
             (Path(REAL_WORK) / "R01" / "elements.json").read_text(encoding="utf-8"))}
+        markers = el.load_markers(MARKERS_PATH)
         doc = fitz.open(REAL_PDF)
         for element_id, expected in self.EXPECTED.items():
             record = elements[element_id]
             page = doc[record["page"] - 1]
-            title = re.sub(r"\s+", " ", record["title"]["text"]).strip().lower()
-            lines, seen = [], set()
-            for block in page.get_text("dict")["blocks"]:
-                for line in block.get("lines", []):
-                    text = re.sub(r"\s+", " ", "".join(s["text"] for s in line["spans"])).strip().lower()
-                    box = tuple(round(v, 1) for v in line["bbox"])
-                    if text and text in title and box not in seen:
-                        seen.add(box)
-                        lines.append(line["bbox"])
-            rect = fitz.Rect(record["rect"])
-            self.assertEqual(el.lines_alignment(lines, rect, 0.1), expected, element_id)
+            line_boxes = [tuple(line["bbox"]) + (re.sub(r"\s+", " ", "".join(s["text"] for s in line["spans"])),)
+                          for block in page.get_text("dict")["blocks"] for line in block.get("lines", [])]
+            # The production path: figure_extract splits the title blocks of the page before find_title.
+            blocks = figure_extract._split_title_blocks(page, page.get_text("blocks"), markers)
+            title = el.find_title(blocks, fitz.Rect(record["rect"]), "figure", markers, None, line_boxes)
+            self.assertIsNotNone(title, element_id)
+            self.assertEqual(title["alignment"], expected, element_id)
         doc.close()
 
 

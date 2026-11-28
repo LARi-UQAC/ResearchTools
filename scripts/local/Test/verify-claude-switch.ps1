@@ -774,6 +774,30 @@ try {
     $script:AugurePyTimedOut = $true
     $said = (& { claude-augure -Profile dev } *>&1 | Out-String)
     Check "claude-augure reports TimedOut as a timeout" ($said -match "timed out")
+
+    # --- Run instead of dot-sourced (2026-11-28): the functions are not loaded, so the script must
+    # say so and exit 2 (R8, R12) rather than finish in silence, which reads as success.
+    Clear-SwitchEnv
+    $directOut = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ScriptUnderTest claude-local *>&1 | Out-String)
+    $directCode = $LASTEXITCODE
+    Check "a direct run of claude-switch exits 2" ($directCode -eq 2)
+    Check "a direct run names the dot-source line" ($directOut -match [regex]::Escape('. .\scripts\local\claude-switch.ps1'))
+    Check "a direct run says 'claude-local' was ignored" ($directOut -match "'claude-local' was ignored")
+
+    # A direct run must not touch any routing variable of the child (sentinel survives).
+    $savedBase = $env:ANTHROPIC_BASE_URL
+    $env:ANTHROPIC_BASE_URL = "sentinel-not-touched"
+    try {
+        $envOut = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$ScriptUnderTest' claude-local; 'ENV=' + `$env:ANTHROPIC_BASE_URL" *>&1 | Out-String)
+    } finally {
+        $env:ANTHROPIC_BASE_URL = $savedBase
+    }
+    Check "a direct run leaves ANTHROPIC_BASE_URL unchanged" ($envOut -match "ENV=sentinel-not-touched")
+
+    # Dot-sourcing in a child loads the functions and prints no warning.
+    $loadedOut = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". '$ScriptUnderTest'; 'loaded:' + [bool](Get-Command claude-augure -ErrorAction SilentlyContinue)" *>&1 | Out-String)
+    Check "dot-sourcing in a child loads claude-augure" ($loadedOut -match "loaded:True")
+    Check "dot-sourcing prints no 'not loaded' warning" ($loadedOut -notmatch "was ignored|dot-source the script")
 } finally {
     Restore-RealEnv $realEnv
 }

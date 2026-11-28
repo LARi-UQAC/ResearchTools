@@ -6,6 +6,10 @@
     default Anthropic cloud.
 
 .DESCRIPTION
+    Load it with dot-sourcing (. .\scripts\local\claude-switch.ps1). Run
+    directly, it loads no function, prints the two correct lines in red and
+    exits 2, naming any argument it ignored (2026-11-28).
+
     Three dot-sourced functions: claude-ollama (alias claude-local) redirects
     Claude Code to a model served locally by Ollama, claude-augure switches to
     AugureAI through a local LiteLLM proxy (Issue #112: profile, keys and model
@@ -73,6 +77,18 @@
     claude-cloud
     claude-local -Model qwen2.5-coder:7b -SessionName "PR61-local"
 #>
+
+# --- Refuse a direct run (R8, R12): nothing below would be loaded, so say so ---
+# Dot-sourced, InvocationName is '.'; run as a script it is the path. exit only
+# on the direct run, so a dot-sourced caller's shell is never closed.
+if ($MyInvocation.InvocationName -ne '.') {
+    Write-Host "claude-switch.ps1 was run, not dot-sourced: no function was loaded, so nothing was done." -ForegroundColor Red
+    Write-Host "Load it into this shell first, then run one command:" -ForegroundColor Red
+    Write-Host "  . .\scripts\local\claude-switch.ps1" -ForegroundColor Red
+    Write-Host "  claude-local   (or claude-augure, or claude-cloud)" -ForegroundColor Red
+    foreach ($ignored in $args) { Write-Host "'$ignored' was ignored." -ForegroundColor Red }
+    exit 2
+}
 
 # --- Configuration, in one place (R0) ---
 # Operator / machine choices, not GPU measurements to keep in sync like

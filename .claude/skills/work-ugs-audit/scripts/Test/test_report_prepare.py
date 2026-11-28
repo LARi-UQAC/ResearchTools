@@ -18,6 +18,8 @@ sys.path.insert(0, str(SCRIPTS.parent.parent / "figure-review" / "scripts" / "Te
 
 import fitz  # noqa: E402
 import report_prepare  # noqa: E402
+import table_image  # noqa: E402
+import ugs_tables  # noqa: E402
 import ugs_config  # noqa: E402
 from report_prepare import PrepareError, main, prepare, skipped_count  # noqa: E402
 from text_quality import OcrUnavailable  # noqa: E402
@@ -228,6 +230,12 @@ def _hooks(preflight=None, ocr_page=None, find_elements=None):
     )
 
 
+def test_module_starts_without_a_byte_order_mark():
+    """Review round 1 M2 (Issue 126): report_prepare.py carries no stray BOM before its first line."""
+    head = (SCRIPTS / "report_prepare.py").read_bytes()[:3]
+    assert head != b"\xef\xbb\xbf", "report_prepare.py starts with a byte-order mark"
+
+
 class PreparationTests(unittest.TestCase):
     """Language, excluded pages, text repair, elements, table text and rerun of the preparation (R5 to R7, R10)."""
 
@@ -267,6 +275,293 @@ class PreparationTests(unittest.TestCase):
         self.assertIn("Le réseau", self.report_file("pages", "p002.md").read_text(encoding="utf-8"))
         self.assertFalse(self.report_file("excluded", "p002.md").exists())
 
+    def test_front_roles_written_to_meta(self):
+        """Issue 126 plan 10 F1: the front-matter pages are recorded in report_meta.json (fictitious list page)."""
+        list_text = "Liste des figures\nFigure 1 Schema du montage ........ 4\nFigure 2 Courbe mesuree ........ 6\nFigure 3 Bloc ........ 8"
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
+        prepare(self.reports, self.work, hooks=_hooks())
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["front_roles"]["list_of_figures"], [2])
+        self.assertEqual(meta["front_roles"]["body_start"], 3)
+    def test_front_pages_are_skipped_by_extraction(self):
+        """Issue 126 plan 16 N3: a list page is not sent to the element finder as content (fictitious report)."""
+        list_text = "Liste des figures\nFigure 1 Schema ........ 4\nFigure 2 Courbe ........ 6\nFigure 3 Bloc ........ 8"
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
+        seen = {}
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            seen["skip"] = list(skip_pages)
+            return []
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        self.assertEqual(seen["skip"], [1, 2])
+
+    def test_cover_logo_gives_no_element(self):
+        """Issue 126 plan 16 N3: a finder that would take the cover logo writes no element, the cover being skipped."""
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": BODY_TEXT}])
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            if 1 in skip_pages:
+                return []
+            return [{"element_id": "F01", "element_type": "figure", "page": 1, "file": "F01.png"}]
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        self.assertEqual(json.loads(self.report_file("elements.json").read_text(encoding="utf-8")), [])
+
+    def _two_figures_declared(self):
+        """Give the fictitious report a list of figures declaring two figures (plan 12 Task 3)."""
+        list_text = "Liste des figures\nFigure 1 Schema ........ 4\nFigure 2 Courbe ........ 6"
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
+
+    def test_preparation_records_attempts_and_status(self):
+        """Plan 12 Task 3: the first attempt gives three figures, the re-run gives the two declared ones."""
+        self._two_figures_declared()
+        calls = []
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            calls.append(overrides)
+            count = 2 if overrides else 3
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for number in range(1, count + 1):
+                (figures_dir / f"F{number:02d}.png").write_bytes(b"png")
+                records.append({"element_id": f"F{number:02d}", "element_type": "figure", "page": 2,
+                                "file": f"F{number:02d}.png",
+                                "title": {"text": f"Figure {number}: Schema"}})
+            return records
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual([attempt["extracted"] for attempt in meta["figure_attempts"]], [3, 2])
+        self.assertEqual([attempt["status"] for attempt in meta["figure_attempts"]], ["mismatch", "ok"])
+        self.assertEqual(meta["figure_count_status"], "ok")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0], None)
+
+    def test_rejected_attempt_leaves_no_file(self):
+        """Plan 12 Task 3: the files of a rejected attempt never reach the figures folder."""
+        self._two_figures_declared()
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            count = 2 if overrides else 3
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for number in range(1, count + 1):
+                (figures_dir / f"F{number:02d}.png").write_bytes(b"png")
+                records.append({"element_id": f"F{number:02d}", "element_type": "figure", "page": 2,
+                                "file": f"F{number:02d}.png",
+                                "title": {"text": f"Figure {number}: Schema"}})
+            return records
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        figures = sorted(path.name for path in self.report_file("figures").glob("*.png"))
+        self.assertEqual(figures, ["F01.png", "F02.png"])
+        self.assertFalse(self.report_file(".attempts").exists())
+
+    def _untitled_region_finder(self):
+        """Finder giving one untitled figure record that its folder holds as a PNG (plan 11 Task 2)."""
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            (figures_dir / "F-u01.png").write_bytes(b"png")
+            return [{"element_id": "F-u01", "element_type": "figure", "page": 2, "file": "F-u01.png",
+                     "rect": [100, 300, 400, 500], "title": None, "drawing_area_ratio": 1.0}]
+        return finder
+
+    @staticmethod
+    def _grid_words(rows, cols):
+        """Fictitious OCR word boxes laid out as a grid (plan 11 Task 2)."""
+        return [(100 + c * 100, 300 + r * 15, 140 + c * 100, 310 + r * 15, f"w{r}{c}", 0, 0, 0)
+                for r in range(rows) for c in range(cols)]
+
+    def _prepare_with_ocr(self, words_hook):
+        """Prepare the fictitious report with an untitled region and the given word-box OCR hook."""
+        hooks = report_prepare.PrepHooks(preflight=lambda languages: None, ocr_page=_no_ocr,
+                                         find_elements=self._untitled_region_finder(), ocr_words=words_hook)
+        prepare(self.reports, self.work, hooks=hooks)
+
+    def test_untitled_grid_region_becomes_table_image(self):
+        """Plan 11 Task 2: an untitled region whose OCR rebuilds a 3 by 3 grid is a table_image T-u01."""
+        self._prepare_with_ocr(lambda pdf, page, rect, lang: self._grid_words(3, 3))
+        elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
+        self.assertEqual([(e["element_type"], e["element_id"], e["file"]) for e in elements],
+                         [("table_image", "T-i01", "untitled/T-i01.png")])
+        self.assertTrue(self.report_file("figures", "untitled", "T-i01.png").exists())
+        self.assertFalse(self.report_file("figures", "F-u01.png").exists())
+
+    def test_count_match_with_wrong_numbers_is_rerun(self):
+        """Review I2: two figures numbered 1 and 3 against a declared 1 and 2 is a mismatch, so the loop re-runs."""
+        self._two_figures_declared()
+        calls = []
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            calls.append(overrides)
+            numbers = [1, 3] if not overrides else [1, 2]
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for number in numbers:
+                (figures_dir / f"F{number}.png").write_bytes(b"png")
+                records.append({"element_id": f"F{number}", "element_type": "figure", "page": 2,
+                                "file": f"F{number}.png", "title": {"text": f"Figure {number}: Schema"}})
+            return records
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual([a["status"] for a in meta["figure_attempts"]], ["mismatch", "ok"])
+        self.assertEqual(meta["figure_attempts"][0]["missing"], ["2"])
+        self.assertEqual(meta["figure_attempts"][0]["extra"], ["3"])
+        self.assertEqual(meta["figure_count_status"], "ok")
+
+    def test_renamed_table_image_never_collides_with_a_ruled_table_id(self):
+        """Review I1: an untitled ruled table T-u01 and an untitled figure turned table image keep distinct ids."""
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            (figures_dir / "F-u01.png").write_bytes(b"png")
+            return [{"element_id": "T-u01", "element_type": "table", "page": 1, "file": None,
+                     "rect": [60, 60, 500, 200], "title": None, "markdown": "| a |"},
+                    {"element_id": "F-u01", "element_type": "figure", "page": 2, "file": "F-u01.png",
+                     "rect": [100, 300, 400, 500], "title": None, "drawing_area_ratio": 1.0}]
+
+        hooks = report_prepare.PrepHooks(preflight=lambda languages: None, ocr_page=_no_ocr,
+                                         find_elements=finder, ocr_words=lambda pdf, page, rect, lang: self._grid_words(3, 3))
+        prepare(self.reports, self.work, hooks=hooks)
+        elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
+        ids = [e["element_id"] for e in elements]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertIn("T-u01", ids)
+        files = [e["file"] for e in elements if e.get("file")]
+        self.assertEqual(len(files), len(set(files)))
+
+    def test_ocr_failure_keeps_figure_with_reason(self):
+        """Plan 11 Task 2: when OCR cannot run, the untitled region stays a figure with a fixed status."""
+        def failing(pdf, page, rect, lang):
+            raise PrepareError("tesseract_missing")
+
+        self._prepare_with_ocr(failing)
+        elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
+        self.assertEqual(elements[0]["element_type"], "figure")
+        self.assertEqual(elements[0]["status"], "untitled_ocr_unavailable")
+
+    def test_ocr_called_once_per_region(self):
+        """Plan 11 Task 2: the classification and the table reading share one OCR call per region."""
+        calls = []
+
+        def counting(pdf, page, rect, lang):
+            calls.append((page, tuple(rect)))
+            return self._grid_words(3, 3)
+
+        self._prepare_with_ocr(counting)
+        self.assertEqual(len(calls), 1)
+
+    def test_unknown_tesseract_language_is_not_an_ocr_status(self):
+        """Review minor: a configuration error of the Tesseract codes raises; it is not untitled_ocr_unavailable."""
+        from text_quality import QualityConfigError
+        with patch.object(report_prepare.text_quality, "tesseract_codes", side_effect=QualityConfigError("no codes")):
+            with self.assertRaises((PrepareError, report_prepare.text_quality.TextQualityError)):
+                self._prepare_with_ocr(lambda pdf, page, rect, lang: self._grid_words(3, 3))
+
+    def test_attempts_folder_removed_when_an_attempt_fails(self):
+        """Review minor: a failing attempt leaves no .attempts folder behind."""
+        self._two_figures_declared()
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            raise PrepareError("attempt failed")
+
+        with self.assertRaises(PrepareError):
+            prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        self.assertFalse(self.report_file(".attempts").exists())
+
+    def test_failed_page_ocr_is_cached_once(self):
+        """Review minor: a failed OCR of one region is not repeated for the same region."""
+        calls = []
+
+        def failing(pdf, page, rect, lang):
+            calls.append(page)
+            raise PrepareError("tesseract_missing")
+
+        memo = report_prepare._memoized_ocr(failing)
+        for _ in range(2):
+            with self.assertRaises(PrepareError):
+                memo(self.pdf, 2, [1, 2, 3, 4], "fra")
+        self.assertEqual(len(calls), 1)
+
+    def test_the_titled_grid_decision_reaches_elements_json_through_prepare(self):
+        """Review minor: the grid rule runs on the kept records of a real preparation and its flag is written."""
+        self._two_figures_declared()
+        doc = fitz.open(str(self.pdf))
+        page = doc[1]
+        # the shipped titled minimums are five columns and three rows (tables.titled_min_cols/rows)
+        index = 0
+        for y in (430, 455, 480, 505, 530):
+            for x in (60, 140, 220, 300, 380):
+                page.insert_text((x, y), f"c{index}", fontsize=10)
+                index += 1
+        page.insert_text((60, 650), "Axis", fontsize=10)
+        doc.saveIncr()
+        doc.close()
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for name, title, rect in (("F1.png", "Figure 1: A", [50, 420, 400, 560]),
+                                      ("F2.png", "Figure 2: B", [50, 640, 400, 700])):
+                (figures_dir / name).write_bytes(b"png")
+                records.append({"element_id": name[:-4], "element_type": "figure", "page": 2, "file": name,
+                                "rect": rect, "source": "vector", "title": {"text": title}})
+            return records
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        elements = {e["element_id"]: e for e in json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))}
+        self.assertEqual(elements["F1"]["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(elements["F1"]["title_kind_source"], "script")
+        self.assertIsNone(elements["F2"]["title_kind_mismatch"])
+
+    def test_untitled_files_go_to_a_subfolder_and_are_recorded(self):
+        """Owner N2: the figures folder holds only titled files; untitled ones go to figures/untitled, recorded."""
+        self._two_figures_declared()
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for name, title in (("F1.png", "Figure 1: A"), ("F2.png", "Figure 2: B"), ("F-u01.png", None)):
+                (figures_dir / name).write_bytes(b"png")
+                record = {"element_id": name[:-4], "element_type": "figure", "page": 2, "file": name,
+                          "title": {"text": title} if title else None}
+                records.append(record)
+            return records
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        figures = self.report_file("figures")
+        self.assertEqual(sorted(p.name for p in figures.glob("*.png")), ["F1.png", "F2.png"])
+        self.assertTrue((figures / "untitled" / "F-u01.png").exists())
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["untitled_figures"], {"count": 1, "pages": [2]})
+        self.assertEqual([a["status"] for a in meta["figure_attempts"]], ["ok"])  # untitled never fails an attempt
+        elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
+        untitled = [e for e in elements if e["element_id"] == "F-u01"][0]
+        self.assertEqual(untitled["file"], "untitled/F-u01.png")
+
+    def test_count_status_written_to_meta(self):
+        """Issue 126 plan 6 E2: a declared figure with no extracted figure is a mismatch in report_meta.json."""
+        list_text = "Liste des figures\nFigure 1. Schema ........ 4\nFigure 2. Courbe ........ 6\nFigure 3. Bloc ........ 8"
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
+        prepare(self.reports, self.work, hooks=_hooks())
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["figure_count_status"], "mismatch")
+        self.assertEqual(meta["extracted_figures"], 0)
+        self.assertEqual(meta["missing_figure_numbers"], ["1", "2", "3"])
+        self.assertEqual(meta["table_count_status"], "not_found")
+
+    def test_declared_counts_written_to_meta(self):
+        """Issue 126 plan 5 E1: the printed figure count of the list is written to report_meta.json (fictitious)."""
+        list_text = "Liste des figures\nFigure 1. Schema ........ 4\nFigure 2. Courbe ........ 6\nFigure 3. Bloc ........ 8"
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
+        prepare(self.reports, self.work, hooks=_hooks())
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["declared_figures"], 3)
+        self.assertEqual(meta["declared_figure_numbers"], ["1", "2", "3"])
+        self.assertIsNone(meta["declared_tables"])
+
     def test_elements_file_written(self):
         prepare(self.reports, self.work, hooks=_hooks())
         elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
@@ -279,11 +574,173 @@ class PreparationTests(unittest.TestCase):
                  "notes": [], "caption": None, "drawing_area_ratio": None,
                  "markdown": "| Nom | Valeur |\n|---|---|\n| Alpha | 12 |"}
         make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
-        prepare(self.reports, self.work, hooks=_hooks(find_elements=lambda pdf, out, skip: [table]))
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=lambda pdf, out, skip, overrides=None: [table]))
         text = self.report_file("pages", "p002.md").read_text(encoding="utf-8")
-        self.assertIn("## Table T01 (detected)", text)
+        # The fixture report is French (meta language fr), so its heading is the French one (D3).
+        self.assertIn("## Tableau T01 (détecté)", text)
         self.assertIn("| Alpha | 12 |", text)
         self.assertIn("Le tableau", text)
+
+    def _table_image_record(self):
+        """
+        Purpose: Build one fictitious table_image element record (plan 8), as extract_elements returns it.
+        Inputs:
+            None.
+        Outputs:
+            dict - the record, on page 2, with its title above.
+        Raises:
+            None.
+        """
+        return {"element_id": "T01", "element_type": "table_image", "page": 2,
+                "rect": [50.0, 300.0, 500.0, 400.0], "file": "T01.png",
+                "title": {"text": "Tableau 1 : Mesures", "position": "above", "alignment": "center"},
+                "legend": "", "notes": [], "caption": "Tableau 1 : Mesures", "source": "raster",
+                "pixel_size": [100, 80]}
+
+    def test_titled_table_image_reaches_page_markdown(self):
+        """Issue 126 plan 8 E3: the OCR words of a table drawn as an image become rows of the page text (fictitious)."""
+        words = [(60.0, 310.0, 90.0, 320.0, "Mesure", 0, 0, 0), (200.0, 310.0, 240.0, 320.0, "Valeur", 0, 0, 1),
+                 (60.0, 330.0, 90.0, 340.0, "Masse", 0, 0, 2), (200.0, 330.0, 220.0, 340.0, "12.5", 0, 0, 3)]
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
+        hooks = report_prepare.PrepHooks(preflight=lambda languages: None, ocr_page=_no_ocr,
+                                         find_elements=lambda pdf, out, skip, overrides=None: [self._table_image_record()],
+                                         ocr_words=lambda pdf, page, rect, language: words)
+        prepare(self.reports, self.work, hooks=hooks)
+        text = self.report_file("pages", "p002.md").read_text(encoding="utf-8")
+        self.assertIn("## Tableau T01 (détecté)", text)
+        self.assertIn("| Mesure | Valeur |", text)
+        self.assertIn("| Masse | 12.5 |", text)
+        record = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))[0]
+        self.assertEqual(record["element_type"], "table_image")
+        self.assertIn("markdown", record)
+
+    def test_empty_table_image_is_unreadable_and_not_a_figure(self):
+        """Issue 126 plan 8 E3: a table drawn as an image with no OCR word is unreadable, never an empty table."""
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
+        hooks = report_prepare.PrepHooks(preflight=lambda languages: None, ocr_page=_no_ocr,
+                                         find_elements=lambda pdf, out, skip, overrides=None: [self._table_image_record()],
+                                         ocr_words=lambda pdf, page, rect, language: [])
+        prepare(self.reports, self.work, hooks=hooks)
+        record = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))[0]
+        self.assertEqual(record["element_type"], "table_image")
+        self.assertEqual(record["status"], "table_image_unreadable")
+        self.assertEqual(record["status_reason"], "0 rows found, 2 needed")
+        self.assertNotIn("markdown", record)
+        self.assertNotIn("| --- |", self.report_file("pages", "p002.md").read_text(encoding="utf-8"))
+
+    def test_two_table_images_on_one_page_cost_one_ocr(self):
+        """Review M3 (series C): the OCR of a page is cached for one preparation; a second region reuses it."""
+        calls = []
+
+        def reader(pdf, page_number, language, dpi):
+            calls.append(page_number)
+            return [(10.0, 10.0, 20.0, 20.0, "Mesure", 0, 0, 0)]
+
+        hook = report_prepare._make_ocr_words_hook(300, page_reader=reader)
+        hook(self.pdf, 1, [0.0, 0.0, 100.0, 100.0], "fra")
+        hook(self.pdf, 1, [0.0, 0.0, 100.0, 100.0], "fra")
+        self.assertEqual(calls, [1])
+        hook(self.pdf, 2, [0.0, 0.0, 100.0, 100.0], "fra")
+        self.assertEqual(calls, [1, 2])
+
+    def test_only_words_inside_the_element_rect_are_returned(self):
+        """Review M4 (series C): a stub textpage gives words inside and outside a sub-rect; only the inside ones return."""
+
+        class StubPage:
+            def __init__(self):
+                self.textpages = 0
+
+            def get_textpage_ocr(self, language, dpi, full):
+                self.textpages += 1
+                return "stub-textpage"
+
+            def get_text(self, kind, textpage=None):
+                assert kind == "words" and textpage == "stub-textpage"
+                return [(110.0, 110.0, 130.0, 120.0, "dedans", 0, 0, 0),
+                        (10.0, 10.0, 30.0, 20.0, "dehors", 0, 0, 1),
+                        (190.0, 110.0, 230.0, 120.0, "bord", 0, 0, 2)]
+
+        stub = StubPage()
+        hook = report_prepare._make_ocr_words_hook(
+            300, page_reader=lambda pdf, number, language, dpi: report_prepare._page_words(stub, language, dpi))
+        words = hook(self.pdf, 1, [100.0, 100.0, 150.0, 150.0], "fra")
+        self.assertEqual([word[4] for word in words], ["dedans"])
+        self.assertEqual(stub.textpages, 1)
+
+    def test_ocr_error_gives_a_category_and_never_the_path(self):
+        """Security correction (series C, M3): the PrepareError holds a fixed category and the type name, never the
+        error text, which can carry the PDF path (fictitious path here)."""
+        leaking = FileNotFoundError("C:/Etudiants/Fictif Dupont/rapport.pdf introuvable")
+        with patch.object(report_prepare.fitz, "open", side_effect=leaking):
+            with self.assertRaises(PrepareError) as ctx:
+                report_prepare._ocr_page_words(self.pdf, 1, "fra", 300)
+        text = str(ctx.exception)
+        self.assertIn("tesseract_missing", text)
+        self.assertIn("FileNotFoundError", text)
+        self.assertNotIn("Dupont", text)
+        self.assertNotIn("Etudiants", text)
+
+    def test_unlisted_ocr_error_is_ocr_failed(self):
+        """Security correction (series C, M3): an exception type with no category is reported as ocr_failed."""
+        with patch.object(report_prepare.fitz, "open", side_effect=RuntimeError("secret detail")):
+            with self.assertRaises(PrepareError) as ctx:
+                report_prepare._ocr_page_words(self.pdf, 1, "fra", 300)
+        self.assertIn("ocr_failed", str(ctx.exception))
+        self.assertNotIn("secret detail", str(ctx.exception))
+
+    def test_table_image_without_an_ocr_hook_is_a_named_refusal(self):
+        """Issue 126 plan 8 E3: a table_image with no OCR hook given is refused by name, never guessed."""
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
+        with self.assertRaises(PrepareError) as ctx:
+            prepare(self.reports, self.work, hooks=_hooks(find_elements=lambda pdf, out, skip, overrides=None: [self._table_image_record()]))
+        self.assertIn("OCR", str(ctx.exception))
+
+    @unittest.skipUnless(os.environ.get("TESSDATA_PREFIX"), "needs TESSDATA_PREFIX (Tesseract) to run real OCR")
+    def test_real_ocr_reads_the_words_of_a_table_image(self):
+        """Issue 126 plan 8 E3: real OCR of a fictitious picture of two words (skips without TESSDATA_PREFIX)."""
+        source = fitz.open()
+        page = source.new_page(width=400, height=120)
+        page.insert_text((20, 70), "Mesure", fontsize=28)
+        pix = page.get_pixmap(dpi=200)
+        probe = self.tmp / "table_image_probe.pdf"
+        doc = fitz.open()
+        picture_page = doc.new_page(width=400, height=120)
+        picture_page.insert_image(picture_page.rect, pixmap=pix)
+        doc.save(str(probe))
+        doc.close()
+        source.close()
+        words = report_prepare._ocr_page_words(probe, 1, "eng", 300)
+        self.assertTrue(any("Mesure" in str(word[4]) for word in words))
+
+    def test_missing_min_anchor_key_writes_no_elements_file(self):
+        cfg = self.work.parent / "ugs_config_no_anchor.json"
+        cfg.write_text(json.dumps({"other.key": {"value": 1, "provenance": "fictitious"}}), encoding="utf-8")
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
+        with patch.object(ugs_tables, "DEFAULT_CONFIG_PATH", cfg):
+            with self.assertRaises(PrepareError) as ctx:
+                prepare(self.reports, self.work, hooks=_hooks())
+        self.assertIn("tables.min_anchor_chars", str(ctx.exception))
+        self.assertFalse(list(self.work.rglob("elements.json")))
+
+    def test_missing_table_text_language_writes_no_elements_file(self):
+        """F2: a language with no table text refuses the report before any write of its elements."""
+        cfg = self.work.parent / "table_text_en_only.json"
+        cfg.write_text(json.dumps({"en": {"heading": {"value": "## Table {element_id} (detected)", "provenance": "t"},
+                                          "page_line": {"value": "Page {page}", "provenance": "t"}}}), encoding="utf-8")
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
+        with patch.object(ugs_tables, "TABLE_TEXT_PATH", cfg):
+            with self.assertRaises(PrepareError) as ctx:
+                prepare(self.reports, self.work, hooks=_hooks())
+        self.assertIn("'fr'", str(ctx.exception))
+        self.assertFalse(list(self.work.rglob("elements.json")))
+
+    def test_tables_dropped_is_read_from_the_extraction_file(self):
+        """F0: the count of tables dropped by the extraction is surfaced in report_meta.json, 0 when none."""
+        report_dir = self.work / "R01"
+        report_dir.mkdir(parents=True)
+        self.assertEqual(report_prepare._tables_dropped(report_dir), 0)
+        (report_dir / report_prepare.TABLE_STATS_FILE).write_text(json.dumps({"tables_dropped": 2}), encoding="utf-8")
+        self.assertEqual(report_prepare._tables_dropped(report_dir), 2)
 
     def test_second_run_changes_nothing(self):
         prepare(self.reports, self.work, hooks=_hooks())
@@ -401,6 +858,289 @@ class PreparationTests(unittest.TestCase):
         source.close()
         text = REAL_OCR_PAGE(probe, 1, "eng", 300)
         self.assertIn("test", text.lower())
+
+
+class TitledGridSignalTests(unittest.TestCase):
+    """Review A (decision of the session): a titled figure whose region is a grid is a table, by the script."""
+
+    GRID = [(60, 130, "r1c1"), (200, 130, "r1c2"), (340, 130, "r1c3"),
+            (60, 160, "r2c1"), (200, 160, "r2c2"), (340, 160, "r2c3"),
+            (60, 190, "r3c1"), (200, 190, "r3c2"), (340, 190, "r3c3")]
+    CHART = [(60, 130, "Axis"), (300, 220, "Curve")]
+    RECT = [50, 110, 400, 210]
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.pdf = self.tmp / "fixture.pdf"
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        for x, y, text in self.GRID:
+            page.insert_text((x, y), text, fontsize=10)
+        for x, y, text in [(x + 0, y + 0, t) for x, y, t in self.CHART]:
+            page.insert_text((x, y + 300), text, fontsize=10)  # the chart sits lower on the same page
+        doc.save(str(self.pdf))
+        doc.close()
+        self.settings = table_image.ImageSettings(column_gap_pt=8.0, min_rows=3, row_overlap_ratio=0.5)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def record(self, element_id, rect, source="vector", title="Figure 3: x", **extra):
+        base = {"element_type": "figure", "element_id": element_id, "page": 1, "rect": rect,
+                "file": f"{element_id}.png", "source": source,
+                "title": {"text": title} if title else None, "figure_id": element_id}
+        base.update(extra)
+        return base
+
+    def decide(self, records, page_words=None, strong=(3, 3), weak=(3, 3), min_words=1):
+        return report_prepare._decide_title_kinds(records, self.pdf, page_words, lambda: "eng", self.settings,
+                                                 strong[0], strong[1], weak[0], weak[1], min_words)
+
+    def test_a_vector_grid_under_a_figure_title_is_flagged_by_the_script(self):
+        records = self.decide([self.record("F3", self.RECT)])
+        self.assertEqual(records[0]["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(records[0]["title_kind_source"], "script")
+        self.assertEqual((records[0]["element_id"], records[0]["file"]), ("F3", "F3.png"))
+
+    def test_a_chart_under_a_figure_title_is_not_flagged(self):
+        records = self.decide([self.record("F4", [50, 400, 400, 500])])
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+    def test_an_untitled_grid_is_never_flagged_by_this_rule(self):
+        records = self.decide([self.record("F-u01", self.RECT, title=None)])
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+    def test_an_existing_script_flag_is_kept(self):
+        records = self.decide([self.record("F5", [50, 400, 400, 500], title_kind_mismatch="table_titled_figure",
+                                           title_kind_source="script")])
+        self.assertEqual(records[0]["title_kind_mismatch"], "table_titled_figure")
+
+    def test_a_raster_grid_is_read_once_per_page_and_clipped_to_its_region(self):
+        calls = []
+
+        def page_words(pdf, page, rect, codes):  # the raw OCR hook: the memo reads the whole page once
+            calls.append(page)
+            words = [(x, y, x + 20, y + 10, t, 0, 0, 0) for x, y, t in self.GRID]
+            words.append((500, 500, 520, 510, "outside", 0, 0, 0))
+            return words
+
+        records = self.decide([self.record("F6", self.RECT, source="raster"),
+                               self.record("F7", [50, 110, 400, 210], source="raster")],
+                              report_prepare._memoized_page_ocr(page_words))
+        self.assertEqual([r.get("title_kind_mismatch") for r in records],
+                         ["table_titled_figure", "table_titled_figure"])
+        self.assertEqual(calls, [1])
+
+    def test_without_ocr_a_raster_is_left_unflagged(self):
+        records = self.decide([self.record("F8", self.RECT, source="raster")], page_words=None)
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+    def test_a_table_image_records_its_grid_reading_without_a_flag(self):
+        record = self.record("T-i01", self.RECT, source="raster", title="Tableau 1: x", element_type="table_image")
+        records = self.decide([record], page_words=lambda pdf, page, codes: [
+            (x, y, x + 20, y + 10, t, 0, 0, 0) for x, y, t in self.GRID])
+        self.assertIs(records[0]["title_grid"], True)
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+
+class TitledGridReadingTests(unittest.TestCase):
+    """Review 6 (F7 rule): a titled region reads as strong, weak, none or unreadable, and only strong is a flag."""
+
+    GRID = TitledGridSignalTests.GRID
+    CHART = TitledGridSignalTests.CHART
+    RECT = TitledGridSignalTests.RECT
+    setUp = TitledGridSignalTests.setUp
+    tearDown = TitledGridSignalTests.tearDown
+    record = TitledGridSignalTests.record
+    decide = TitledGridSignalTests.decide
+
+    def test_a_raster_region_whose_ocr_fails_or_is_absent_gives_no_words(self):
+        # Review minor: an unavailable OCR is None, never an exception and never a grid reading.
+        record = self.record("F20", self.RECT, source="raster")
+        self.assertIsNone(report_prepare._region_words(self.pdf, record, None, lambda: "eng"))
+
+        def failing(pdf, page, codes):
+            raise report_prepare.PrepareError("planted OCR failure")
+
+        self.assertIsNone(report_prepare._region_words(self.pdf, record,
+                                                       report_prepare._memoized_page_ocr(
+                                                           lambda pdf, page, rect, codes: failing(pdf, page, codes)),
+                                                       lambda: "eng"))
+
+    def test_a_region_with_too_few_words_is_unreadable(self):
+        records = self.decide([self.record("F9", self.RECT)], min_words=100)
+        self.assertIsNone(records[0]["title_grid"])
+        self.assertIsNone(records[0]["title_grid_reading"])
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+    def test_a_grid_between_the_weak_and_the_strong_thresholds_is_weak_and_not_flagged(self):
+        records = self.decide([self.record("F10", self.RECT)], strong=(3, 5), weak=(3, 3))
+        self.assertEqual(records[0]["title_grid_reading"], "weak")
+        self.assertIs(records[0]["title_grid"], False)
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+    def test_a_region_below_the_weak_grid_is_none(self):
+        records = self.decide([self.record("F11", self.RECT)], strong=(3, 5), weak=(3, 4))
+        self.assertEqual(records[0]["title_grid_reading"], "none")
+        self.assertIs(records[0]["title_grid"], False)
+
+    def test_a_strong_grid_is_strong_and_flagged(self):
+        records = self.decide([self.record("F12", self.RECT)], strong=(3, 3), weak=(3, 3))
+        self.assertEqual(records[0]["title_grid_reading"], "strong")
+        self.assertEqual(records[0]["title_kind_source"], "script")
+
+
+class InImageTitleTests(unittest.TestCase):
+    """Plan 24 Task 1: a title drawn inside an untitled raster figure is found, and the element takes its printed number."""
+
+    RECT = [100, 100, 500, 400]
+
+    def setUp(self):
+        """
+        Purpose: Give each test a folder with an untitled figure file and a fictitious PDF path.
+        Inputs:
+            None.
+        Outputs:
+            None. Sets self.folder, self.pdf and the element file.
+        Raises:
+            None.
+        """
+        self.folder = Path(tempfile.mkdtemp())
+        self.pdf = self.folder / "fixture.pdf"
+        (self.folder / "F-u01.png").write_bytes(b"png")
+        self.markers = element_labels_markers()
+
+    def tearDown(self):
+        """
+        Purpose: Remove the temporary folder.
+        Inputs:
+            None.
+        Outputs:
+            None.
+        Raises:
+            None.
+        """
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+    def words_at(self, y0, text, x0=150, x1=450):
+        """
+        Purpose: Build the OCR word tuples of one fictitious line, spread over its width.
+        Inputs:
+            y0 (float): the top of the line.
+            text (str): the fictitious words.
+            x0, x1 (float): the line extent.
+        Outputs:
+            list[tuple]: the word tuples with block and line numbers.
+        Raises:
+            None.
+        """
+        parts = text.split()
+        step = (x1 - x0) / len(parts)
+        return [(x0 + i * step, y0, x0 + (i + 1) * step, y0 + 12, word, 1, 1, i) for i, word in enumerate(parts)]
+
+    def record(self, element_id="F-u01", title=None, source="raster", element_type="figure"):
+        """
+        Purpose: Build one fictitious element record of a figure finder.
+        Inputs:
+            element_id (str): the id of the record.
+            title (dict | None): the title already attached, None for an untitled element.
+            source (str): raster or vector.
+            element_type (str): figure or table_image.
+        Outputs:
+            dict: the record.
+        Raises:
+            None.
+        """
+        return {"element_id": element_id, "element_type": element_type, "page": 1, "rect": self.RECT,
+                "file": f"{element_id}.png", "source": source, "title": title, "figure_id": element_id}
+
+    def decide(self, records, words, folder=None):
+        """
+        Purpose: Run the in-image rule with a stub page reader that returns the given words.
+        Inputs:
+            records (list[dict]): the records of one attempt.
+            words (list[tuple]): the OCR words of the page.
+            folder (Path | None): the attempt folder, the setUp folder by default.
+        Outputs:
+            list[dict]: the records after the rule.
+        Raises:
+            None.
+        """
+        return report_prepare._decide_in_image_titles(records, folder or self.folder, self.pdf,
+                                                     lambda pdf, page, codes: words, lambda: "eng", 0.15,
+                                                     self.markers)
+
+    def test_a_bottom_figure_title_gives_the_printed_number_and_file(self):
+        records = self.decide([self.record()], self.words_at(372, "Figure 4 Temperature"))
+        record = records[0]
+        self.assertEqual((record["element_id"], record["element_type"], record["file"]), ("F4", "figure", "F4.png"))
+        self.assertEqual(record["title"]["position"], "in_image_bottom")
+        self.assertEqual(record["title"]["alignment"], "center")
+        self.assertEqual(record["figure_id"], "F4")
+        self.assertTrue((self.folder / "F4.png").exists())
+        self.assertFalse((self.folder / "F-u01.png").exists())
+
+    def test_a_table_title_in_the_image_makes_a_table_image(self):
+        records = self.decide([self.record()], self.words_at(104, "Tableau 2 Budget", 100, 220))
+        record = records[0]
+        self.assertEqual((record["element_id"], record["element_type"]), ("T2", "table_image"))
+        self.assertEqual(record["title"]["position"], "in_image_top")
+        self.assertNotIn("figure_id", record)
+        self.assertNotIn("drawing_area_ratio", record)
+
+    def test_a_text_title_wins_over_an_in_image_title(self):
+        titled = self.record(title={"text": "Figure 3 Text", "position": "below", "alignment": "left"})
+        records = self.decide([titled], self.words_at(372, "Figure 4 Temperature"))
+        self.assertEqual(records[0]["title"]["text"], "Figure 3 Text")
+        self.assertEqual(records[0]["element_id"], "F-u01")
+
+    def test_a_marker_word_in_the_middle_of_the_image_is_not_a_title(self):
+        records = self.decide([self.record()], self.words_at(200, "Figure of merit"))
+        self.assertIsNone(records[0]["title"])
+        self.assertEqual(records[0]["element_id"], "F-u01")
+
+    def test_a_vector_element_is_left_to_its_own_text_layer(self):
+        records = self.decide([self.record(source="vector")], self.words_at(372, "Figure 4 Temperature"))
+        self.assertIsNone(records[0]["title"])
+
+    def test_an_id_already_given_gets_a_suffix(self):
+        other = self.record("F4")
+        other["title"] = {"text": "Figure 4 Autre", "position": "below", "alignment": "left"}
+        records = self.decide([self.record(), other], self.words_at(372, "Figure 4 Temperature"))
+        self.assertEqual(records[0]["element_id"], "F4-b")
+        self.assertEqual(records[0]["file"], "F4-b.png")
+
+    def test_a_file_already_on_disk_is_never_overwritten(self):
+        (self.folder / "F4.png").write_bytes(b"other")
+        records = self.decide([self.record()], self.words_at(372, "Figure 4 Temperature"))
+        self.assertEqual(records[0]["status"], "in_image_name_taken")
+        self.assertEqual(records[0]["element_id"], "F-u01")
+        self.assertEqual((self.folder / "F4.png").read_bytes(), b"other")
+        self.assertTrue((self.folder / "F-u01.png").exists())
+
+    def test_the_band_ratio_is_read_from_the_criteria_file(self):
+        self.assertEqual(report_prepare._load_in_image_band(), 0.15)
+
+    def test_a_missing_band_ratio_is_named(self):
+        broken = self.folder / "criteria.json"
+        broken.write_text(json.dumps({"extraction": {}}), encoding="utf-8")
+        with patch.object(report_prepare, "FIGURE_CRITERIA_FILE", broken):
+            with self.assertRaises(PrepareError) as raised:
+                report_prepare._load_in_image_band()
+        self.assertIn("in_image_title_band_ratio", str(raised.exception))
+
+
+def element_labels_markers():
+    """
+    Purpose: Load the shipped element markers for the in-image tests.
+    Inputs:
+        None.
+    Outputs:
+        dict: the markers as element_labels.load_markers returns them.
+    Raises:
+        None.
+    """
+    return report_prepare.element_labels.load_markers(report_prepare.ELEMENT_MARKERS_FILE)
 
 
 if __name__ == "__main__":

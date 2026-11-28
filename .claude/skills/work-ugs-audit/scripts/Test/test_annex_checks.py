@@ -130,6 +130,73 @@ class TestChecksTable(unittest.TestCase):
         self.assertEqual(old, "T rows 1")
 
 
+class TestTitleKindRow(unittest.TestCase):
+    """N7 (plan 20 task 2): the title_kind check row and its PDF annotation, in both report languages."""
+
+    FR_TABLE = ("Titre incorrect : cet élément est un tableau, pas une figure. Utiliser « Tableau N » et l'inscrire "
+                "dans la liste des tableaux.")
+    FR_FIGURE = ("Titre incorrect : cet élément est une figure, pas un tableau. Utiliser « Figure N » et l'inscrire "
+                 "dans la liste des figures.")
+    EN_TABLE = 'Wrong title: this element is a table, not a figure. Use "Table N" and add it to the list of tables.'
+    EN_FIGURE = 'Wrong title: this element is a figure, not a table. Use "Figure N" and add it to the list of figures.'
+
+    @staticmethod
+    def _figures(*flags, vision_validated=True):
+        return {"vision_validated": vision_validated, "figures": [{"figure_id": "F%d" % (i + 1), "page": 1, "rect": [0, 0, 1, 1], "caption": "Figure %d: x" % (i + 1),
+                             "title_kind_mismatch": flag, "title_kind_source": "script" if flag else None}
+                            for i, flag in enumerate(flags)]}
+
+    def test_two_flagged_elements_give_not_ok_with_their_ids(self):
+        row = ugs_assemble.title_kind_row(self._figures("table_titled_figure", None, "table_titled_figure"))
+        self.assertEqual(row, {"id": "title_kind", "status": "not_ok", "detail": {"ids": ["F1", "F3"]}})
+
+    def test_no_flagged_element_gives_ok_with_no_ids(self):
+        row = ugs_assemble.title_kind_row(self._figures(None, None))
+        self.assertEqual(row, {"id": "title_kind", "status": "ok", "detail": {}})
+
+    def test_script_flags_are_reported_whether_or_not_vision_was_validated(self):
+        # Review 4: the row reflects the script; vision not validated does not hide a script flag.
+        row = ugs_assemble.title_kind_row(self._figures("table_titled_figure", None, vision_validated=False))
+        self.assertEqual(row, {"id": "title_kind", "status": "not_ok", "detail": {"ids": ["F1"]}})
+        self.assertEqual(len(ugs_assemble.title_kind_annotations(
+            self._figures("table_titled_figure", None, vision_validated=False), "fr")), 1)
+
+    def test_no_script_flag_and_no_vision_is_ok_only_when_the_keys_exist(self):
+        row = ugs_assemble.title_kind_row(self._figures(None, vision_validated=False))
+        self.assertEqual(row, {"id": "title_kind", "status": "ok", "detail": {}})
+
+    def test_no_figures_file_gives_not_applicable(self):
+        self.assertEqual(ugs_assemble.title_kind_row(None)["status"], "not_applicable")
+
+    def test_figures_without_the_key_are_not_applicable_not_ok(self):
+        row = ugs_assemble.title_kind_row({"figures": [{"figure_id": "F1", "page": 1, "rect": [0, 0, 1, 1]}]})
+        self.assertEqual(row["status"], "not_applicable")
+
+    def test_annotation_text_is_the_exact_french_copy(self):
+        comments = [a["comment"] for a in ugs_assemble.title_kind_annotations(
+            self._figures("table_titled_figure", "figure_titled_table"), "fr")]
+        self.assertEqual(comments, [self.FR_TABLE, self.FR_FIGURE])
+
+    def test_annotation_text_is_the_exact_english_copy(self):
+        comments = [a["comment"] for a in ugs_assemble.title_kind_annotations(self._figures("table_titled_figure"), "en")]
+        self.assertEqual(comments, [self.EN_TABLE])
+
+    def test_the_figure_titled_table_message_in_both_languages(self):
+        figures = self._figures("figure_titled_table")
+        self.assertEqual([a["comment"] for a in ugs_assemble.title_kind_annotations(figures, "fr")], [self.FR_FIGURE])
+        self.assertEqual([a["comment"] for a in ugs_assemble.title_kind_annotations(figures, "en")], [self.EN_FIGURE])
+
+    def test_an_unflagged_figure_gets_no_annotation(self):
+        self.assertEqual(ugs_assemble.title_kind_annotations(self._figures(None), "fr"), [])
+
+    def test_labels_carry_the_row_and_the_comments_in_both_languages(self):
+        for language in ("fr", "en"):
+            labels = _labels(language)
+            self.assertIn("title_kind", labels["check_values"])
+            self.assertIn("ids", labels["check_detail_values"])
+            self.assertEqual(set(labels["title_kind_comments"]), {"table_titled_figure", "figure_titled_table"})
+
+
 class TestAssembleChecks(unittest.TestCase):
     """
     Purpose: The assemble step writes checks.json in the loop folder and passes the checks to the annex.
@@ -235,7 +302,8 @@ class TestAssembleChecks(unittest.TestCase):
         self._write_source_files(with_element=True, excluded=[])
         self._assemble(["Figure 2.1 shows the layout."])
         checks = self._checks()
-        self.assertEqual([c["id"] for c in checks], CHECK_IDS)
+        # N5 adds the citation_placement row after the five cross-reference checks.
+        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement", "figure_counts", "table_counts", "untitled_elements", "title_kind", "title_placement", "appendices"])
         self.assertEqual(checks[0]["status"], "ok")
         labels = _labels("en")
         with fitz.open(str(self.loop_dir / "annotated.pdf")) as doc:
@@ -285,6 +353,294 @@ class TestAssembleChecks(unittest.TestCase):
         self.assertIn(labels["excluded_reason_values"]["signature_table"], note)
         self.assertNotIn("signature_table", note)
         self.assertEqual(ugs_assemble.build_excluded_note([], labels), "")
+
+
+class TestCitationPlacement(unittest.TestCase):
+    """N5: a row of checks.json and one annotation per misplaced citation, labels in the report language."""
+
+    PAGES = ["Plain text with a claim. [1] and another. [2, 3].", "Clean text [4]. Also fine (see 3.5 [5])."]
+
+    def test_citation_placement_row_counts_occurrences(self):
+        row = ugs_assemble.citation_placement_row(self.PAGES, "en")
+        self.assertEqual(row["id"], "citation_placement")
+        self.assertEqual(row["status"], "not_ok")
+        self.assertEqual(row["detail"], {"count": 2})
+
+    def test_citation_placement_row_ok_without_occurrence(self):
+        row = ugs_assemble.citation_placement_row(["Clean text [4]."], "en")
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(row["detail"], {"count": 0})
+
+    def test_citation_row_renders_in_the_annex_with_its_label(self):
+        row = ugs_assemble.citation_placement_row(self.PAGES, "fr")
+        labels = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, "fr")
+        html_text = pdf_annex.render_checks([row], labels)
+        self.assertIn(labels["check_values"]["citation_placement"], html_text)
+        self.assertIn("2", html_text)
+
+    def test_count_mismatch_is_a_row_with_both_numbers(self):
+        """Issue 126 plan 6 E2: a declared figure count of 3 against 2 extracted is a row with both numbers."""
+        meta = {"declared_figures": 3, "extracted_figures": 2, "figure_count_status": "mismatch",
+                "declared_tables": 1, "extracted_tables": 1, "table_count_status": "ok"}
+        rows = ugs_assemble.count_rows(meta)
+        figures = next(row for row in rows if row["id"] == "figure_counts")
+        self.assertEqual(figures["status"], "not_ok")
+        self.assertEqual(figures["detail"], {"declared": 3, "extracted": 2})
+        labels = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, "fr")
+        html_text = pdf_annex.render_checks([figures], labels)
+        self.assertIn(labels["check_values"]["figure_counts"], html_text)
+        self.assertIn("3", html_text)
+        self.assertIn("2", html_text)
+
+    def test_untitled_elements_are_an_annex_row_in_both_languages(self):
+        """Owner N2: elements with no title are a finding of the annex, labels in fr and en, never a count."""
+        meta = {"untitled_figures": {"count": 2, "pages": [49, 66]}, "untitled_tables": {"count": 0, "pages": []}}
+        rows = ugs_assemble.count_rows(meta)
+        untitled = next(row for row in rows if row["id"] == "untitled_elements")
+        self.assertEqual(untitled["status"], "not_ok")
+        self.assertEqual(untitled["detail"], {"count": 2})
+        for language in ("fr", "en"):
+            labels = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, language)
+            html_text = pdf_annex.render_checks([untitled], labels)
+            self.assertIn(labels["check_values"]["untitled_elements"], html_text)
+
+    def test_no_untitled_element_is_an_ok_row(self):
+        meta = {"untitled_figures": {"count": 0, "pages": []}, "untitled_tables": {"count": 0, "pages": []}}
+        untitled = next(row for row in ugs_assemble.count_rows(meta) if row["id"] == "untitled_elements")
+        self.assertEqual(untitled["status"], "ok")
+
+    def test_not_found_counts_give_not_applicable_row(self):
+        """Issue 126 plan 6 E2: a list not found is not applicable, never a mismatch and never zero."""
+        meta = {"declared_figures": None, "extracted_figures": 1, "figure_count_status": "not_found",
+                "declared_tables": None, "extracted_tables": 0, "table_count_status": "not_found"}
+        rows = ugs_assemble.count_rows(meta)
+        for row in rows:
+            self.assertEqual(row["status"], "not_applicable")
+            self.assertNotIn("declared", row["detail"])
+
+    def test_report_without_count_keys_is_not_applicable(self):
+        """A report prepared before plan 6 has no count keys: the rows say not applicable, with no invented number."""
+        rows = ugs_assemble.count_rows({})
+        self.assertEqual([row["status"] for row in rows if row["id"] in ("figure_counts", "table_counts")], ["not_applicable", "not_applicable"])
+
+    def test_appendix_row_in_annex(self):
+        """Issue 126 plan 15 N4: an appendix listed and not found is a row with its id, in the annex (fictitious)."""
+        pages = ["Table des matieres\nAnnexe A - Plans ........ 40\nAnnexe B - Tableaux ........ 44",
+                 "References\nSource.", "Annexe A\nPlans detailles"]
+        row = ugs_assemble.appendix_row(pages, {"front_roles": {"table_of_contents": [1]}})
+        self.assertEqual(row["id"], "appendices")
+        self.assertEqual(row["status"], "not_ok")
+        self.assertEqual(row["detail"], {"missing": ["B"], "extra": []})
+        labels = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, "fr")
+        html_text = pdf_annex.render_checks([row], labels)
+        self.assertIn(labels["check_values"]["appendices"], html_text)
+        self.assertIn("B", html_text)
+
+    def test_bold_numbered_references_heading_starts_the_end(self):
+        """Regression (Issue 126, real report): '## **10. Références**' starts the end, so an appendix after it is found."""
+        pages = ["Table des matieres\nAnnexe A - Plans ........ 40", "## **10. Références**\nSource.",
+                 "## **11. ANNEXE A: Plans**\nDetail."]
+        row = ugs_assemble.appendix_row(pages, {"front_roles": {"table_of_contents": [1]}})
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(row["detail"], {"missing": [], "extra": []})
+
+    def test_contents_line_references_does_not_start_the_end(self):
+        """Review round 1 I3 (Issue 126): a contents line 'References' is no reference heading; the search starts at the
+        body. An appendix named only on the contents page is not found at the end."""
+        pages = ["Table des matieres\nReferences\nAnnexe C - Notes ........ 50", "Introduction du rapport.",
+                 "## **10. References**\nSource.", "Texte de fin sans annexe."]
+        row = ugs_assemble.appendix_row(pages, {"front_roles": {"table_of_contents": [1], "body_start": 2}})
+        self.assertEqual(row["status"], "not_ok")
+        self.assertEqual(row["detail"], {"missing": ["C"], "extra": []})
+
+    def test_body_text_before_the_reference_heading_is_kept(self):
+        """F6: the page holding the reference heading keeps its body text before the heading."""
+        pages = ["Intro page text. [1]", "Body claim here. [2] ends.\nReferences\n[1] Fictitious Author, Title."]
+        body = ugs_assemble._body_pages(pages)
+        self.assertEqual(len(body), 2)
+        self.assertIn("Body claim here. [2] ends.", body[1])
+        self.assertNotIn("Fictitious Author", body[1])
+
+    def test_each_misplaced_citation_is_annotated(self):
+        annotations = ugs_assemble.citation_annotations(self.PAGES, "fr")
+        self.assertEqual([(a["page"], a["quote"]) for a in annotations],
+                         [(1, "claim. [1]"), (1, "another. [2, 3]")])
+        for annotation in annotations:
+            self.assertEqual(annotation["kind"], "citation")
+            self.assertEqual(annotation["code"], "CIT")
+            self.assertTrue(annotation["comment"])
+
+
+class TestTitlePlacementRow(unittest.TestCase):
+    """Plan 24 Task 3: the title_placement row and its annotations. Figure: centred below. Table: left above."""
+
+    FR_FIGURE = "Titre de figure mal placé : le centrer sous la figure."
+    FR_TABLE = "Titre de tableau mal placé : l'aligner à gauche au-dessus du tableau."
+    FR_IN_IMAGE = ("Titre inclus dans l'image : l'écrire dans le texte du document, sous la figure "
+                   "(ou au-dessus du tableau).")
+    EN_FIGURE = "Figure title misplaced: center it below the figure."
+    EN_TABLE = "Table title misplaced: left-align it above the table."
+
+    @staticmethod
+    def _element(element_id, element_type, position=None, alignment=None, title_text="Figure 4 x"):
+        """
+        Purpose: Build one fictitious element record with an optional title.
+        Inputs:
+            element_id (str): the id.
+            element_type (str): figure, table or table_image.
+            position (str | None): the title position, None for an untitled element.
+            alignment (str | None): the title alignment.
+            title_text (str): the fictitious title text.
+        Outputs:
+            dict: the element record.
+        Raises:
+            None.
+        """
+        title = None if position is None else {"text": title_text, "position": position, "alignment": alignment}
+        return {"element_id": element_id, "element_type": element_type, "page": 2, "rect": [0, 0, 1, 1], "title": title}
+
+    def test_a_figure_centred_below_is_conforming(self):
+        row = ugs_assemble.title_placement_row([self._element("F1", "figure", "below", "center")])
+        self.assertEqual(row, {"id": "title_placement", "status": "ok", "detail": {}})
+
+    def test_a_figure_title_left_below_or_centred_above_is_a_finding(self):
+        elements = [self._element("F1", "figure", "below", "left"), self._element("F2", "figure", "above", "center")]
+        row = ugs_assemble.title_placement_row(elements)
+        self.assertEqual(row, {"id": "title_placement", "status": "not_ok", "detail": {"ids": ["F1", "F2"]}})
+
+    def test_a_table_left_above_is_conforming_and_a_table_below_is_not(self):
+        conforming = ugs_assemble.title_placement_row([self._element("T1", "table", "above", "left")])
+        self.assertEqual(conforming["status"], "ok")
+        finding = ugs_assemble.title_placement_row([self._element("T2", "table", "below", "left")])
+        self.assertEqual(finding["detail"], {"ids": ["T2"]})
+        centred = ugs_assemble.title_placement_row([self._element("T3", "table_image", "above", "center")])
+        self.assertEqual(centred["detail"], {"ids": ["T3"]})
+
+    def test_a_title_drawn_inside_the_image_is_a_finding(self):
+        row = ugs_assemble.title_placement_row([self._element("F4", "figure", "in_image_bottom", "center")])
+        self.assertEqual(row["detail"], {"ids": ["F4"]})
+
+    def test_untitled_elements_are_never_findings(self):
+        row = ugs_assemble.title_placement_row([self._element("F-u01", "figure")])
+        self.assertEqual(row, {"id": "title_placement", "status": "not_applicable", "detail": {}})
+
+    def test_no_titled_element_gives_not_applicable_and_none_gives_no_file(self):
+        self.assertEqual(ugs_assemble.title_placement_row([])["status"], "not_applicable")
+        self.assertEqual(ugs_assemble.title_placement_row(None)["status"], "not_applicable")
+
+    def test_annotations_carry_the_exact_french_copy(self):
+        annotations = ugs_assemble.title_placement_annotations([
+            self._element("F1", "figure", "below", "left"), self._element("T2", "table", "below", "left"),
+            self._element("F4", "figure", "in_image_bottom", "center")], "fr")
+        self.assertEqual([a["comment"] for a in annotations], [self.FR_FIGURE, self.FR_TABLE, self.FR_IN_IMAGE])
+
+    def test_annotations_carry_the_exact_english_copy(self):
+        annotations = ugs_assemble.title_placement_annotations([
+            self._element("F1", "figure", "below", "left"), self._element("T2", "table", "below", "left")], "en")
+        self.assertEqual([a["comment"] for a in annotations], [self.EN_FIGURE, self.EN_TABLE])
+
+    def test_an_in_image_title_is_annotated_without_a_quote(self):
+        annotations = ugs_assemble.title_placement_annotations(
+            [self._element("F4", "figure", "in_image_bottom", "center")], "fr")
+        self.assertIsNone(annotations[0]["quote"])
+        misplaced = ugs_assemble.title_placement_annotations([self._element("F1", "figure", "below", "left")], "fr")
+        self.assertEqual(misplaced[0]["quote"], "Figure 4 x")
+
+    def test_labels_carry_the_row_and_the_three_comments_in_both_languages(self):
+        for language in ("fr", "en"):
+            labels = _labels(language)
+            self.assertIn("title_placement", labels["check_values"])
+            self.assertEqual(set(labels["title_placement_comments"]), {"figure_misplaced", "table_misplaced", "in_image"})
+
+
+class TestPlacementDrawnOnItsRectangle(unittest.TestCase):
+    """Plan 28 Task 3 (owner 2026-11-27): every title_placement finding is a note on the PDF, on the title rectangle."""
+
+    def test_the_annotation_carries_the_title_rectangle_when_there_is_one(self):
+        element = {"element_id": "F10", "element_type": "figure", "page": 1, "rect": [0, 0, 1, 1],
+                   "title": {"text": "Figure 10 x", "position": "below", "alignment": "left",
+                             "rect": [10, 20, 300, 40], "lines": [[10, 300]]}}
+        annotations = ugs_assemble.title_placement_annotations([element], "en")
+        self.assertEqual(annotations[0]["rect"], [10, 20, 300, 40])
+
+    def test_without_a_title_rectangle_the_element_rectangle_is_kept(self):
+        element = {"element_id": "F10", "element_type": "figure", "page": 1, "rect": [5, 6, 7, 8],
+                   "title": {"text": "Figure 10 x", "position": "below", "alignment": "left"}}
+        annotations = ugs_assemble.title_placement_annotations([element], "en")
+        self.assertEqual(annotations[0]["rect"], [5, 6, 7, 8])
+
+    def test_a_finding_whose_quote_is_absent_is_still_drawn_on_its_rectangle(self):
+        import fitz
+        import tempfile
+        import pdf_annotate
+        folder = Path(tempfile.mkdtemp())
+        src, dst = folder / "src.pdf", folder / "dst.pdf"
+        doc = fitz.open()
+        doc.new_page().insert_text((72, 100), "Fictive page text.")
+        doc.save(src)
+        doc.close()
+        annotation = {"page": 1, "kind": "figure", "code": "title_placement", "quote": "Absent words not on page",
+                      "rect": [60, 90, 300, 110], "comment": "Fictive comment.", "on_rect": True}
+        result = pdf_annotate.annotate(src, [annotation], dst, {"figure": "#E69F00"}, "Author")
+        self.assertEqual(result["placed"], 1)
+        self.assertEqual(result["not_found"], [])
+        doc = fitz.open(dst)
+        page = doc[0]
+        annots = list(page.annots())
+        self.assertEqual(len(annots), 1)
+        doc.close()
+
+    def test_a_figure_note_with_an_absent_quote_is_still_reported_not_drawn(self):
+        import fitz
+        import tempfile
+        import pdf_annotate
+        folder = Path(tempfile.mkdtemp())
+        src, dst = folder / "src.pdf", folder / "dst.pdf"
+        doc = fitz.open()
+        doc.new_page().insert_text((72, 100), "Fictive page text.")
+        doc.save(src)
+        doc.close()
+        annotation = {"page": 1, "kind": "figure", "code": "F1", "quote": "Absent words not on page",
+                      "rect": [60, 90, 300, 110], "comment": "Fictive comment."}
+        result = pdf_annotate.annotate(src, [annotation], dst, {"figure": "#E69F00"}, "Author")
+        self.assertEqual(result["placed"], 0)
+        self.assertEqual(result["not_found"], [0])
+
+    def test_every_id_of_the_title_placement_row_has_one_annotation(self):
+        elements = [{"element_id": "F1", "element_type": "figure", "page": 1, "rect": [0, 0, 1, 1],
+                     "title": {"text": "Figure 1 x", "position": "below", "alignment": "right"}},
+                    {"element_id": "F2", "element_type": "figure", "page": 2, "rect": [0, 0, 1, 1],
+                     "title": {"text": "Figure 2 x", "position": "above", "alignment": "left"}},
+                    {"element_id": "F3", "element_type": "figure", "page": 2, "rect": [0, 0, 1, 1],
+                     "title": {"text": "Figure 3 x", "position": "below", "alignment": "center"}}]
+        row = ugs_assemble.title_placement_row(elements)
+        annotations = ugs_assemble.title_placement_annotations(elements, "en")
+        self.assertEqual(row["detail"]["ids"], ["F1", "F2"])
+        self.assertEqual(len(annotations), len(row["detail"]["ids"]))
+
+
+class TestNoDuplicateKeys(unittest.TestCase):
+    """N2: every JSON data file of the skill loads with no duplicate key, which json would otherwise keep silently."""
+
+    def test_every_assets_json_has_no_duplicate_key(self):
+        import json
+        assets = SCRIPTS.parent / "assets"
+        refused = []
+
+        def make_hook(name):
+            def refuse_duplicates(pairs):
+                seen = {}
+                for key, value in pairs:
+                    if key in seen:
+                        refused.append(f"{name}: {key}")
+                    seen[key] = value
+                return seen
+            return refuse_duplicates
+
+        for path in sorted(assets.glob("*.json")):
+            with self.subTest(file=path.name):
+                json.loads(path.read_text(encoding="utf-8-sig"), object_pairs_hook=make_hook(path.name))
+        self.assertEqual(refused, [])
 
 
 if __name__ == "__main__":

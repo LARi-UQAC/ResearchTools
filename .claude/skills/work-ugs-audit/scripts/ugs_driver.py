@@ -12,10 +12,15 @@ import argparse
 import contextlib
 import io
 import json
+import os
+import shutil
+import subprocess
+import time
+import batch_stats
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 _SKILLS = Path(__file__).resolve().parent.parent.parent
 for _folder in (_SKILLS / "figure-review" / "scripts",):
@@ -27,7 +32,7 @@ import report_prepare
 from rubric_check import validate as validate_rubric, RubricError
 from ugs_grade import normalize_rubric
 import rubric_split
-from ugs_run import run_report
+from ugs_run import STEPS, run_report
 from ugs_ledger import (new_ledger, add_report, set_mark, reopen_all, add_note, read as read_ledger,
                         write as write_ledger, counts as ledger_counts, first_open, parse as parse_ledger)
 from batch_stats import main as batch_stats_main
@@ -35,6 +40,7 @@ from ugs_text import StepContext, load_prompts, load_schemas, load_hints, fill
 from ugs_language import load_table
 from ugs_tables import TablesError
 from ugs_bridge import OllamaDeps, NotRun, call as bridge_call
+import vision_probe
 from ugs_events import make_emitter
 from figure_checks import load_criteria
 
@@ -51,6 +57,7 @@ SCHEMA_NAMES = ["rubric", "grade_item", "audit_item", "language", "figure", "fig
 STEP_KIND = {"grade": "grader", "language": "grader", "figures": "vision", "audit": "auditor"}
 TEXT_RUBRIC_SUFFIXES = (".md", ".txt", ".pdf")
 REQUIRED_CONFIG_KEYS = [
+    "driver.unreachable_retries", "driver.unreachable_pause_s",
     "roles.grader", "roles.auditor", "roles.vision", "driver.reply_reserve_tokens", "driver.request_timeout_s",
     "driver.audit_retries", "driver.max_image_bytes", "driver.image_tokens_fallback",
     "grade.invalid_answer_retries", "select.min_word_len", "references.quote_chars", "references.url_timeout_s",
@@ -112,8 +119,28 @@ def _work_dir(work: Path) -> Path:
 
 
 def _current_loop(work: Path) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the loop counter of the work folder; a missing state file means loop 1.
+
+    Inputs:
+        work (Path): the work folder.
+
+    Outputs:
+        int: the loop number.
+
+    Raises:
+        DriverError: when loop_state.json exists but is unreadable or does not hold a loop counter (never reset).
+    --------------------------------------------------------------------------
+    """
     state = work / "loop_state.json"
-    return int(_read_json(state, "loop state").get("loop", 1)) if state.is_file() else 1
+    if not state.is_file():
+        return 1
+    data = _read_json(state, "loop state")
+    if not isinstance(data, dict) or not isinstance(data.get("loop", 1), int):
+        raise DriverError("loop state is not a loop counter (loop_state.json)")
+    return data.get("loop", 1)
 
 
 def _real_deps(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -302,7 +329,8 @@ def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window
             try:
                 rubric = rubric_split.split_rubric(source, args.type, config["rubric.section_heading_regex"],
                                                    config["rubric.total_regex"],
-                                                   config["rubric.loose_heading_regex"])
+                                                   config["rubric.loose_heading_regex"],
+                                                   config["rubric.element_regexes"])
             except rubric_split.RubricSplitError as error:
                 raise DriverError(f"invalid rubric: {error}") from None
         if rubric is None:
@@ -432,6 +460,71 @@ def _calibration_note(work: Path, loop: int, prompts: Dict[str, str]) -> str:
         "REASONS": "; ".join(batch.get("reasons", []))})
 
 
+RUN_DONE_NAME = "run_done.json"
+RUN_DONE_KEYS = ("loop", "exit_code", "reports", "open_steps", "blocked_steps", "stopped_at", "unreachable_retries",
+                 "continued_from")
+RUN_STATE_NAME = "run_state.json"  # plan 30: the arguments of the run, read back by --continue
+
+
+def write_run_done(work: Path, record: Dict[str, Any]) -> Path:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Write the completion marker of a run atomically, so a session that was stopped reads the outcome once.
+
+    Details:
+        The file holds ids, counts and codes only, never a timestamp (R19) and never report text. It is written
+        through a sibling temporary file and os.replace, so a reader sees the old marker or the new one, never a
+        half-written file.
+
+    Inputs:
+        work (Path): the work folder
+        record (dict): the keys of RUN_DONE_KEYS, all present
+
+    Outputs:
+        target (Path): the marker file written.
+
+    Raises:
+        DriverError: a key of RUN_DONE_KEYS is missing from the record.
+    --------------------------------------------------------------------------
+    """
+    missing = [key for key in RUN_DONE_KEYS if key not in record]
+    if missing:
+        raise DriverError(f"completion marker without {', '.join(missing)}")
+    target = work / RUN_DONE_NAME
+    temporary = work / (RUN_DONE_NAME + ".tmp")
+    temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    try:
+        os.replace(temporary, target)
+    except OSError:
+        temporary.unlink(missing_ok=True)  # G: no half-written marker and no temporary file left behind
+        raise
+    return target
+
+
+def _finish_run(work: Path, record: Dict[str, Any]) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Count the open and blocked steps of the ledger into the record and write the completion marker.
+
+    Inputs:
+        work (Path): the work folder holding ledger.md
+        record (dict): the run record, its exit_code and stopped_at already set
+
+    Outputs:
+        None. Writes run_done.json in the work folder.
+
+    Raises:
+        DriverError: from write_run_done when the record is incomplete.
+    --------------------------------------------------------------------------
+    """
+    steps = parse_ledger(read_ledger(work / "ledger.md"))
+    record["open_steps"] = sum(1 for step in steps if step["mark"] == " ")
+    record["blocked_steps"] = sum(1 for step in steps if step["mark"] == "!")
+    write_run_done(work, record)
+
+
 def _stopped_step(ledger_path: Path, report_id: str, step: Optional[str]) -> Optional[str]:
     """
     --------------------------------------------------------------------------
@@ -462,6 +555,129 @@ def _stopped_step(ledger_path: Path, report_id: str, step: Optional[str]) -> Opt
     return open_items[0] if open_items else step
 
 
+def parse_steps(value: Optional[str]) -> Optional[List[str]]:
+    """
+    Purpose: Read the comma list of `run --steps` and refuse a step name the grading run does not have (N1).
+    Inputs:
+        value (str or None): the comma-separated step names, None for every step.
+    Outputs:
+        Optional[List[str]]: the names in the order given, or None when no list was given.
+    Raises:
+        DriverError: a name is not one of ugs_run.STEPS; the message names it.
+    """
+    if value is None:
+        return None
+    names = [part.strip() for part in value.split(",") if part.strip()]
+    if not names:  # F5: an empty list would read as every step, so it is refused
+        raise DriverError("the --steps list names no step")
+    for name in names:
+        if name not in STEPS:
+            raise DriverError(f"unknown step '{name}', expected one of {', '.join(STEPS)}")
+    return names
+
+
+VISION_VERDICT_NAME = "vision_probe.json"
+VISION_FIXTURE_IMAGE = ASSETS / "vision_probe_fixture.png"
+VISION_FIXTURE_EXPECTED = ASSETS / "vision_probe_fixture.json"
+
+
+def run_vision_probe(work: Path, call_usage=None) -> Tuple[str, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Probe the vision role once per work folder, with the shipped fictitious figure, so the figures step knows
+        whether a model reads figures (plan 22 task 3). A verdict that already exists is kept, never probed again.
+
+    Details:
+        The probe needs its image and its expected file inside the work folder (R24), so both are copied into
+        work/vision_probe/. A probe that the model cannot answer still writes a verdict with ok false, and the figures
+        step then runs with vision not validated.
+
+    Inputs:
+        work (Path): the work folder.
+        call_usage (callable or None): the model call of vision_probe.main; None means the real vision role.
+
+    Outputs:
+        Tuple[str, str]: (status, reason). The status is "present" when an ok verdict already existed, "ran" when the
+            probe answered ok, and "failed" otherwise; the reason is empty unless the probe failed, and then names the
+            failure: the verdict's kind, the exit code, or the exception type (never its message).
+
+    Raises:
+        DriverError: the fixture files are missing from the skill (R3).
+    --------------------------------------------------------------------------
+    """
+    verdict = work / VISION_VERDICT_NAME
+    if verdict.is_file():
+        try:
+            if json.loads(verdict.read_text(encoding="utf-8")).get("ok") is True:
+                return "present", ""
+        except (OSError, ValueError, AttributeError):
+            pass  # an unreadable or not-ok verdict is probed again (review round 1, decision 5)
+    for source in (VISION_FIXTURE_IMAGE, VISION_FIXTURE_EXPECTED):
+        if not source.is_file():
+            raise DriverError(f"the vision probe fixture is missing: {source.name}")
+    folder = work / "vision_probe"
+    folder.mkdir(parents=True, exist_ok=True)
+    image = folder / VISION_FIXTURE_IMAGE.name
+    expected = folder / VISION_FIXTURE_EXPECTED.name
+    shutil.copyfile(VISION_FIXTURE_IMAGE, image)
+    shutil.copyfile(VISION_FIXTURE_EXPECTED, expected)
+    try:
+        code = vision_probe.main(["--work", str(work), "--image", str(image), "--expected", str(expected)],
+                                 call_usage=call_usage)
+    except Exception as error:  # noqa: BLE001 - reported by name: a probe that raises is one failed probe
+        return "failed", type(error).__name__
+    if code != 0 or not verdict.is_file():
+        return "failed", f"exit {code}"
+    try:
+        answer = json.loads(verdict.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        return "failed", f"verdict unreadable: {type(error).__name__}"
+    if answer.get("ok") is True:
+        return "ran", ""
+    return "failed", str(answer.get("kind") or "not_ok")
+
+
+def _read_run_state(work: Path) -> Dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the arguments of the interrupted run from run_state.json (plan 30, Task 2).
+    Inputs:
+        work (Path): the work folder.
+    Outputs:
+        saved (dict): loop, only, steps and reports.
+    Raises:
+        DriverError: naming the file when it is absent or does not hold the four arguments.
+    --------------------------------------------------------------------------
+    """
+    path = work / RUN_STATE_NAME
+    if not path.is_file():
+        raise DriverError(f"no {RUN_STATE_NAME} in the work folder: start the run once without --continue")
+    saved = _read_json(path, RUN_STATE_NAME)
+    if not isinstance(saved, dict) or any(key not in saved for key in ("loop", "only", "steps", "reports")):
+        raise DriverError(f"{RUN_STATE_NAME} does not hold the arguments of a run")
+    return saved
+
+
+def _previous_stop(work: Path) -> Optional[Dict[str, Any]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The stopped_at of the completion marker of the previous run, read before a new run removes the marker.
+    Inputs:
+        work (Path): the work folder.
+    Outputs:
+        stop (dict | None): the stop of the previous run, or None when there was none or no marker.
+    --------------------------------------------------------------------------
+    """
+    try:
+        marker = json.loads((work.resolve() / RUN_DONE_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return marker.get("stopped_at") if isinstance(marker, dict) else None
+
+
 def cmd_run(args, call, fetch, window, count) -> int:
     """
     --------------------------------------------------------------------------
@@ -485,8 +701,22 @@ def cmd_run(args, call, fetch, window, count) -> int:
         DriverError: a refusal.
     --------------------------------------------------------------------------
     """
+    if not getattr(args, "continue_run", False):
+        parse_steps(getattr(args, "steps", None))  # F5: refused before any folder or file is touched
     config = _load_config()
     work = _work_dir(Path(args.work))
+    if getattr(args, "continue_run", False):
+        given = [name for name, value in (("--loop", args.loop), ("--only", args.only), ("--steps", args.steps),
+                                          ("--reports", args.reports)) if value is not None]
+        if given:
+            raise DriverError("--continue cannot be combined with " + ", ".join(given))
+        saved = _read_run_state(work)
+        args.loop, args.only, args.steps, args.reports = saved["loop"], saved["only"], saved["steps"], saved["reports"]
+    elif args.reports is None:
+        raise DriverError("run needs --reports (or --continue after a run)")
+    if args.loop is None:
+        args.loop = 1
+    only_steps = parse_steps(getattr(args, "steps", None))  # F5: refused before any folder or file is touched
     reports = Path(args.reports).resolve()
     try:
         report_prepare._check_work_dir(reports, work)
@@ -500,9 +730,20 @@ def cmd_run(args, call, fetch, window, count) -> int:
     if any(report_id not in ids for report_id in wanted):
         raise DriverError("unknown report id")
     if args.dry_run:
-        _emit({"dry_run": True, "step": "run", "loop": current, "reports": len(wanted)})
+        _emit({"dry_run": True, "step": "run", "loop": current, "reports": len(wanted), "only": args.only,
+               "steps": args.steps, "continue": bool(getattr(args, "continue_run", False)),
+               "reports_folder": str(args.reports)})
         return EXIT_OK
     rubric = _read_json(work / "rubric.json", "rubric")
+    # Plan 22 task 3: the real run probes the vision role itself before the figures step; injected calls (tests)
+    # never reach a model, and a verdict that exists is kept.
+    if call is None and (only_steps is None or "figures" in only_steps):
+        probe_status, probe_reason = run_vision_probe(work)
+        record_probe = {"vision_probe": probe_status}
+        if probe_status == "failed":  # review round 1, decision 5: reported on the report path, never silent
+            _emit({"step": "vision_probe", "status": "failed", "reason": probe_reason})
+    else:
+        record_probe = {}
     model_call, model_window, model_count = _inputs(call, window, count, config, work)
     # The actions are recorded only on the real run: an injected call (tests) writes nothing to the machine's log.
     active: Dict[str, Optional[str]] = {"step": None}  # the step running now, set by on_step; None before any
@@ -513,24 +754,53 @@ def cmd_run(args, call, fetch, window, count) -> int:
     note = _calibration_note(work, current, ctx.prompts)
     state = work / "loop_state.json"
     if not state.is_file():
-        state.write_text(json.dumps({"loop": current}), encoding="utf-8")
+        batch_stats.write_json_atomic(state, {"loop": current})
     calls = {step: (lambda prompt, schema, images=None, kind=kind: model_call(kind, prompt, schema, images))
              for step, kind in STEP_KIND.items()}
-    for report_id in wanted:
+    # Plan 30: the arguments of this run are saved before the first step, so --continue can read them back.
+    batch_stats.write_json_atomic(work / RUN_STATE_NAME, {"loop": current, "only": args.only, "steps": args.steps,
+                                                          "reports": args.reports, "started": _stamp()})
+    record = {"loop": current, "exit_code": EXIT_OK, "reports": list(wanted), "open_steps": 0,
+              "blocked_steps": 0, "stopped_at": None, "unreachable_retries": 0,
+              "continued_from": getattr(args, "continued_from", None), **record_probe}
+    try:
+        for report_id in wanted:
+            try:
+                while True:  # Plan 30: an unreachable model is retried a bounded number of times, from the ledger
+                    try:
+                        result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services,
+                                            note, fetch, on_step=lambda name: active.update(step=name),
+                                            only_steps=only_steps)
+                        break
+                    except NotRun as error:
+                        if (error.kind == "unreachable"
+                                and record["unreachable_retries"] < config["driver.unreachable_retries"]):
+                            # Recorded in the completion marker (unreachable_retries), not as a line: the step lines of a
+                            # run keep their exact form.
+                            record["unreachable_retries"] += 1
+                            time.sleep(config["driver.unreachable_pause_s"])
+                            continue
+                        raise
+            except NotRun as error:
+                step = _stopped_step(work / "ledger.md", report_id, active["step"])
+                _emit({"report_id": report_id, "step": step, "status": "not_run", "kind": error.kind})
+                record.update(exit_code=EXIT_NOT_RUN, stopped_at={"report": report_id, "step": step, "kind": error.kind})
+                break
+            states = list(result["steps"].values())
+            line = {"report_id": report_id, "status": result["status"], "done": states.count("done"),
+                    "blocked": states.count("blocked")}
+            if "reason" in result:  # a report refused by its own pages or language: named, the batch goes on
+                line["reason"] = result["reason"]
+            _emit(line)
+    except Exception as error:  # the marker records the code main returns; its own failure never masks the error
+        record["exit_code"] = EXIT_REFUSAL if isinstance(error, DriverError) else EXIT_NOT_RUN
         try:
-            result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services, note, fetch,
-                                on_step=lambda name: active.update(step=name))
-        except NotRun as error:
-            _emit({"report_id": report_id, "step": _stopped_step(work / "ledger.md", report_id, active["step"]),
-                   "status": "not_run", "kind": error.kind})
-            return EXIT_NOT_RUN
-        states = list(result["steps"].values())
-        line = {"report_id": report_id, "status": result["status"], "done": states.count("done"),
-                "blocked": states.count("blocked")}
-        if "reason" in result:  # a report refused by its own pages or language: named, the batch goes on
-            line["reason"] = result["reason"]
-        _emit(line)
-    return EXIT_OK
+            _finish_run(work, record)
+        except Exception:  # noqa: BLE001 - the original error is the one the caller must see
+            pass
+        raise
+    _finish_run(work, record)
+    return record["exit_code"]
 
 
 def _batch_stats(argv: List[str]) -> tuple:
@@ -573,7 +843,10 @@ def cmd_batch(args) -> int:
     if code == EXIT_REFUSAL or not line:
         raise DriverError("the batch could not be analysed")
     verdict = json.loads(line)
-    (work / f"loop-{args.loop}" / "batch.json").write_text(line, encoding="utf-8")
+    batch_path = work / f"loop-{args.loop}" / "batch.json"  # plan 30: atomic step write
+    batch_tmp = batch_path.with_name(batch_path.name + ".tmp")
+    batch_tmp.write_text(line, encoding="utf-8")
+    batch_tmp.replace(batch_path)
     _emit(verdict)
     if code != EXIT_OUT_OF_BAND:
         return EXIT_OK
@@ -586,6 +859,130 @@ def cmd_batch(args) -> int:
     ledger = reopen_all(read_ledger(ledger_path), ["prepare"])
     write_ledger(ledger_path, add_note(ledger, f"loop {printed} opened"))
     return EXIT_OUT_OF_BAND
+
+
+def gpu_busy(run: Callable = subprocess.run, allowed: Optional[List[str]] = None,
+             timeout: float = 10) -> Optional[List[str]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Name the programs, other than the model server, that hold memory on the graphics card.
+
+    Details:
+        Reads `nvidia-smi --query-compute-apps=pid,process_name`. Only the file name of each program is kept, never
+        its folder (a path can name a person). Measured 2026-11-27: a second program on the 6 GB card made the model
+        server run out of memory while it loaded.
+
+    Inputs:
+        run (Callable): the subprocess runner, injected by the tests (R21).
+        allowed (list[str] | None): the program file names of the model server, compared without case.
+        timeout (float): the bound of the nvidia-smi call, in seconds (R10).
+
+    Outputs:
+        list[str] | None: the other programs (sorted, no duplicate), [] when none, None when nvidia-smi is absent,
+            failed or timed out.
+    --------------------------------------------------------------------------
+    """
+    keep = {name.lower() for name in (allowed or [])}
+    try:
+        done = run(["nvidia-smi", "--query-compute-apps=pid,process_name", "--format=csv,noheader"],
+                   capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    names = set()
+    for line in (done.stdout or "").splitlines():
+        parts = line.split(",", 1)
+        if len(parts) != 2 or not parts[1].strip():
+            continue
+        name = parts[1].strip().replace("\\", "/").rsplit("/", 1)[-1]
+        if name.lower() not in keep:
+            names.add(name)
+    return sorted(names)
+
+
+def _report_totals(work: Path, loop: int) -> List[Dict[str, Any]]:
+    """One summary record per report id of the work folder: total, maximum, percent and completeness of its totals."""
+    ids = _read_json(work / report_prepare.IDS_FILE_NAME, "id map")
+    records = []
+    for report_id in sorted(ids):
+        path = work / f"loop-{loop}" / report_id / "totals.json"
+        totals = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        records.append({"step": "summary", "report_id": report_id, "total": totals.get("total"),
+                        "max": totals.get("max_rated"), "percent": totals.get("percent"),
+                        "complete": totals.get("complete", False), "not_run": totals.get("not_run", [])})
+    return records
+
+
+def cmd_auto(args, call, fetch, window, count) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Grade a whole reports folder with one command: prepare when needed, run every report, analyse the batch and
+        print one summary line per report (owner, 2026-11-28).
+
+    Details:
+        The same command restarts after a crash or a reboot: the run resumes from the ledger and only the item in
+        progress is redone. The graphics card is checked first; another program on it is a refusal unless
+        --ignore-gpu. A prepared work folder is never prepared again. A batch out of band (exit 3) opens the next loop
+        and stops: the next loop is started by running the command again.
+
+    Inputs:
+        args (Namespace): `reports`, `rubric`, `type`, `work`, `ignore_gpu`, `dry_run`.
+        call, fetch, window, count: injected (tests), or None.
+
+    Outputs:
+        code (int): the code of the run when it did not finish (1), else the code of the batch (0 or 3).
+
+    Raises:
+        DriverError: a refusal (no reports folder, no rubric, no type for a new folder, a busy card).
+    --------------------------------------------------------------------------
+    """
+    config = _load_config()
+    for key in ("auto.rubric_name", "auto.gpu_allowed_processes", "auto.gpu_check_timeout_s"):
+        if key not in config:
+            raise DriverError(f"missing configuration key: {key}")
+    reports = Path(args.reports).resolve()
+    if not reports.is_dir():
+        raise DriverError("reports folder not found")
+    work = Path(args.work).resolve() if args.work else reports / WORK_FOLDER_NAME
+    prepared = (work / "rubric.json").is_file() and (work / "ledger.md").is_file()
+    if not prepared:
+        rubric = Path(args.rubric) if args.rubric else reports / config["auto.rubric_name"]
+        if not rubric.is_file():
+            raise DriverError(f"no rubric: put {config['auto.rubric_name']} in the reports folder or pass --rubric")
+        if not args.type:
+            raise DriverError("a new work folder needs --type (" + ", ".join(_assessment_types()) + ")")
+    if not args.ignore_gpu:
+        busy = gpu_busy(allowed=config["auto.gpu_allowed_processes"], timeout=config["auto.gpu_check_timeout_s"])
+        if busy is None:
+            _emit({"step": "gpu_check", "status": "skipped", "reason": "nvidia-smi did not answer"})
+        elif busy:
+            raise DriverError("the graphics card is used by another program: " + ", ".join(busy)
+                              + " (close it, or pass --ignore-gpu)")
+    if args.dry_run:
+        _emit({"dry_run": True, "step": "auto", "prepare": not prepared, "work_folder": work.name})
+        return EXIT_OK
+    if not prepared:
+        code = cmd_prepare(argparse.Namespace(reports=str(reports), rubric=str(rubric), type=args.type,
+                                              work=str(work), dry_run=False), call, window, count)
+        if code != EXIT_OK:
+            return code
+    loop = _current_loop(_work_dir(work))
+    previous = _previous_stop(work)
+    (work / RUN_DONE_NAME).unlink(missing_ok=True)
+    code = cmd_run(argparse.Namespace(work=str(work), reports=str(reports), loop=loop, only=None, steps=None,
+                                      continue_run=False, dry_run=False, continued_from=previous),
+                   call, fetch, window, count)
+    if code != EXIT_OK:
+        _emit({"step": "auto", "status": "stopped", "exit_code": code,
+               "next": "run the same command again to resume where it stopped"})
+        return code
+    code = cmd_batch(argparse.Namespace(work=str(work), loop=loop, allow_third=False, dry_run=False))
+    for record in _report_totals(work, loop):
+        _emit(record)
+    return code
 
 
 def cmd_status(args) -> int:
@@ -609,17 +1006,26 @@ def _parser() -> argparse.ArgumentParser:
     prep.add_argument("--work", default=None)
     run = sub.add_parser("run")
     run.add_argument("--work", required=True)
-    run.add_argument("--reports", required=True)
-    run.add_argument("--loop", type=int, default=1)
+    run.add_argument("--reports", default=None, help="required unless --continue")
+    run.add_argument("--loop", type=int, default=None)
     run.add_argument("--resume", action="store_true", help="accepted for clarity: a run always resumes from the ledger")
     run.add_argument("--only", default=None)
+    run.add_argument("--steps", default=None, help="comma list of steps to run, for example language,figures")
+    run.add_argument("--continue", dest="continue_run", action="store_true",
+                     help="restart at the most recent state, with the arguments saved in run_state.json")
     batch = sub.add_parser("batch")
     batch.add_argument("--work", required=True)
     batch.add_argument("--loop", type=int, required=True)
     batch.add_argument("--allow-third", action="store_true")
     status = sub.add_parser("status")
     status.add_argument("--work", required=True)
-    for command in (prep, run, batch, status):
+    auto = sub.add_parser("auto", help="prepare when needed, grade every report, batch and summary; rerun to resume")
+    auto.add_argument("--reports", required=True)
+    auto.add_argument("--rubric", default=None, help="default: auto.rubric_name in the reports folder")
+    auto.add_argument("--type", default=None, help="required for a new work folder")
+    auto.add_argument("--work", default=None)
+    auto.add_argument("--ignore-gpu", action="store_true", help="go on when another program holds the graphics card")
+    for command in (prep, run, batch, status, auto):
         command.add_argument("--dry-run", action="store_true")
         command.add_argument("--json", action="store_true", help="the output is always JSON lines")
     return parser
@@ -639,17 +1045,36 @@ def main(argv: Optional[List[str]] = None, *, call: Optional[Callable] = None, f
 
     Outputs:
         code (int): 0 done, 1 a model step could not run, 2 refusal, 3 batch out of band.
+
+    Details:
+        The previous completion marker of a `run` is removed once the arguments are parsed. An argument-parser refusal
+        (SystemExit, code 2) happens before the work folder is known, so it writes no marker and leaves an earlier
+        marker in place; that is the one case in which a marker can outlive a refusal.
     --------------------------------------------------------------------------
     """
     args = _parser().parse_args(argv)
     if not args.command:
         _parser().print_help()
         return EXIT_REFUSAL
+    if args.command == "run":
+        # Plan 30: the stop of the run being continued is read before its marker is removed.
+        args.continued_from = _previous_stop(Path(args.work))
+    if args.command == "run" and not args.dry_run:
+        # G: a marker present means this run ended. It is removed before any refusal can be raised, so no refused
+        # run leaves the outcome of an earlier one behind. Review 5: a marker that cannot be removed is a named
+        # refusal, never a traceback.
+        try:
+            (Path(args.work).resolve() / RUN_DONE_NAME).unlink(missing_ok=True)
+        except OSError as error:
+            _emit({"status": "refused", "error": f"cannot remove the previous completion marker ({type(error).__name__})"})
+            return EXIT_REFUSAL
     try:
         if args.command == "prepare":
             return cmd_prepare(args, call, window, count)
         if args.command == "run":
             return cmd_run(args, call, fetch, window, count)
+        if args.command == "auto":
+            return cmd_auto(args, call, fetch, window, count)
         return cmd_batch(args) if args.command == "batch" else cmd_status(args)
     except DriverError as error:
         _emit({"status": "refused", "error": str(error)})

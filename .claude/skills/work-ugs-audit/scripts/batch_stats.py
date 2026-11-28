@@ -25,10 +25,42 @@ Outputs:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from string import Template
 from statistics import mean, stdev
+
+class LoopStateError(RuntimeError):
+    """Raised when loop_state.json exists but cannot be read as a loop counter (review round 2 F: never reset)."""
+
+
+def write_json_atomic(path: Path, data: dict) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Write a JSON object through a temporary file and os.replace, so an interrupted write never leaves a half-written
+        file behind.
+
+    Inputs:
+        path (Path): the destination file.
+        data (dict): the object to write.
+
+    Outputs:
+        None. Side effect: the file at path holds data after the call; a temporary file is removed on failure.
+
+    Raises:
+        OSError: when the file cannot be written or replaced.
+    --------------------------------------------------------------------------
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
 
 class LoopLimit(RuntimeError):
     """Raised when the loop limit is exceeded."""
@@ -136,9 +168,11 @@ def next_loop(state_path: Path, max_loops: int, allow_third: bool) -> int:
     if state_path.exists():
         try:
             data = json.loads(state_path.read_text(encoding="utf-8"))
-            current = data.get("loop", 0)
-        except json.JSONDecodeError:
-            current = 0
+        except (OSError, json.JSONDecodeError) as exc:
+            raise LoopStateError(f"loop state {state_path} is unreadable: {exc}") from exc
+        if not isinstance(data, dict) or not isinstance(data.get("loop", 0), int):
+            raise LoopStateError(f"loop state {state_path} does not hold a loop counter")
+        current = data.get("loop", 0)
 
     next_num = current + 1
 
@@ -146,7 +180,7 @@ def next_loop(state_path: Path, max_loops: int, allow_third: bool) -> int:
         raise LoopLimit(f"Loop limit {max_loops} exceeded")
 
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(json.dumps({"loop": next_num}), encoding="utf-8")
+    write_json_atomic(state_path, {"loop": next_num})
     
     return next_num
 

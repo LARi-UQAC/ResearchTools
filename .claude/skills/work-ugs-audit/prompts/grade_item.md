@@ -1,6 +1,6 @@
 You grade ONE item of an undergraduate technical report. Use only the report pages given below.
 
-## Levels
+## Elements
 
 {{LEVELS}}
 
@@ -8,11 +8,13 @@ You grade ONE item of an undergraduate technical report. Use only the report pag
 
 - Lose points for a missing element or for a technical error. Never for style, spelling or research-level depth.
 - Do not judge figures or references unless the item is about them.
-- Every score under max_points needs evidence: quote the report word for word in "evidence", one sentence at most, with its page number.
-- If the item cannot apply to this report, answer status "not_applicable" and score null.
-- Otherwise answer status "rated" and a score between 0 and max_points, at most two decimals.
-- Write the comment in {{LANGUAGE_OF_REPORT}}, two sentences at most. Say what is missing or wrong. Be respectful.
-- Give in 'missing' the element that is absent or wrong in the report and that cost the points, in {{LANGUAGE_OF_REPORT}}, one sentence at most; empty when the score is the maximum.
+- Judge each element on its own. The level comes from your verdicts, never from a number you write.
+- Every present or partial element needs its page and a quote of twelve words at most, copied word for word from that page.
+- If the item cannot apply to this report, answer status "not_applicable" and elements [].
+- Otherwise answer status "rated" with the elements, each with its verdict.
+- When the item lists elements with ids, give one verdict for each id, with the same id, and no other.
+- Write the comment in {{LANGUAGE_OF_REPORT}}, two sentences at most, about this section only: open with "Cette section" (or "This section"), never with "le rapport" or "the report". Say what is missing or wrong. Be respectful.
+- Give in 'missing' the element that is absent or wrong in the report and that cost the points, in {{LANGUAGE_OF_REPORT}}, one sentence at most. It is required when every element is absent; empty when every element is present.
 
 {{CALIBRATION_NOTE}}
 
@@ -26,4 +28,4 @@ You grade ONE item of an undergraduate technical report. Use only the report pag
 
 ## Answer
 
-Return one JSON object with the keys status, score, comment, evidence and missing. Nothing else.
+Return one JSON object with the keys status, elements, exceptional, comment and missing. Nothing else.

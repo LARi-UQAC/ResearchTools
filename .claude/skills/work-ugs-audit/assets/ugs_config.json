@@ -4,7 +4,8 @@
       "technical": "#0072B2",
       "figure": "#E69F00",
       "language": "#009E73",
-      "reference": "#CC79A7"
+      "reference": "#CC79A7",
+      "citation": "#D55E00"
     },
     "provenance": "starting value, adjustable by the professor (Okabe-Ito hues, one per annotation kind)"
   },
@@ -64,6 +65,38 @@
     "value": 12,
     "provenance": "proposal 2026-11-17, an anchor shorter than this cannot prove the table is already in the text; tune on counts"
   },
+  "tables.image_column_gap_pt": {
+    "value": 12,
+    "provenance": "proposal 2026-11-25, a horizontal gap of this many points between two words starts a new column of a table drawn as an image; tune on the real reports"
+  },
+  "tables.image_min_rows": {
+    "value": 2,
+    "provenance": "proposal 2026-11-25, a table drawn as an image needs at least this many rows of words to be taken as a table; tune on the real reports"
+  },
+  "tables.untitled_min_rows": {
+    "value": 3,
+    "provenance": "proposal 2026-11-25 (plan 11 E5), an untitled region is a table drawn as an image only when its OCR rebuilds at least this many rows; tune on the real reports"
+  },
+  "tables.untitled_min_cols": {
+    "value": 3,
+    "provenance": "proposal 2026-11-25 (plan 11 E5), an untitled region is a table drawn as an image only when its OCR rebuilds at least this many columns of non-empty cells; a two-column label grid is a diagram in the real reports (plan 17, first run: 12 untitled regions of R01 wrongly tables at 2); tune on the real reports"
+  },
+  "tables.titled_min_rows": {
+    "value": 3,
+    "provenance": "measured 2026-11-26 on R01 (plan 20 review D): the grid of each owner-listed titled table holds at least three rows of five non-empty cells; the untitled grid rule keeps its own keys"
+  },
+  "tables.titled_min_cols": {
+    "value": 5,
+    "provenance": "measured 2026-11-26 on R01 (plan 20 review D): with five columns the rule flags the owner-listed titled tables and no other titled figure of R01 except the one with no text layer; at three columns it flagged F9, F10, F13 and F15 (at most two full rows at five cells) which the owner does not list"
+  },
+  "tables.titled_min_words": {
+    "value": 10,
+    "provenance": "measured 2026-11-26 on R01 (plan 20 review 6): the regions of the owner-listed titled figures hold 22 to 450 words where a table has text, and the one region with no text layer and no OCR words (F7) holds none; a region under ten words is unreadable, and the smallest measured figure with words holds 17"
+  },
+  "tables.image_row_overlap_ratio": {
+    "value": 0.5,
+    "provenance": "proposal 2026-11-25 (review M2), two words join one row when their boxes overlap vertically by this share of the smaller box; tune on the real reports"
+  },
   "text.ocr_dpi": {
     "value": 300,
     "provenance": "starting value, adjustable by the professor (resolution of the OCR of a damaged page, the usual resolution for printed text; the same figure as the probe of text_quality)"
@@ -83,6 +116,26 @@
   "driver.request_timeout_s": {
     "value": 600,
     "provenance": "starting value, adjustable by the professor (seconds per bridge call, a local model is slow)"
+  },
+  "driver.unreachable_retries": {
+    "value": 3,
+    "provenance": "owner 2026-11-27, plan 30: how many times one run restarts a step after the model answered unreachable; each restart costs only the item in progress"
+  },
+  "auto.rubric_name": {
+    "value": "grille_correction.md",
+    "provenance": "owner 2026-11-28: the file name of the professor's rubric in the reports folder, used by auto when --rubric is not given"
+  },
+  "auto.gpu_allowed_processes": {
+    "value": ["ollama.exe", "llama-server.exe", "ollama", "llama-server"],
+    "provenance": "measured 2026-11-27 on this machine: the model server runs as these programs; any other program holding the card made llama-server run out of memory"
+  },
+  "auto.gpu_check_timeout_s": {
+    "value": 10,
+    "provenance": "chosen by the session 2026-11-28 under the owner's delegation: nvidia-smi answers in well under a second, 10 s bounds a hung driver (R10)"
+  },
+  "driver.unreachable_pause_s": {
+    "value": 60,
+    "provenance": "owner 2026-11-27, plan 30: the pause before a restart after an unreachable model, in seconds, so the model server can come back"
   },
   "driver.count_timeout_s": {
     "value": 1200,
@@ -112,6 +165,58 @@
     "value": 3136,
     "provenance": "computed: ceil(1568/28) * ceil(1568/28) patches for the largest allowed image, used until vision_probe has measured the local model"
   },
+  "grade.score_step": {
+    "value": 0.001,
+    "provenance": "owner 2026-11-27: one partial element of four is exactly 12.5 percent of the section, so the points are rounded to a thousandth of a point (nearest, ties up); replaces the quarter point of plan 25"
+  },
+  "grade.comment_forbidden_openings": {
+    "value": ["le rapport", "ce rapport", "the report", "this report"],
+    "provenance": "owner 2026-11-27: a comment must speak of the section (cette section, this section), never of the whole report; compared case-folded on the first words of the comment"
+  },
+  "grade.quote_min_chars": {
+    "value": 20,
+    "provenance": "starting value, unmeasured, adjustable by the professor (review round 2): the shortest normalised quote the key tier accepts; a shorter key is too weak for a substring test"
+  },
+  "grade.quote_min_word_share": {
+    "value": 0.9,
+    "provenance": "chosen by the owner (review round 2, 2026-11-26): the share of the quote words the fuzzy tier must find in order in its window"
+  },
+  "grade.quote_window_factor": {
+    "value": 1.3,
+    "provenance": "chosen by the owner (review round 2, 2026-11-26): the fuzzy window is about this many times the quote word count"
+  },
+  "grade.unverified_present_counts_as": {
+    "value": "partial",
+    "provenance": "chosen by the session 2026-11-27 under the owner's review of round 2: an element marked present whose quote no tier verifies counts as this verdict in the level"
+  },
+  "grade.quote_min_words": {
+    "value": 3,
+    "provenance": "starting value, unmeasured, adjustable by the professor (review round 2): a quote shorter than this many words never verifies, in any tier"
+  },
+  "grade.quote_page_window": {
+    "value": 1,
+    "provenance": "chosen by the owner (review round 2, 2026-11-26): a quote is searched on its named page and this many pages either side, never further"
+  },
+  "grade.quote_max_words": {
+    "value": 24,
+    "provenance": "chosen by the session 2026-11-27 under the owner's review of round 2: twice the 12 words the prompt asks for; a longer quote skips the fuzzy tier (resource cap)"
+  },
+  "grade.min_model_elements": {
+    "value": 3,
+    "provenance": "session 2026-11-27, review round 1 finding 7: one trivial element must not earn a whole section; a model-named item with fewer elements is asked again once, then rated with the code elements_few for the professor's check"
+  },
+  "grade.element_label_words": {
+    "value": 12,
+    "provenance": "session 2026-11-27, keeps a note readable: the most words of an element text repeated in a comment; a longer text is cut on a word with three dots"
+  },
+  "grade.max_elements": {
+    "value": 12,
+    "provenance": "starting value, unmeasured, adjustable by the professor (review round 2): elements beyond this count in one item are ignored and counted, a resource cap on the verification"
+  },
+  "grade.missing_max_chars": {
+    "value": 300,
+    "provenance": "starting value, proposed 2026-11-17 and adjustable by the professor: longest missing-element text kept in grade.json, in characters. A bound on one saved field, never on what the model is shown"
+  },
   "grade.invalid_answer_retries": {
     "value": 1,
     "provenance": "starting value, adjustable by the professor (repeats of a grader call after a refused answer)"
@@ -136,6 +241,10 @@
     "value": 4,
     "provenance": "chosen 2026-11-15: a rubric line shorter than four words is a heading or a label, so only longer lines are checked against the text a model rebuilt; adjustable by the professor"
   },
+  "language.comment_min_words": {
+    "value": 6,
+    "provenance": "chosen by the session 2026-11-26 under the owner's delegation: a shorter comment is too short for detect_language and is kept as written (words of a comment, R01 case 3)"
+  },
   "vision.min_word_share": {
     "value": 0.8,
     "provenance": "chosen 2026-11-15: a figure of a report is read when four words out of five of the text printed on it are found, so one misread word does not stop the step; adjustable by the professor (a number above 0 and at most 1)"
@@ -155,13 +264,17 @@
       "gantt chart": "gantt", "planning": "gantt", "schedule": "gantt",
       "s curve": "chart", "budget curve": "chart", "cumulative curve": "chart", "graph": "chart", "plot": "chart",
       "bar chart": "chart", "histogram": "chart", "pie chart": "chart", "curve": "chart", "budget chart": "chart",
-      "kanban": "other", "board": "other", "table": "other", "budget": "other", "budget table": "other",
-      "timesheet": "other", "time sheet": "other", "spreadsheet": "other", "screenshot": "other",
+      "kanban": "other", "board": "other", "table": "table", "budget": "table", "budget table": "table",
+      "timesheet": "table", "time sheet": "table", "spreadsheet": "table", "screenshot": "other",
       "cad": "technical_drawing", "pcb": "technical_drawing", "schematic": "technical_drawing",
       "electrical drawing": "technical_drawing", "mechanical drawing": "technical_drawing", "3d model": "technical_drawing",
       "picture": "photo", "image": "photo"
     },
-    "provenance": "chosen 2026-11-15 from the professor's list of figures a report can hold (UML, SysML, flowchart, logigram, software or electronic architecture, project breakdown structure, Gantt, Kanban, budget, S-curve, timesheet): the words the professor writes as the expected kind of a figure in the vision probe, each mapped to the schema kind the model answers; a table or a board has no criterion of its own so it is `other`; adjustable by the professor"
+    "provenance": "chosen 2026-11-15 from the professor's list of figures a report can hold (UML, SysML, flowchart, logigram, software or electronic architecture, project breakdown structure, Gantt, Kanban, budget, S-curve, timesheet): the words the professor writes as the expected kind of a figure in the vision probe, each mapped to the schema kind the model answers; a table or a board has no criterion of its own so it is `other`; adjustable by the professor 2026-11-26 (review H, #126): a table, a budget table, a budget, a timesheet, a time sheet and a spreadsheet are the kind table, which the figure criteria judge; they were other."
+  },
+  "rubric.element_regexes": {
+    "value": ["^\\s*- \\[ \\]\\s+(.+)$", "^(\\d+)\\.\\s+(.+)$"],
+    "provenance": "owner rubric format, 2026-11-27: the first rule is the checklist line of the rubric, the second the top-level numbered point (its bold label kept as the element name, the number dropped); bullets without a checkbox are not elements; the first rule that matches at least one line of a section gives that section its elements, in rubric order"
   },
   "rubric.loose_heading_regex": {
     "value": "^#{1,2}\\s+\\d+\\.\\s+\\S",

@@ -5,6 +5,7 @@ Pipeline stage: figure-review, element extraction (issue 122).
 Expected runtime: a few seconds (rendering of small pages only).
 """
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -26,7 +27,15 @@ SETTINGS = {
     "logo_max_area_pt2": 20000,
     "header_band_pt": 70,
     "repeat_min_pages": 3,
+    "table_image_min_height_pt": 24,
     "logo_size_tolerance_pt": 1.0,
+    "merge_max_text_words": 12,
+    "text_box_min_area_ratio": 0.95,
+    "text_box_min_spans": 6,
+    "running_band_pt": 80,
+    "group_max_gap_pt": 150,
+    "running_size_tolerance_pt": 8,
+    "second_pass_title_distance_pt": 90,
 }
 ELEMENT_SETTING_KEYS = tuple(SETTINGS)
 
@@ -106,6 +115,25 @@ def _logo_png():
     return pix.tobytes("png")
 
 
+def _grid_png():
+    """
+    Purpose: Build a small PNG of a grid of black lines, the picture of a table with no vector border.
+    Inputs:
+        None.
+    Outputs:
+        bytes - the PNG file content, 200 by 120 pixels.
+    Raises:
+        None.
+    """
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 200, 120), False)
+    pix.set_rect(pix.irect, (255, 255, 255))
+    for x in range(0, 200, 40):
+        pix.set_rect(fitz.IRect(x, 0, x + 2, 120), (0, 0, 0))
+    for y in range(0, 120, 30):
+        pix.set_rect(fitz.IRect(0, y, 200, y + 2), (0, 0, 0))
+    return pix.tobytes("png")
+
+
 class TestExtractElements(unittest.TestCase):
     """Behaviour of extract_elements on fictitious PDFs (R1 tables, R2 labels, R3 merged fragments)."""
 
@@ -154,7 +182,7 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         records = self._extract()
         self.assertEqual([r["element_type"] for r in records], ["table"])
-        self.assertEqual(records[0]["element_id"], "T01")
+        self.assertEqual(records[0]["element_id"], "T-u01")
 
     def test_table_markdown_holds_the_cells(self):
         doc = fitz.open()
@@ -184,7 +212,7 @@ class TestExtractElements(unittest.TestCase):
         records = self._extract()
         figures = [r for r in records if r["element_type"] == "figure"]
         self.assertEqual(len(figures), 1)
-        self.assertEqual(figures[0]["element_id"], "F01")
+        self.assertEqual(figures[0]["element_id"], "F1")
         self.assertEqual([r["element_type"] for r in records], ["figure"])
 
     def test_title_between_figures_blocks_the_merge(self):
@@ -199,7 +227,7 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         figures = [r for r in self._extract() if r["element_type"] == "figure"]
         self.assertEqual(len(figures), 2)
-        self.assertEqual([f["element_id"] for f in figures], ["F01", "F02"])
+        self.assertEqual([f["element_id"] for f in figures], ["F1", "F2"])
 
     def test_repeated_header_image_is_a_logo(self):
         doc = fitz.open()
@@ -221,6 +249,55 @@ class TestExtractElements(unittest.TestCase):
         records = self._extract()
         self.assertEqual([r["element_type"] for r in records], ["figure"])
 
+    def test_titled_table_image_is_not_a_figure(self):
+        # Plan 7 (E4): a table pasted as a picture with no ruled border, under a table title.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_image(fitz.Rect(100, 300, 300, 420), stream=_grid_png())
+        _centred_text(page, 200, 286, "Tableau 1 : Mesures")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["table_image"])
+        self.assertEqual(records[0]["element_id"], "T1")
+        self.assertEqual(records[0]["title"]["text"], "Tableau 1 : Mesures")
+        self.assertEqual(records[0]["legend"], "")
+
+    def test_ruled_table_is_not_duplicated_by_a_table_image(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _centred_text(page, 200, 186, "Tableau 1 : Mesures")
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur"],
+                                               ["Masse", "12.5"]])
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["table"])
+
+    def test_untitled_thin_band_does_not_steal_a_ruled_table_title(self):
+        # Review I1 (series C): a 19 point vector band with no title, directly above a ruled table whose
+        # title lies between them. The table claims its title first; the band is too thin for a table_image.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 300, 300, 319)
+        _centred_text(page, 200, 334, "Tableau 2 : Essais")
+        _ruled_table(page, 72, 340, 120, 25, [["Mesure", "Valeur"],
+                                               ["Masse", "12.5"]])
+        self._save(doc)
+        records = self._extract()
+        table = next(r for r in records if r["element_type"] == "table")
+        self.assertEqual(table["title"]["text"], "Tableau 2 : Essais")
+        self.assertNotIn("table_image", [r["element_type"] for r in records])
+        self.assertEqual([r["element_type"] for r in records], ["figure", "table"])
+
+    def test_figure_title_keeps_a_figure(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_image(fitz.Rect(100, 300, 300, 420), stream=_grid_png())
+        _centred_text(page, 200, 436, "Figure 3: Trame")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["figure"])
+        self.assertEqual(records[0]["element_id"], "F3")
+
     def test_skipped_page_gives_no_element(self):
         doc = fitz.open()
         for _ in range(3):
@@ -229,7 +306,7 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         records = self._extract(skip_pages=(2,))
         self.assertEqual([r["page"] for r in records], [1, 3])
-        self.assertEqual([r["element_id"] for r in records], ["F01", "F02"])
+        self.assertEqual([r["element_id"] for r in records], ["F-u01", "F-u02"])
 
     def test_titles_legend_notes_are_attached(self):
         doc = fitz.open()
@@ -286,6 +363,252 @@ class TestExtractElements(unittest.TestCase):
         )
         self.assertEqual(records[0]["caption"], "Figure 1: Ancien")
 
+    def test_uml_fragments_with_short_labels_are_one_figure(self):
+        # Plan 12 Task 1: six boxes 40 points apart, short labels between them, one title below the union.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        for x in (100, 220, 340):
+            for y in (100, 200):
+                _filled(page, x, y, x + 80, y + 40, 0.85)
+        for x in (180, 300):
+            for y in (120, 220):
+                page.draw_line((x, y), (x + 40, y))
+        page.insert_text((190, 118), "in", fontsize=8, fontname="helv")
+        _centred_text(page, 260, 262, "Figure 1: Diagramme de classes")
+        self._save(doc)
+        figures = [r for r in self._extract() if r["element_type"] == "figure"]
+        self.assertEqual(len(figures), 1)
+        self.assertEqual(figures[0]["title"]["text"], "Figure 1: Diagramme de classes")
+
+    def test_side_by_side_figures_with_titles_below_are_two_figures(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 290, 200)
+        _centred_text(page, 195, 216, "Figure 1: Premier")
+        _filled(page, 300, 100, 490, 200)
+        _centred_text(page, 395, 216, "Figure 2: Second")
+        self._save(doc)
+        figures = [r for r in self._extract() if r["element_type"] == "figure"]
+        self.assertEqual(len(figures), 2)
+        self.assertEqual([f["element_id"] for f in figures], ["F1", "F2"])
+
+    def test_long_paragraph_between_figures_separates_them(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 200)
+        _centred_text(page, 200, 240, "Le texte courant de ce paragraphe decrit la figure precedente en detail complet ici.")
+        _filled(page, 100, 290, 300, 390)
+        self._save(doc)
+        figures = [r for r in self._extract() if r["element_type"] == "figure"]
+        self.assertEqual(len(figures), 2)
+
+    def test_untitled_text_box_is_not_a_figure(self):
+        # Series B review: a full-width untitled band that holds running text is a text box.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 400, 500, 465, 0.75)
+        page.insert_text((110, 420), "Lorem ipsum dolor sit amet consectetur", fontsize=10, fontname="helv")
+        page.insert_text((110, 440), "adipiscing elit sed do eiusmod tempor", fontsize=10, fontname="helv")
+        self._save(doc)
+        self.assertEqual(self._extract(), [])
+
+    def test_repeated_footer_frame_is_nothing(self):
+        # Series B review: an untitled frame of 470 by 60 points at the same place on three pages is no element.
+        doc = fitz.open()
+        for _ in range(3):
+            page = doc.new_page(width=612, height=792)
+            _filled(page, 70, 722, 540, 782)
+        self._save(doc)
+        self.assertEqual(self._extract(), [])
+
+    def test_running_frame_widths_varying_by_five_points_is_nothing(self):
+        # Review R2: the R02 footer frame is 432 to 437 points wide from page to page.
+        doc = fitz.open()
+        for width in (470, 465, 468):  # widths differ by 5 points at most, as in R02
+            page = doc.new_page(width=612, height=792)
+            _filled(page, 70, 722, 70 + width, 782)
+        self._save(doc)
+        self.assertEqual(self._extract(), [])
+
+    def test_repeated_footer_ruled_table_is_nothing(self):
+        doc = fitz.open()
+        for _ in range(3):
+            page = doc.new_page(width=612, height=792)
+            _ruled_table(page, 72, 735, 120, 15, [["Pied", "de page"], ["Cadre", "fixe"]])
+        self._save(doc)
+        self.assertEqual(self._extract(), [])
+
+    def test_untitled_table_next_to_titled_one_is_its_continuation(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _centred_text(page, 200, 186, "Tableau 1 : Mesures")
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur"], ["Masse", "12.5"]])
+        _ruled_table(page, 72, 262, 120, 25, [["Longueur", "3.2"], ["Largeur", "4.1"]])
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["table"])
+        self.assertIn("Masse", records[0]["markdown"])
+        self.assertIn("Largeur", records[0]["markdown"])
+        self.assertEqual(records[0]["title"]["text"], "Tableau 1 : Mesures")
+
+    def test_thin_band_above_a_table_is_part_of_the_table(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 72, 300, 522, 319, 0.75)
+        _ruled_table(page, 72, 321, 120, 25, [["Mesure", "Valeur"], ["Masse", "12.5"]])
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["table"])
+        self.assertLessEqual(records[0]["rect"][1], 301)
+
+    def test_figure_file_named_by_printed_number(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 200)
+        _centred_text(page, 200, 216, "Figure 2.3: Schema")
+        self._save(doc)
+        record = self._extract()[0]
+        self.assertEqual(record["element_id"], "F2.3")
+        self.assertEqual(record["file"], "F2.3.png")
+        self.assertTrue((self.out / "F2.3.png").exists())
+
+    def test_table_image_file_named_by_number(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_image(fitz.Rect(100, 300, 300, 420), stream=_grid_png())
+        _centred_text(page, 200, 286, "Tableau 4 : Mesures")
+        self._save(doc)
+        record = self._extract()[0]
+        self.assertEqual(record["element_type"], "table_image")
+        self.assertEqual(record["element_id"], "T4")
+        self.assertEqual(record["file"], "T4.png")
+        self.assertTrue((self.out / "T4.png").exists())
+
+    def test_untitled_figure_named_u(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 300, 400, 500)
+        self._save(doc)
+        record = self._extract()[0]
+        self.assertEqual(record["element_id"], "F-u01")
+        self.assertEqual(record["file"], "F-u01.png")
+
+    def test_duplicate_number_gets_suffix(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 200)
+        _centred_text(page, 200, 216, "Figure 1: A")
+        _filled(page, 100, 260, 300, 360)
+        _centred_text(page, 200, 376, "Figure 1: B")
+        self._save(doc)
+        ids = [r["element_id"] for r in self._extract()]
+        self.assertEqual(ids, ["F1", "F1-b"])
+
+    def test_ruled_table_writes_no_file(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _centred_text(page, 200, 186, "Tableau 1 : Mesures")
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur"], ["Masse", "12.5"]])
+        self._save(doc)
+        record = self._extract()[0]
+        self.assertEqual(record["element_id"], "T1")
+        self.assertIsNone(record["file"])
+        self.assertFalse((self.out / "T1.png").exists())
+
+    def test_logo_writes_no_file(self):
+        doc = fitz.open()
+        for _ in range(3):
+            page = doc.new_page(width=612, height=792)
+            page.insert_image(fitz.Rect(40, 10, 140, 90), stream=_logo_png())
+            _filled(page, 100, 300, 400, 500)
+        self._save(doc)
+        logos = [r for r in self._extract() if r["element_type"] == "logo"]
+        self.assertEqual(len(logos), 3)
+        self.assertTrue(all(r["file"] is None for r in logos))
+        self.assertFalse((self.out / "L01.png").exists())
+
+    def test_title_overlapping_the_bottom_edge_is_still_below(self):
+        # Plan 17 (real check on R01 page 17): the drawing's box reaches 8 points into its caption line, so the
+        # caption overlaps the box by a little. It is still the caption below the drawing, not an untitled region.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 208)
+        _centred_text(page, 200, 214, "Figure 1: Recouvrement")
+        self._save(doc)
+        figures = [r for r in self._extract() if r["element_type"] == "figure"]
+        self.assertEqual(len(figures), 1)
+        self.assertEqual(figures[0]["title"]["text"], "Figure 1: Recouvrement")
+        self.assertEqual(figures[0]["title"]["position"], "below")
+
+    def test_header_logo_near_a_figure_stays_a_logo(self):
+        # Review I3: a logo 100 points above a figure is within group_max_gap_pt but must not join the figure.
+        doc = fitz.open()
+        for _ in range(3):
+            page = doc.new_page(width=612, height=792)
+            page.insert_image(fitz.Rect(40, 10, 140, 90), stream=_logo_png())
+            _filled(page, 100, 190, 400, 290)
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual(sum(1 for r in records if r["element_type"] == "logo"), 3)
+        self.assertEqual(sum(1 for r in records if r["element_type"] == "figure"), 3)
+
+    def test_numbered_section_heading_between_figures_splits_them(self):
+        # Review I3: a numbered heading "3.2 Resultats" between two untitled figures is a barrier.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 200)
+        page.insert_text((100, 240), "3.2 Resultats", fontsize=12, fontname="helv")
+        _filled(page, 100, 260, 300, 360)
+        self._save(doc)
+        figures = [r for r in self._extract() if r["element_type"] == "figure"]
+        self.assertEqual(len(figures), 2)
+
+    def test_untitled_ruled_table_with_a_figure_title_is_a_figure(self):
+        # Review R1 (R01 pages 42 and 44): a big ruled grid with no table title, and a "Figure 16" title under it.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur", "Unite"],
+                                               ["Masse", "12.5", "kg"],
+                                               ["Longueur", "3.2", "m"]])
+        _centred_text(page, 200, 290, "Figure 16: Schema du montage")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["figure"])
+        self.assertEqual(records[0]["element_id"], "F16")
+        self.assertEqual(records[0]["title"]["text"], "Figure 16: Schema du montage")
+
+    def test_untitled_table_title_beyond_the_first_distance_is_found_on_second_pass(self):
+        # Review R3 (R02 page 47): the table title lies about 50 points under the grid, beyond the 36 point
+        # distance of the first pass. The second pass, within second_pass_title_distance_pt, gives it.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur"], ["Masse", "12.5"]])
+        _centred_text(page, 200, 300, "Tableau 6 : Essais")
+        self._save(doc)
+        table = [r for r in self._extract() if r["element_type"] == "table"][0]
+        self.assertEqual(table["title"]["text"], "Tableau 6 : Essais")
+        self.assertEqual(table["element_id"], "T6")
+
+    def test_hyphenated_printed_number_names_the_file(self):
+        # Review minor: "Figure 2-1" is a printed number with a hyphen.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 200)
+        _centred_text(page, 200, 216, "Figure 2-1: Schema")
+        self._save(doc)
+        record = self._extract()[0]
+        self.assertEqual(record["element_id"], "F2-1")
+        self.assertEqual(record["file"], "F2-1.png")
+
+    def test_ids_differing_only_by_case_get_a_suffix(self):
+        # Review minor: Windows file names are not case sensitive, so F1a and F1A must not both be written.
+        used = set()
+        counters = {}
+        first = figure_extract._element_id("figure", {"text": "Figure 1a: A"}, counters, used)
+        second = figure_extract._element_id("figure", {"text": "Figure 1A: B"}, counters, used)
+        self.assertEqual(first, "F1a")
+        self.assertNotEqual(first.lower(), second.lower())
+
     def test_extraction_block_holds_the_element_settings(self):
         block = json.loads(CRITERIA_PATH.read_text(encoding="utf-8"))["extraction"]
         for key in ELEMENT_SETTING_KEYS:
@@ -294,6 +617,126 @@ class TestExtractElements(unittest.TestCase):
             self.assertTrue(block[key]["provenance"].strip())
         self.assertEqual(block["fragment_gap_pt"]["value"], 24)
         self.assertEqual(block["table_overlap_ratio"]["value"], 0.6)
+
+
+class TitleKindMismatchTest(unittest.TestCase):
+    """N7 signal 1 (plan 19): a ruled table under a figure title is flagged by the script; nothing else is."""
+
+    setUp = TestExtractElements.setUp
+    tearDown = TestExtractElements.tearDown
+    _save = TestExtractElements._save
+    _extract = TestExtractElements._extract
+
+    def test_a_ruled_table_under_a_figure_title_is_flagged(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur", "Unite"],
+                                               ["Masse", "12.5", "kg"],
+                                               ["Longueur", "3.2", "m"]])
+        _centred_text(page, 200, 290, "Figure 3: Schema du montage")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["element_type"], "figure")
+        self.assertEqual(records[0]["element_id"], "F3")
+        self.assertEqual(records[0]["file"], "F3.png")
+        self.assertEqual(records[0]["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(records[0]["title_kind_source"], "script")
+
+    def test_a_chart_under_a_figure_title_is_not_flagged(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_image(fitz.Rect(100, 300, 300, 420), stream=_grid_png())
+        _centred_text(page, 200, 436, "Figure 3: Trame")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual(records[0]["element_id"], "F3")
+        self.assertIsNone(records[0]["title_kind_mismatch"])
+        self.assertIsNone(records[0]["title_kind_source"])
+
+    def test_a_ruled_table_under_a_table_title_is_not_flagged(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur", "Unite"],
+                                               ["Masse", "12.5", "kg"],
+                                               ["Longueur", "3.2", "m"]])
+        _centred_text(page, 200, 290, "Tableau 2: Mesures")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual(records[0]["element_type"], "table")
+        self.assertIsNone(records[0]["title_kind_mismatch"])
+
+    def test_only_the_table_under_the_figure_title_is_flagged(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur", "Unite"],
+                                               ["Masse", "12.5", "kg"],
+                                               ["Longueur", "3.2", "m"]])
+        _centred_text(page, 200, 290, "Figure 4: Schema du montage")
+        _ruled_table(page, 72, 420, 120, 25, [["Zone", "Pas", "Unite"],
+                                               ["Haut", "2.0", "m"],
+                                               ["Bas", "1.1", "m"]])
+        _centred_text(page, 200, 520, "Tableau 1: Zones")
+        self._save(doc)
+        by_id = {r["element_id"]: r for r in self._extract()}
+        self.assertEqual(by_id["F4"]["title_kind_mismatch"], "table_titled_figure")
+        self.assertIsNone(by_id["T1"]["title_kind_mismatch"])
+
+    def test_an_untitled_ruled_table_with_no_title_in_reach_is_not_flagged(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur", "Unite"],
+                                               ["Masse", "12.5", "kg"],
+                                               ["Longueur", "3.2", "m"]])
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual(records[0]["element_type"], "table")
+        self.assertIsNone(records[0]["title_kind_mismatch"])
+        self.assertIsNone(records[0]["title_kind_source"])
+
+    def test_every_record_carries_both_keys(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_image(fitz.Rect(100, 300, 300, 420), stream=_grid_png())
+        _centred_text(page, 200, 436, "Figure 3: Trame")
+        _ruled_table(page, 72, 480, 120, 25, [["A", "B", "C"], ["1", "2", "3"]])
+        self._save(doc)
+        records = self._extract()
+        self.assertTrue(records)
+        for record in records:
+            self.assertIn("title_kind_mismatch", record)
+            self.assertIn("title_kind_source", record)
+
+
+class RealR01Test(unittest.TestCase):
+    """
+    Real-data check on the owner's R01 report (plan 19, 2026-11-26). Skipped unless UGS_REAL_R01 names the PDF and
+    UGS_REAL_WORK a scratch folder. Only ids and counts are asserted (R34): no text, image or path is printed.
+    Expected: every flagged id is one of the titled figures, and the measured script flags are present. The script
+    does not find every table printed under a Figure title (the vision signal of plan 20 covers the rest), so the test
+    checks inclusion, not equality; an id outside the owner's list is an open question for the owner, not a pass.
+    """
+
+    TITLED_FIGURES = {"F%d" % n for n in range(1, 19)}  # R01 titled figures F1 to F18 (measured 2026-11-26)
+    MEASURED_FLAGS = {"F16", "F17"}  # the script's signal on R01 at plan 19 (the vision signal covers the rest)
+
+    def setUp(self):
+        self.pdf = os.environ.get("UGS_REAL_R01", "")
+        self.work = os.environ.get("UGS_REAL_WORK", "")
+        if not self.pdf or not self.work:
+            self.skipTest("UGS_REAL_R01 and UGS_REAL_WORK are not set (owner's real-data check)")
+
+    def test_flagged_elements_are_among_the_listed_titles(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "work-ugs-audit" / "scripts"))
+        import report_prepare  # noqa: E402 - imported here, the real-data check only
+        out = Path(self.work) / "plan19-elements"
+        out.mkdir(parents=True, exist_ok=True)
+        records = report_prepare._run_find_elements(Path(self.pdf), out, [])
+        flagged = {r["element_id"] for r in records if r["title_kind_mismatch"]}
+        self.assertTrue(flagged, "the script flags no element on R01")
+        self.assertLessEqual(flagged, self.TITLED_FIGURES)
+        self.assertLessEqual(self.MEASURED_FLAGS, flagged)
+        self.assertTrue(all(r["title_kind_source"] == "script" for r in records if r["title_kind_mismatch"]))
 
 
 if __name__ == "__main__":

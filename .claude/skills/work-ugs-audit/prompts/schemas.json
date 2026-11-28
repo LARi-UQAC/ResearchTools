@@ -26,22 +26,25 @@
   },
   "grade_item": {
     "type": "object",
-    "required": ["status", "score", "comment", "evidence"],
+    "required": ["status", "elements", "comment"],
     "properties": {
       "status": {"type": "string", "enum": ["rated", "not_applicable"]},
-      "score": {"type": ["number", "null"]},
-      "comment": {"type": "string"},
-      "evidence": {
+      "elements": {
         "type": "array",
         "items": {
           "type": "object",
-          "required": ["page", "quote"],
+          "required": ["element", "verdict"],
           "properties": {
-            "page": {"type": "integer", "minimum": 1},
-            "quote": {"type": "string"}
+            "id": {"type": "string"},
+            "element": {"type": "string"},
+            "verdict": {"type": "string", "enum": ["present", "partial", "absent"]},
+            "page": {"type": ["integer", "null"], "minimum": 1},
+            "quote": {"type": ["string", "null"]}
           }
         }
       },
+      "exceptional": {"type": "boolean"},
+      "comment": {"type": "string"},
       "missing": {"type": "string"}
     }
   },
@@ -75,9 +78,10 @@
   },
   "figure": {
     "type": "object",
-    "required": ["kind", "criteria"],
+    "required": ["kind", "criteria", "borrowed"],
     "properties": {
-      "kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "photo", "other"]},
+      "kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "table", "photo", "other"]},
+      "borrowed": {"type": "boolean"},
       "criteria": {
         "type": "array",
         "items": {
@@ -105,7 +109,7 @@
     "type": "object",
     "required": ["figure_kind", "visible_text"],
     "properties": {
-      "figure_kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "photo", "other"]},
+      "figure_kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "table", "photo", "other"]},
       "visible_text": {"type": "array", "items": {"type": "string"}}
     }
   }

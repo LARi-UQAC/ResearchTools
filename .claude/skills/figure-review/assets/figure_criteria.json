@@ -9,12 +9,26 @@
     "render_dpi": {"value": 150, "provenance": "starting value, adjustable by the professor (dots per inch when a vector figure is turned into a bitmap for a model; the longest side is then cut to max_long_edge)"},
     "render_timeout_s": {"value": 60, "provenance": "starting value, unmeasured, adjustable by the professor (seconds allowed to one external tool: pdflatex, epstopdf or draw.io)"},
     "drawio_scale": {"value": 3, "provenance": "default of paper2talk fig_export.export, which produced projector-grade exports (integer scale of the draw.io export)"},
+    "in_image_title_band_ratio": {
+      "value": 0.15,
+      "provenance": "proposal 2026-11-26 (plan 24, Task 1): a title drawn inside a raster figure is read in the top and bottom band of this share of the element height; a starting value, tune on the real reports"
+    },
     "fragment_gap_pt": {"value": 24, "provenance": "proposal 2026-11-16 (points between two figure regions that still form one diagram), tune on counts of the real reports"},
     "table_overlap_ratio": {"value": 0.6, "provenance": "proposal 2026-11-16 (share of a drawing region lying inside a table box, from which the region is not a figure), tune on counts of the real reports"},
     "logo_max_area_pt2": {"value": 20000, "provenance": "proposal 2026-11-16 (area in pt^2 under which a repeated header or footer image is a logo), tune on counts of the real reports"},
     "header_band_pt": {"value": 70, "provenance": "proposal 2026-11-16 (points from the top or bottom edge of a page that form the header or footer band), tune on counts of the real reports"},
+    "table_image_min_height_pt": {"value": 24, "provenance": "proposal 2026-11-25 (review I1): a region with no figure title is a table drawn as an image only when it is a raster or at least this tall, two text lines of 12 points, the minimum of tables.image_min_rows (2) in work-ugs-audit; a thinner vector band is a figure, never a table. Tune on the real reports"},
     "repeat_min_pages": {"value": 3, "provenance": "proposal 2026-11-16 (pages on which a region of the same size must recur to be a logo), tune on counts of the real reports"},
-    "logo_size_tolerance_pt": {"value": 1.0, "provenance": "proposal 2026-11-16 (points of tolerance when comparing the size of two regions to decide a repeated logo; the plan's one point, not measured)"}
+    "logo_size_tolerance_pt": {"value": 1.0, "provenance": "proposal 2026-11-16 (points of tolerance when comparing the size of two regions to decide a repeated logo; the plan's one point, not measured)"},
+    "merge_max_text_words": {"value": 12, "provenance": "proposal 2026-11-25 (plan 12 E6): a text block of more words than this is running text and separates two figures; a short label inside a diagram is not a barrier. Tune on the real reports"},
+    "text_box_min_area_ratio": {"value": 0.95, "provenance": "proposal 2026-11-25 (series B review, R02 page 2): share of an untitled vector region drawn (background_threshold) from which it is a text box, not a figure. Tune on the real reports"},
+    "text_box_min_spans": {"value": 6, "provenance": "proposal 2026-11-25 (series B review): words an untitled drawn region must hold to be a text box. Tune on the real reports"},
+    "group_max_gap_pt": {"value": 150, "provenance": "proposal 2026-11-25 (plan 12 E6): largest gap in points between two regions that may still form one figure when no title or paragraph lies between them; a logo at the top of a page stays apart from a figure below it. Tune on the real reports"},
+    "count_max_iterations": {"value": 3, "provenance": "proposal 2026-11-25 (plan 12 E6): re-runs of the extraction after the first attempt when the figure count differs from the declared count; every attempt is recorded"},
+    "count_gap_steps_pt": {"value": [48, 96, 192], "provenance": "proposal 2026-11-25 (plan 12 E6): group_max_gap_pt values tried in order on the re-runs; the largest reaches fragments the first gap cannot join. Tune on the real reports"},
+    "running_size_tolerance_pt": {"value": 8, "provenance": "proposal 2026-11-25 (review R2): points of tolerance when two footer or header frames of different pages are of the same size; the real R02 frame is 432 to 437 points wide from page to page. Tune on the real reports"},
+    "second_pass_title_distance_pt": {"value": 90, "provenance": "proposal 2026-11-25 (review R3, R02 page 47): points within which an untitled table takes the nearest free table title on a second pass, farther than the first pass max_title_distance_pt; tune on the real reports"},
+    "running_band_pt": {"value": 80, "provenance": "proposal 2026-11-25 (series B review, R02: a footer frame of about 437 by 65 points on 22 pages): points from the top or bottom edge within which a repeated untitled region of any size is a running element, not an element"}
   },
   "criteria": [
     {"id": "cited_with_content", "level": "figure", "scope": "undergraduate", "judged_by": "model", "applies_to": ["all"], "needs": "either", "threshold": null,
@@ -51,6 +65,7 @@
      "label_fr": "Légende ne masquant pas les données", "label_en": "Legend not covering data",
      "comment_fr": "La légende cache une partie des données : la déplacer hors du tracé.", "comment_en": "The legend hides part of the data: move it outside the plot."},
     {"id": "numbered_in_sequence", "level": "figure", "scope": "both", "judged_by": "script", "applies_to": ["all"], "needs": "source", "threshold": null,
+     "reason_fr": "Numérotation irrégulière : la figure {n} suit la figure {m}.",
      "label_fr": "Figures numérotées dans l'ordre", "label_en": "Figures numbered in sequence",
      "comment_fr": "Numérotation des figures irrégulière : numéroter 1, 2, 3 dans l'ordre d'apparition.", "comment_en": "Figure numbering is irregular: number 1, 2, 3 in order of appearance."},
     {"id": "called_before_appearing", "level": "figure", "scope": "both", "judged_by": "script", "applies_to": ["all"], "needs": "source", "threshold": null,
@@ -60,6 +75,7 @@
      "label_fr": "Légende compréhensible seule", "label_en": "Caption understandable on its own",
      "comment_fr": "La légende ne se comprend pas seule : dire ce qui est montré, dans quelles conditions.", "comment_en": "The caption cannot be understood alone: say what is shown and under which conditions."},
     {"id": "source_cited", "level": "figure", "scope": "undergraduate", "judged_by": "script", "applies_to": ["all"], "needs": "source", "threshold": null,
+     "reason_fr": "Figure empruntée sans source : citer la source dans le titre.",
      "label_fr": "Source citée pour une figure empruntée", "label_en": "Source cited for a borrowed figure",
      "comment_fr": "Aucune source n'est indiquée dans la légende : citer la source si la figure est empruntée.", "comment_en": "No source is given in the caption: cite the source if the figure is borrowed."},
     {"id": "si_units_consistent", "level": "figure", "scope": "undergraduate", "judged_by": "model", "applies_to": ["chart"], "needs": "either", "threshold": null,

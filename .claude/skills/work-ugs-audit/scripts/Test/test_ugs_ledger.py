@@ -144,5 +144,58 @@ class TestUgsLedger(unittest.TestCase):
             self.assertEqual(read(path), text)
 
 
+class TestFiguresLineAnyMark(unittest.TestCase):
+    """Review fix: a new figure id is added even when the figures line was already settled by an earlier run."""
+
+    def test_a_new_figure_is_added_when_the_figures_line_is_done(self):
+        from ugs_ledger import add_report, add_figures, set_mark
+        text = add_report("", "R01", ["grade I01", "figures"])
+        text = set_mark(text, "R01", "figures", "x")
+        text = add_figures(text, "R01", ["F1", "T-i03"])
+        self.assertIn("- [ ] figure T-i03", text)
+        self.assertIn("- [ ] figure F1", text)
+
+    def test_a_new_figure_is_added_when_the_figures_line_is_blocked(self):
+        from ugs_ledger import add_report, add_figures, set_mark
+        text = add_report("", "R01", ["grade I01", "figures"])
+        text = set_mark(text, "R01", "figures", "!", "error")
+        text = add_figures(text, "R01", ["T-i03"])
+        self.assertIn("- [ ] figure T-i03", text)
+
+
+class FigureLinesNoDuplicateTest(unittest.TestCase):
+    """Review 2.2: an id already on a line with any mark is never inserted again; the scan stops at its report."""
+
+    def _figure_lines(self, text, report_id):
+        lines, inside = [], False
+        for line in text.splitlines():
+            if line.startswith("## "):
+                inside = line.strip() == f"## {report_id}"
+            elif inside and line.startswith("- [") and " figure " in line:
+                lines.append(line)
+        return lines
+
+    def test_every_mark_of_an_existing_figure_blocks_a_second_line(self):
+        from ugs_ledger import add_report, add_figures, set_mark
+        text = add_report("", "R01", ["grade I01", "figures"])
+        text = set_mark(text, "R01", "figures", "x")
+        text = add_figures(text, "R01", ["F1", "F2", "F3", "F4"])
+        text = set_mark(text, "R01", "figure F1", "x")
+        text = set_mark(text, "R01", "figure F2", "!", "error")
+        text = add_figures(text, "R01", ["F1", "F2", "F3", "F4", "F5"])
+        self.assertEqual(self._figure_lines(text, "R01"),
+                         ["- [ ] figure F5", "- [x] figure F1", "- [!] figure F2 - error", "- [ ] figure F3", "- [ ] figure F4"])
+
+    def test_an_id_of_another_report_does_not_block_this_report(self):
+        from ugs_ledger import add_report, add_figures, set_mark
+        text = add_report("", "R01", ["figures"])
+        text = set_mark(text, "R01", "figures", "x")
+        text = add_figures(text, "R01", ["F1"])
+        text = add_report(text, "R02", ["figures"])
+        text = set_mark(text, "R02", "figures", "x")
+        text = add_figures(text, "R02", ["F1"])
+        self.assertEqual(self._figure_lines(text, "R02"), ["- [ ] figure F1"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,6 @@
+import json
 import sys
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -17,7 +19,9 @@ from ugs_text import (
     read_pages,
     load_prompts,
     load_schemas,
+    load_section_terms,
 )
+SECTION_TERMS_FILE = Path(__file__).resolve().parent.parent.parent / 'assets' / 'section_terms.json'
 
 
 class TestUgsText(unittest.TestCase):
@@ -274,6 +278,46 @@ class TestUgsText(unittest.TestCase):
             load_schemas(path, ["missing_key"])
         self.assertIn("missing_key", str(ctx.exception))
         path.unlink()
+
+
+class TestSectionTermsAndAppendices(unittest.TestCase):
+    """Plan 25 task 2: appendix pages after the references are body pages, and a section term selects its page.
+    Every text is fictitious (R34); the terms file is written in a temporary folder (R21)."""
+
+    def count(self, text):
+        """Count the words of a text as the token proxy."""
+        return len(text.split())
+
+    def test_appendix_pages_after_references_are_body(self):
+        pages = ["Intro text.", "## References\n[1] Fictitious Author, 2020.", "## Annexe A\nBilan fictif des heures."]
+        body, refs = split_body_and_references(pages)
+        self.assertIn("Bilan fictif des heures.", body)
+        self.assertEqual([ref["text"] for ref in refs], ["[1] Fictitious Author, 2020."])
+
+    def test_an_appendix_heading_may_follow_a_title_but_a_body_mention_is_not_one(self):
+        from ugs_text import _is_appendix_heading
+        self.assertTrue(_is_appendix_heading("## Bilan Annexe A : fiche fictive"))
+        self.assertFalse(_is_appendix_heading("Voir l'Annexe A pour la fiche fictive."))
+
+    def test_a_section_term_selects_its_page(self):
+        long_page = "## Introduction\n" + " ".join(["mot"] * 60)
+        pages = [long_page, "## Bilan heures\nFiche fictive."]
+        item = {"id": "I07", "title": "Analyse des feuilles de temps", "max_points": 0.5}
+        terms = [["feuilles de temps", "bilan des heures", "heures", "timesheet"]]
+        self.assertEqual(select_pages(item, pages, 40, self.count, 3, []), [])
+        self.assertEqual(select_pages(item, pages, 40, self.count, 3, terms), [2])
+
+    def test_the_section_terms_file_is_read_and_a_missing_key_is_named(self):
+        folder = Path(tempfile.mkdtemp())
+        good = folder / "terms.json"
+        good.write_text(json.dumps({"groups": [["budget", "courbe en S"]]}), encoding="utf-8")
+        self.assertEqual(load_section_terms(good), [["budget", "courbe en S"]])
+        bad = folder / "broken.json"
+        bad.write_text(json.dumps({"other": []}), encoding="utf-8")
+        with self.assertRaises(ValueError) as raised:
+            load_section_terms(bad)
+        self.assertIn("groups", str(raised.exception))
+        self.assertTrue(load_section_terms(SECTION_TERMS_FILE))
 
 
 if __name__ == '__main__':

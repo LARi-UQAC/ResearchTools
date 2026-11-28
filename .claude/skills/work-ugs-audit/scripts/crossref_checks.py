@@ -34,6 +34,13 @@ MAX_GAP_SETTING_KEY = "max_gap_numbers"
 MAX_NUMBER_CONFIG_KEY = "checks.max_number"
 MAX_NUMBER_SETTING_KEY = "max_number"
 CHECK_IDS = ("figures_cited", "tables_cited", "figure_order", "table_order", "equation_order")
+# N5: a row added by the assemble step, not by run_checks; its id is named here so the annex can label it.
+CITATION_CHECK_ID = "citation_placement"
+UNTITLED_CHECK_ID = "untitled_elements"  # owner N2: elements with no title, a finding never a count
+TITLE_KIND_CHECK_ID = "title_kind"  # N7 (plan 20): a figure title on a table or a table title on a figure
+FIGURE_COUNT_CHECK_ID = "figure_counts"
+TABLE_COUNT_CHECK_ID = "table_counts"
+COUNT_CHECK_IDS = (FIGURE_COUNT_CHECK_ID, TABLE_COUNT_CHECK_ID)
 STATUS_OK = "ok"
 STATUS_NOT_OK = "not_ok"
 STATUS_NOT_APPLICABLE = "not_applicable"
@@ -590,3 +597,220 @@ def run_checks(pdf: Path, pages: List[str], elements: List[Dict[str, Any]], mark
         ("equation_order", eq_status, eq_detail),
     ]
     return [{"id": check_id, "status": status, "detail": detail} for check_id, status, detail in results]
+
+
+# N5: a numeric citation written after the sentence's period. The abbreviations are data (citation_rules.json, R6).
+CITATION_RULES_PATH = SCRIPTS_DIR.parent / "assets" / "citation_rules.json"
+MISPLACED_CITATION_RE = re.compile(
+    # F4: the word before the period is bounded (40 characters, no space, no period, no bracket) so a long run of
+    # letters cannot make the search quadratic. F6: the gap may be a line break as well as a space.
+    r"(?P<word>[^\s.\[]{0,40}[^\W\d_])\.(?P<gap>\s?)\[(?P<body>\s*\d+(?:\s*[,\u2013\u2014\-]\s*\d+)*\s*)\]")
+
+
+def load_citation_rules(language: str, path: Optional[Path] = None) -> List[str]:
+    """
+    Purpose: Read the abbreviations that end in a period and may stand before a citation without being a finding (N5).
+    Inputs:
+        language: str - the report language, a key of the file (fr, en).
+        path: Optional[Path] - the rules file; None means assets/citation_rules.json.
+    Outputs:
+        List[str] - the abbreviations of the language, each with its period (for example "et al.").
+    Raises:
+        CrossrefConfigError: the file is unreadable, the language has no entry, or its value is not a list of strings.
+    """
+    rules_path = Path(path) if path is not None else CITATION_RULES_PATH
+    try:
+        raw = json.loads(rules_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise CrossrefConfigError(f"cannot read {rules_path.name}: {exc}") from None
+    entry = raw.get(language) if isinstance(raw, dict) else None
+    value = entry.get("value") if isinstance(entry, dict) else None
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise CrossrefConfigError(f"language '{language}' has no list of abbreviations in {rules_path.name}")
+    return value
+
+
+def misplaced_citations(pages: List[str], abbreviations: List[str]) -> List[Dict[str, Any]]:
+    """
+    Purpose: Find each numeric citation written after the period of its sentence (". [5]") on the given pages (N5).
+    Details: The word before the period must end with a letter, so a decimal (3.5 [2]) is not a finding. A word
+        that is one of the abbreviations (et al., etc.) is not a finding either. Spaces around the bracket may be
+        absent; a list or a range is a citation too. The quote is the text as it stands in the page.
+    Inputs:
+        pages: List[str] - the body page texts, index 0 for page 1 (references must be removed by the caller).
+        abbreviations: List[str] - the abbreviations ending in a period, from load_citation_rules.
+    Outputs:
+        List[Dict[str, Any]] - one {"page", "quote"} per occurrence, in page order.
+    Raises:
+        None.
+    """
+    forms = {item.casefold() for item in abbreviations}
+    found: List[Dict[str, Any]] = []
+    for number, text in enumerate(pages, start=1):
+        for match in MISPLACED_CITATION_RE.finditer(text):
+            if (match.group("word") + ".").casefold() in forms:
+                continue
+            found.append({"page": number, "quote": match.group(0)})
+    return found
+
+
+APPENDIX_CHECK_ID = "appendices"
+APPENDIX_NOT_APPLICABLE = "not_applicable"
+APPENDIX_TITLE_END = r"[ \t]*(?:[:\-–.|*]|$|\n)"
+
+
+def _appendix_pattern(settings: Dict[str, Any], heading: bool) -> "re.Pattern":
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the pattern of an appendix mention: an appendix word (group word), then its id (group id).
+
+    Inputs:
+        settings (dict): markers (the appendix words of both languages), plural (the plural words) and id_pattern
+            (the id, read from front_matter.json).
+        heading (bool): True for a heading, which must be followed by a title mark (':', '-', '.', a bold mark or the
+            end of the line), so that a mention in a sentence is not one; False for a contents entry.
+
+    Outputs:
+        re.Pattern: case-insensitive on the word, case-sensitive on the id.
+
+    Raises:
+        re.error: when id_pattern is not a valid regular expression.
+    --------------------------------------------------------------------------
+    """
+    words = "|".join(re.escape(word) for word in sorted(settings["markers"], key=len, reverse=True))
+    base = r"(?<![\w'’])(?i:(?P<word>" + words + r"))\s+(?P<id>" + settings["id_pattern"] + r")(?![A-Za-z0-9])"
+    if heading:
+        base += "(?=" + APPENDIX_TITLE_END + ")"
+    return re.compile(base, re.MULTILINE)
+
+
+def _is_mention(text: str, match: "re.Match", settings: Dict[str, Any], heading: bool) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether one match is an appendix id: a plural word takes no number (a page number), and a heading is not
+        preceded by a lower-case word (in a sentence such as "voir l'annexe A").
+
+    Inputs:
+        text (str): the page text the match was found in.
+        match (re.Match): the match, with groups word and id.
+        settings (dict): the appendix settings (plural).
+
+    Outputs:
+        bool: True when the match counts.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    word, name = match.group("word"), match.group("id")
+    plural = {p.lower() for p in settings["plural"]}
+    if word.lower() in plural and name.isdigit():
+        return False
+    return not heading or _starts_a_heading(text, match.start())
+
+
+def _starts_a_heading(text: str, start: int) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether a match at a given position opens a heading: the same line holds nothing before it but markup,
+        spaces and a number (a numbered heading). A word, or an apostrophe after a word, before the match means the
+        match is in a sentence ('Voir Annexe A.', "l'annexe A").
+
+    Inputs:
+        text (str): the page text.
+        start (int): the position of the appendix word in text.
+
+    Outputs:
+        bool: True when the match opens a heading.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    line = text[max(0, start - 200):start].rsplit("\n", 1)[-1]
+    line = re.sub(r"[#*_|\s]+$", "", line)
+    if re.search(r"\d{1,2}[.)]?$", line):
+        # A number before the mention numbers a heading ('11. ANNEXE A'), even after a word of the previous sentence.
+        return True
+    return not line or not (line[-1].isalpha() or line[-1] in "'’")
+
+
+def appendix_check(pages: List[str], toc_pages: Optional[List[int]], end_start_page: Optional[int],
+                   settings: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Check that every appendix listed in the table of contents is found after the references, and that every
+        appendix found there is listed (plan 15, N4; review round 1 I3).
+
+    Details:
+        The listed appendices are the mentions on the contents pages. The present appendices are the headings on the
+        pages from end_start_page on. A heading is a mention followed by a title mark and not preceded by a lower-case
+        word, so it is found inside a joined text layer too. A plural word takes no number, so 'Annexes 45' is a page
+        number. The status is not_applicable when there is no contents page or no reference heading (the reason says
+        which), or when neither side lists any appendix. Ids are compared as printed.
+
+    Inputs:
+        pages (List[str]): the text of each page, index 0 for page 1.
+        toc_pages (List[int] or None): the 1-based contents pages from the front roles; None when none was found.
+        end_start_page (int or None): the 1-based page of the reference heading, searched from the body start.
+        settings (dict): markers, plural and id_pattern (front_matter.load_appendix_settings).
+
+    Outputs:
+        dict: status (ok, not_ok or not_applicable), reason (None or the text naming why), listed, present,
+            listed_missing and unlisted_present (lists of ids in order of appearance).
+
+    Raises:
+        re.error: when the id pattern is not a valid regular expression.
+    --------------------------------------------------------------------------
+    """
+    empty = {"listed": [], "present": [], "listed_missing": [], "unlisted_present": []}
+    if not toc_pages:
+        return {"status": APPENDIX_NOT_APPLICABLE, "reason": "no contents page found", **empty}
+    if end_start_page is None:
+        return {"status": APPENDIX_NOT_APPLICABLE, "reason": "no reference heading found", **empty}
+    listed = _unique_ids(pages, toc_pages, _appendix_pattern(settings, heading=False), settings, heading=False)
+    present = _unique_ids(pages, range(end_start_page, len(pages) + 1), _appendix_pattern(settings, heading=True),
+                          settings, heading=True)
+    if not listed and not present:
+        return {"status": APPENDIX_NOT_APPLICABLE, "reason": None, **empty}
+    listed_missing = [name for name in listed if name not in present]
+    unlisted_present = [name for name in present if name not in listed]
+    status = "ok" if not listed_missing and not unlisted_present else "not_ok"
+    return {"status": status, "reason": None, "listed": listed, "present": present,
+            "listed_missing": listed_missing, "unlisted_present": unlisted_present}
+
+
+def _unique_ids(pages: List[str], numbers: Iterable[int], pattern: "re.Pattern", settings: Dict[str, Any],
+                heading: bool) -> List[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Collect the appendix ids matched on the given 1-based pages, once each, in order of appearance.
+
+    Inputs:
+        pages (List[str]): the text of each page.
+        numbers (Iterable[int]): the 1-based pages to search.
+        pattern (re.Pattern): an appendix pattern with groups word and id.
+        settings (dict): the appendix settings, read by _is_mention.
+        heading (bool): True for headings (the lower-case rule applies), False for contents entries.
+
+    Outputs:
+        List[str]: the distinct ids that count as mentions.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    found: List[str] = []
+    for number in numbers:
+        if not 1 <= number <= len(pages):
+            continue
+        text = pages[number - 1]
+        for match in pattern.finditer(text):
+            if _is_mention(text, match, settings, heading) and match.group("id") not in found:
+                found.append(match.group("id"))
+    return found

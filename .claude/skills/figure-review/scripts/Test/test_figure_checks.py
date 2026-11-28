@@ -148,8 +148,8 @@ class TestFigureChecks(unittest.TestCase):
         results = figure_checks.check(figures, pages, body_font_size, self.criteria_doc)
         
         crit_id = "numbered_in_sequence"
-        # Both should fail because the sequence is broken
-        self.assertEqual(results[0]["criteria"][crit_id]["verdict"], "fail")
+        # Figure 1 is in order; only figure 3, after the gap, fails
+        self.assertEqual(results[0]["criteria"][crit_id]["verdict"], "pass")
         self.assertEqual(results[1]["criteria"][crit_id]["verdict"], "fail")
 
     def test_repeated_number_fails(self):
@@ -162,7 +162,8 @@ class TestFigureChecks(unittest.TestCase):
         results = figure_checks.check(figures, pages, body_font_size, self.criteria_doc)
         
         crit_id = "numbered_in_sequence"
-        self.assertEqual(results[0]["criteria"][crit_id]["verdict"], "fail")
+        # The repeat fails; the first figure stays in order
+        self.assertEqual(results[0]["criteria"][crit_id]["verdict"], "pass")
         self.assertEqual(results[1]["criteria"][crit_id]["verdict"], "fail")
 
     def test_figure_called_after_it_appears_fails(self):
@@ -263,6 +264,94 @@ class TestFigureChecks(unittest.TestCase):
         self.assertEqual(len([c for c in chosen if c["scope"] == "undergraduate"]), 20)
         self.assertEqual({c["id"] for c in chosen if c["scope"] == "both"},
                          {"called_before_appearing", "numbered_in_sequence"})
+
+
+class TestPerFigureNumbering(unittest.TestCase):
+    """Per-figure numbering over titled figures (Issue 126, plan 21 task 1, R01 case 1). Fictitious captions only (R34)."""
+
+    def setUp(self):
+        self.criteria_path = Path(__file__).parent.parent.parent / "assets" / "figure_criteria.json"
+        self.criteria_doc = figure_checks.load_criteria(self.criteria_path)
+
+    @staticmethod
+    def _fig(caption, page):
+        return {"figure_id": f"F{page:02d}", "page": page, "caption": caption}
+
+    def _verdicts(self, captions):
+        figures = [self._fig(c, i + 1) for i, c in enumerate(captions)]
+        pages = ["" for _ in figures]
+        results = figure_checks.check(figures, pages, 10.0, self.criteria_doc)
+        return [r["criteria"]["numbered_in_sequence"] for r in results]
+
+    def test_untitled_elements_do_not_break_the_sequence(self):
+        # R01 shape: 18 titled figures numbered 1 to 18, plus two untitled elements
+        captions = [f"Figure {n}: titre" for n in range(1, 19)] + [None, None]
+        verdicts = self._verdicts(captions)
+        self.assertTrue(all(v["verdict"] == "pass" for v in verdicts[:18]))
+        self.assertEqual([v["verdict"] for v in verdicts[18:]], ["not_applicable", "not_applicable"])
+
+    def test_untitled_between_figures_is_not_applicable_and_does_not_break_the_count(self):
+        verdicts = self._verdicts(["Figure 1: a", "Figure 2: b", None, "Figure 3: c"])
+        self.assertEqual([v["verdict"] for v in verdicts], ["pass", "pass", "not_applicable", "pass"])
+
+    def test_a_gap_fails_only_the_figure_after_it(self):
+        verdicts = self._verdicts(["Figure 1: a", "Figure 2: b", "Figure 4: c"])
+        self.assertEqual([v["verdict"] for v in verdicts], ["pass", "pass", "fail"])
+        self.assertIn("figure 4", verdicts[2]["reason"].lower())
+        self.assertIn("figure 2", verdicts[2]["reason"].lower())
+
+    def test_chapter_numbers_are_in_order(self):
+        verdicts = self._verdicts(["Figure 2.1: a", "Figure 2.2: b", "Figure 3.1: c"])
+        self.assertEqual([v["verdict"] for v in verdicts], ["pass", "pass", "pass"])
+
+    def test_a_table_titled_figure_counts_in_the_sequence(self):
+        # "Figure 5" on a table is part of the figure sequence: it follows figure 3 with a gap
+        verdicts = self._verdicts(["Figure 1: a", "Figure 2: b", "Figure 3: c", "Figure 5: table"])
+        self.assertEqual(verdicts[3]["verdict"], "fail")
+        self.assertIn("figure 3", verdicts[3]["reason"].lower())
+
+    def test_no_source_is_not_applicable_by_default(self):
+        # Plan 21 task 2: the script cannot tell a borrowed figure, so a figure without a source is not applicable
+        figures = [self._fig("Figure 1: The plant.", 1)]
+        results = figure_checks.check(figures, [""], 10.0, self.criteria_doc)
+        self.assertEqual(results[0]["criteria"]["source_cited"]["verdict"], "not_applicable")
+
+    def test_the_reason_is_the_french_text_of_the_criteria_file(self):
+        verdicts = self._verdicts(["Figure 1: a", "Figure 4: c"])
+        template = next(c for c in self.criteria_doc["criteria"] if c["id"] == "numbered_in_sequence")["reason_fr"]
+        self.assertEqual(verdicts[1]["reason"], template.format(n=4, m=1))
+        self.assertEqual(verdicts[1]["reason"], "Numérotation irrégulière : la figure 4 suit la figure 1.")
+
+
+class TestNumberingShapes(unittest.TestCase):
+    """Review round 1, minor 6: the successor rule accepts a change of numbering shape, and the key never raises."""
+
+    KEY = staticmethod(figure_checks._number_key)
+    SUCC = staticmethod(figure_checks._is_successor)
+
+    def test_the_next_figure_in_a_chapter(self):
+        self.assertTrue(self.SUCC(self.KEY("2.2"), self.KEY("2.3")))
+        self.assertFalse(self.SUCC(self.KEY("2.2"), self.KEY("2.5")))
+
+    def test_a_new_chapter_prefix_is_a_successor(self):
+        self.assertTrue(self.SUCC(self.KEY("2.2"), self.KEY("3.1")))
+        self.assertFalse(self.SUCC(self.KEY("2.2"), self.KEY("3.2")))
+
+    def test_the_first_appendix_after_body_numbers_is_a_successor(self):
+        self.assertTrue(self.SUCC(self.KEY("3.2"), self.KEY("A.1")))
+        self.assertFalse(self.SUCC(self.KEY("3.2"), self.KEY("A.3")))
+
+    def test_the_next_appendix_letter_is_a_successor(self):
+        self.assertTrue(self.SUCC(self.KEY("A.1"), self.KEY("B.1")))
+        self.assertFalse(self.SUCC(self.KEY("A.1"), self.KEY("B.2")))
+
+    def test_an_empty_key_is_never_a_successor(self):
+        self.assertFalse(self.SUCC((), self.KEY("2.1")))
+
+    def test_the_number_key_never_raises_on_a_non_ascii_digit(self):
+        # A superscript two is a digit for str.isdigit, but int() refuses it: the key must treat it as a letter part.
+        key = self.KEY("2.\u00b2")
+        self.assertEqual(len(key), 2)
 
 
 if __name__ == "__main__":

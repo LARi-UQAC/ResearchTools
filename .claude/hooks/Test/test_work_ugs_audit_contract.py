@@ -38,6 +38,14 @@ def missing_names(text: str, names) -> list:
     return [name for name in names if name not in text]
 
 
+POLLING_WORDS = re.compile(r"(?i)\bpoll\w*|sleep loop|periodic status")
+
+
+def polling_mentions(text: str) -> list:
+    """Every word of the polling rule found in a text: an empty list means the text never asks for a poll."""
+    return [match.group(0) for match in POLLING_WORDS.finditer(text)]
+
+
 def first_sentence(description: str) -> str:
     return re.split(r"(?<=[a-z)])\.\s", description, maxsplit=1)[0] + "."
 
@@ -68,10 +76,24 @@ class TestWorkUgsAuditContract(unittest.TestCase):
     def test_the_long_run_is_started_detached(self):
         self.assertRegex(self.agent, r"(?i)detached")
 
-    def test_the_poll_checks_that_the_background_process_is_still_running(self):
-        self.assertRegex(self.agent, r"(?i)background process\s+is still running")
-        self.assertRegex(self.agent, r"(?i)steps are still open")
-        self.assertRegex(self.agent, r"(?i)not retried")
+    def test_the_agent_never_polls_the_run(self):
+        self.assertEqual(polling_mentions(self.agent), [])
+        self.assertNotIn("sleep", self.agent.lower())  # no sleep-loop either
+
+    def test_the_agent_detects_a_dead_background_process_by_its_exit_notification_only(self):
+        self.assertIn("A dead background process is detected by its exit notification only.", self.agent)
+
+    def test_the_agent_ends_its_turn_and_reads_the_marker_once(self):
+        self.assertIn("run_in_background", self.agent)
+        self.assertRegex(self.agent, r"(?i)end your turn")
+        self.assertIn("run_done.json", self.agent)
+        self.assertRegex(self.agent, r"(?i)read .*run_done\.json.* once")
+        self.assertRegex(self.agent, r"(?i)do not call .status.")
+
+    def test_the_command_reads_the_marker_once_and_never_polls(self):
+        command = read(".claude/commands/work-ugs-audit.md")
+        self.assertIn("run_done.json", command)
+        self.assertRegex(command, r"(?i)never polls")
 
     def test_the_command_names_third_loop_as_its_only_pause(self):
         command = (ROOT / ".claude" / "commands" / "work-ugs-audit.md").read_text(encoding="utf-8")
@@ -124,6 +146,11 @@ class TestWorkUgsAuditContract(unittest.TestCase):
         self.assertTrue(any("`/work-ugs-audit`" in row for row in rows))
 
     # --- negative controls: the finders can fail ---
+
+    def test_polling_finder_reports_a_planted_instruction_and_nothing_in_a_clean_text(self):
+        planted = "Poll status every minute until the run ends, then run a sleep loop."
+        self.assertEqual(polling_mentions(planted), ["Poll", "sleep loop"])
+        self.assertEqual(polling_mentions("The exit notification wakes the agent once."), [])
 
     def test_forbidden_target_finder_detects_a_planted_read(self):
         fictitious = "Read `R01/grade.json` and the pages/ folder to explain the grade."

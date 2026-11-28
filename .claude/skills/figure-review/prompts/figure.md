@@ -7,8 +7,8 @@ S-curve, the cumulative cost or progress against time), gantt (a task schedule d
 diagram (boxes linked by lines or arrows: UML such as use case, class, sequence or state, SysML, a software or
 electronic architecture, a block diagram, a project or product breakdown structure, an organisation chart),
 flowchart (steps and decisions in sequence: a flowchart, a logigram, an activity diagram), technical_drawing (a CAD
-view, a PCB layout, an electrical schematic, a mechanical drawing), photo, or other (a table such as a budget or a
-timesheet, a Kanban board, a screenshot). Then judge each criterion listed below, using the
+view, a PCB layout, an electrical schematic, a mechanical drawing), table (a grid of rows and columns, such as
+a budget or a timesheet, even when its printed title says Figure), photo, or other (a Kanban board, a screenshot). Then judge each criterion listed below, using the
 criterion id exactly as written. Judge only the criteria that fit the kind you named. For a criterion
 that does not fit, answer not_applicable.
 
@@ -28,7 +28,10 @@ Criteria to judge (id | label | kinds it applies to):
 
 {{CRITERIA}}
 
-Answer with one JSON object with the keys kind and criteria. Criteria is a list of objects with the keys
+Also answer borrowed: true only for a figure reproduced from a publication, a datasheet, a website or another author;
+false for the student's own figure, and false when you cannot tell.
+
+Answer with one JSON object with the keys kind, borrowed and criteria. Criteria is a list of objects with the keys
 id, verdict (pass, fail or not_applicable) and reason (one short sentence). Give one object for every
 criterion listed, and no other id. Nothing else.
 

@@ -1,0 +1,22 @@
+{
+  "fr": {
+    "heading": {
+      "value": "## Tableau {element_id} (détecté)",
+      "provenance": "French heading written by the professor's course language, 2026-11-25 (spec D3); the placeholder is filled by the element id, never interpreted"
+    },
+    "page_line": {
+      "value": "Page {page}",
+      "provenance": "French page line, same word as the English one, 2026-11-25 (spec D3)"
+    }
+  },
+  "en": {
+    "heading": {
+      "value": "## Table {element_id} (detected)",
+      "provenance": "English heading, moved unchanged from the former module constant (spec D3, 2026-11-25)"
+    },
+    "page_line": {
+      "value": "Page {page}",
+      "provenance": "English page line, moved unchanged from the former module constant (spec D3, 2026-11-25)"
+    }
+  }
+}

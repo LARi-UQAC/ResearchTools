@@ -8,6 +8,7 @@ report. A model that cannot run (NotRun) propagates and leaves the step open for
 marks that step blocked, stops this report only and is returned as status failed.
 """
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ from ugs_text import StepContext, read_pages, detect_language, LanguageUndecidab
 from ugs_grade import grade_report
 from ugs_audit import audit_report
 from ugs_language import language_report
+import front_pages
 from ugs_figures import figures_report
 from ugs_assemble import assemble_report
 from ugs_bridge import NotRun
@@ -198,7 +200,25 @@ def _load_json(path: Path) -> Optional[dict]:
 
 
 def _write_json(path: Path, data: Any) -> None:
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    """
+    Purpose: Write one JSON step file atomically (plan 30, Task 1): the text goes to a temporary file beside it, which
+        replaces the file only when complete, so a crash never leaves a half-written file that blocks --continue.
+    Inputs:
+        path (Path): the file to write.
+        data (Any): the JSON document.
+    Outputs:
+        None.
+    Raises:
+        OSError: when the write or the replace fails; the temporary file is removed and the old file is kept.
+    """
+    text = json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(text, encoding="utf-8")
+    try:
+        os.replace(temporary, path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def report_language(work_dir: Path, report_id: str, pages: List[str], hints: dict) -> str:
@@ -322,6 +342,31 @@ def _step_grade(job: _Job) -> str:
     return "blocked" if any(r["status"] == "not_run" for r in result["items"]) else "done"
 
 
+def _page_modes(work_dir: Path, report_id: str) -> Dict[int, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Give the correction mode of each front page of a report, from the front roles recorded in its
+        report_meta.json (plan 16, N3).
+
+    Inputs:
+        work_dir (Path): the work folder of the run.
+        report_id (str): the report id, its folder is work_dir / report_id.
+
+    Outputs:
+        Dict[int, str]: 1-based page to mode; empty when the report has no recorded front roles.
+
+    Raises:
+        FrontMatterConfigError: when the front-matter data file is incomplete (named in the message).
+    --------------------------------------------------------------------------
+    """
+    meta = _load_json(work_dir / report_id / "report_meta.json") or {}
+    roles = meta.get("front_roles")
+    if not roles:
+        return {}
+    return front_pages.page_modes(roles, front_pages.load_front_matter())
+
+
 def _step_language(job: _Job) -> str:
     """
     --------------------------------------------------------------------------
@@ -347,7 +392,8 @@ def _step_language(job: _Job) -> str:
     saved = _load_json(path) or {}
     existing = {int(number): record for number, record in saved.get("pages", {}).items()}
     result = language_report(job.pages, job.call_for("language"), job.ctx, job.services["entries"], job.language,
-                             existing=existing, on_page=lambda _number, partial: job.save(path, partial))
+                             existing=existing, on_page=lambda _number, partial: job.save(path, partial),
+                             page_modes=_page_modes(job.work_dir, job.report_id))
     job.save(path, result)
     if result["not_run"]:
         job.mark("language", "!", "pages=%d" % len(result["not_run"]))
@@ -470,7 +516,8 @@ def run_report(
     services: dict,
     calibration_note: str,
     fetch: Optional[Callable],
-    on_step: Optional[Callable[[str], None]] = None
+    on_step: Optional[Callable[[str], None]] = None,
+    only_steps: Optional[List[str]] = None
 ) -> dict:
     """
     --------------------------------------------------------------------------
@@ -528,6 +575,8 @@ def run_report(
     job = _Job(work_dir, report_id, loop, src_pdf, call, ctx, services, calibration_note, fetch, pages,
                language, work_dir / "ledger.md", loop_dir)
     for name, runner in RUNNERS:
+        if only_steps is not None and name not in only_steps:
+            continue  # N1: `run --steps` restricts the run; the other steps stay skipped and open
         if _settled(read(job.ledger_path), report_id, name):
             continue
         if on_step is not None:
@@ -537,7 +586,10 @@ def run_report(
         except NotRun:
             raise
         except Exception as exc:  # noqa: BLE001 - an ordinary failure blocks this report only
-            job.mark(_failure_label(job, name), "!", "error=" + type(exc).__name__)
+            # Plan 29: an exception that names a code (ScoreNotReproduced) blocks the line with that code.
+            # Review round 2, finding 9: GradeError, RubricError and AnnexError name their code; a ledger_note wins.
+            note = getattr(exc, "ledger_note", None) or "error=" + getattr(exc, "code", type(exc).__name__)
+            job.mark(_failure_label(job, name), "!", note)
             steps[name] = "blocked"
             return {"report_id": report_id, "status": "failed", "steps": steps}
     return {"report_id": report_id, "status": "done", "steps": steps}

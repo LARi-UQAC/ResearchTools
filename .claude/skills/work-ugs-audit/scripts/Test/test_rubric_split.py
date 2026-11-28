@@ -3,6 +3,8 @@ Offline tests for rubric_split (Issue 120, plan 1): a Markdown rubric is split b
 sections and every section keeps its exact text. Fictitious rubric text only (R34), no model, no network (R21).
 """
 import copy
+import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -209,6 +211,120 @@ class ConfigTests(unittest.TestCase):
         for key in ("rubric.section_heading_regex", "rubric.total_regex", "rubric.min_check_words",
                     "rubric.loose_heading_regex"):
             self.assertIn(key, ugs_config.REQUIRED_KEYS)
+
+
+ELEMENT_RULES = CONFIG["rubric.element_regexes"]
+
+CHECKLIST_SECTION = """## 1. Resume (/1)
+
+Le resume contient :
+
+- [ ] Contexte
+- [ ] Objectif
+- [ ] Methode
+- [ ] Resultat
+- [ ] Conclusion
+- [ ] Mots cles
+"""
+
+NUMBERED_SECTION = """## 2. Methode (/2)
+
+1. **Essais** : nom de l'appareil
+2. **Mesures** : unites
+3. **Calcul** : formule
+"""
+
+BULLETS_ONLY_SECTION = """## 3. Conclusion (/0.5)
+
+- Rappel des objectifs
+- Limites
+"""
+
+MIXED_SECTION = """## 4. Mixte (/1)
+
+1. **Ancien** : numerote
+- [ ] Coche un
+- [ ] Coche deux
+"""
+
+
+class ElementTests(unittest.TestCase):
+
+    def test_six_checklist_lines_give_six_elements_in_order(self):
+        elements = rubric_split.section_elements(CHECKLIST_SECTION, ELEMENT_RULES)
+        self.assertEqual([e["id"] for e in elements], ["E1", "E2", "E3", "E4", "E5", "E6"])
+        self.assertEqual([e["text"] for e in elements],
+                         ["Contexte", "Objectif", "Methode", "Resultat", "Conclusion", "Mots cles"])
+
+    def test_numbered_points_give_elements_with_the_bold_label_kept(self):
+        elements = rubric_split.section_elements(NUMBERED_SECTION, ELEMENT_RULES)
+        self.assertEqual([e["text"] for e in elements],
+                         ["**Essais** : nom de l'appareil", "**Mesures** : unites", "**Calcul** : formule"])
+
+    def test_bullets_without_a_checkbox_give_no_element(self):
+        self.assertEqual(rubric_split.section_elements(BULLETS_ONLY_SECTION, ELEMENT_RULES), [])
+
+    def test_checkbox_lines_win_over_numbered_points_in_the_same_section(self):
+        elements = rubric_split.section_elements(MIXED_SECTION, ELEMENT_RULES)
+        self.assertEqual([e["text"] for e in elements], ["Coche un", "Coche deux"])
+
+    def test_split_items_carry_their_elements(self):
+        rubric = rubric_split.split_rubric(CHECKLIST_SECTION + "\n---\n\n" + NUMBERED_SECTION, "report",
+                                           HEADING, TOTAL, LOOSE, ELEMENT_RULES)
+        self.assertEqual(len(rubric["items"][0]["elements"]), 6)
+        self.assertEqual(len(rubric["items"][1]["elements"]), 3)
+
+    def test_without_element_rules_items_have_no_elements_key(self):
+        rubric = rubric_split.split_rubric(CHECKLIST_SECTION + "\n---\n\n" + NUMBERED_SECTION, "report",
+                                           HEADING, TOTAL, LOOSE)
+        self.assertNotIn("elements", rubric["items"][0])
+
+    def test_the_element_rules_key_is_required_and_named_when_missing(self):
+        self.assertIn("rubric.element_regexes", ugs_config.REQUIRED_KEYS)
+
+
+class ElementRuleValidationTest(unittest.TestCase):
+    """Review round 1, group B, finding 13: the element rules are checked at load, and a number is an element at column 0."""
+
+    @staticmethod
+    def load_with(rules):
+        """Load the shipped configuration with another element rule list, from a temporary file (fictitious)."""
+        import tempfile
+        raw = json.loads(ugs_config.default_path().read_text(encoding="utf-8"))
+        raw["rubric.element_regexes"]["value"] = rules
+        path = Path(tempfile.mkdtemp()) / "ugs_config.json"
+        path.write_text(json.dumps(raw), encoding="utf-8")
+        return ugs_config.load(path)
+
+    def test_a_rule_that_does_not_compile_is_a_named_error(self):
+        with self.assertRaises(ugs_config.ConfigError) as ctx:
+            self.load_with(["(unclosed"])
+        self.assertIn("rubric.element_regexes", str(ctx.exception))
+
+    def test_a_rule_without_a_capture_group_is_a_named_error(self):
+        with self.assertRaises(ugs_config.ConfigError) as ctx:
+            self.load_with(["^\\s*- \\[ \\]\\s+.+$"])
+        self.assertIn("rubric.element_regexes", str(ctx.exception))
+
+    def test_an_indented_nested_number_is_not_an_element(self):
+        text = "## 1. Resume (/1)\n\n1. **Un** : a\n   2. nested point\n3. **Trois** : c\n"
+        elements = rubric_split.section_elements(text, ELEMENT_RULES)
+        self.assertEqual([e["text"] for e in elements], ["**Un** : a", "**Trois** : c"])
+
+
+REAL_RUBRIC = os.environ.get("UGS_REAL_RUBRIC")
+
+
+@unittest.skipUnless(REAL_RUBRIC, "UGS_REAL_RUBRIC not set: real rubric not read")
+class RealRubricElementsTest(unittest.TestCase):
+
+    def test_section_one_has_six_elements_and_counts_are_recorded(self):
+        text = Path(REAL_RUBRIC).read_text(encoding="utf-8")
+        rubric = rubric_split.split_rubric(text, "report", HEADING, TOTAL, LOOSE, ELEMENT_RULES)
+        counts = {item["id"]: len(item["elements"]) for item in rubric["items"]}
+        # Numbers only: the section id and its element count, never the rubric text.
+        print("element counts per section: %s" % counts, file=sys.stderr)
+        self.assertEqual(counts["I01"], 6)
 
 
 if __name__ == "__main__":

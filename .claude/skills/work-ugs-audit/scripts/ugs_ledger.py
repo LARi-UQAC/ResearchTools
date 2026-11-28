@@ -66,29 +66,29 @@ def add_figures(text: str, report_id: str, figure_ids: list[str]) -> str:
     for i, line in enumerate(lines):
         if line.startswith("## "):
             current_report = line[3:].strip()
-        elif current_report == report_id and line.strip() == "- [ ] figures":
+        elif current_report == report_id and re.match(r"- \[[ x!]\] figures(?:\s|$)", line.strip()):  # any mark
             insert_idx = i + 1
             break
     
     if insert_idx is None:
         return text
 
-    new_lines = []
-    for fid in figure_ids:
-        new_lines.append(f"- [ ] figure {fid}")
-    
-    # Check if already present
-    existing = set()
+    # Review 2.2: an id already on a line with ANY mark is never inserted again, and the scan covers this report's
+    # section only (up to the next heading), so an id of another report does not block it.
+    existing_ids = set()
     for line in lines[insert_idx:]:
-        if line.startswith("- [ ] figure "):
-            existing.add(line)
-        else:
+        if line.startswith("## "):
             break
-            
-    to_insert = [l for l in new_lines if l not in existing]
+        match = re.match(r"- \[[ x!~]\] figure (\S+)", line)
+        if match:
+            existing_ids.add(match.group(1))
+    to_insert = []
+    for fid in figure_ids:
+        if fid not in existing_ids:
+            existing_ids.add(fid)
+            to_insert.append(f"- [ ] figure {fid}")
     if not to_insert:
         return text
-        
     lines[insert_idx:insert_idx] = to_insert
     return "\n".join(lines) + "\n"
 

@@ -19,6 +19,8 @@ Each criterion of `assets/figure_criteria.json` says `judged_by` and `needs`.
 
 - `script`: measured by the code (drawing area, effective resolution, text size, numbering, call before the
   figure, source in the caption, label form). The model never overturns a measured verdict.
+  Numbering is judged per titled figure against the one before it (an untitled element is not applicable), and
+  the source check fails only a figure the model marks as borrowed without a source in its title (plan 21, #126).
 - `model`: judged by the calling harness's own model, on what `needs` names: `source` (the TikZ or LaTeX
   text), `image` (the pixels) or `either`.
 
@@ -66,11 +68,22 @@ with `prompts/figure.md`, `## single`.
 
 The work-ugs-audit preparation calls `figure_extract.extract_elements` (added 2026-11-17, Issue 122), which returns
 one record per element with a type. A table is found with PyMuPDF's table finder (`page.find_tables()`) and is never
-judged as a figure; its cells come back as Markdown. Figure regions closer than `extraction.fragment_gap_pt` form one
-figure, unless a title lies between them. A region that overlaps a table box by `extraction.table_overlap_ratio` is
-dropped. A small image that recurs in the header or footer band on `extraction.repeat_min_pages` pages or more is a
-`logo`. Each title (found by `element_labels.py` from the marker words of `assets/element_markers.json`) is attached to
-at most one element. Every threshold is in `assets/figure_criteria.json` with its provenance, and the thresholds are
+judged as a figure; its cells come back as Markdown; a table the finder returns without cells is dropped and counted
+(`tables_dropped`). Figure fragments are grouped by barriers: the regions of a page between two titles, paragraphs or
+numbered section headings form one figure, within `extraction.group_max_gap_pt`, and two figures side by side are split
+by their titles; short labels inside a diagram are not barriers. Before grouping, page furniture is set aside: a region
+of any kind repeated in the header or footer band on `extraction.repeat_min_pages` pages (sizes within
+`extraction.running_size_tolerance_pt`) counts as nothing, an untitled vector box full of text is a text box, and a thin
+band against a ruled table belongs to that table. Ruled tables claim their titles first, then the other regions; a
+second pass pairs the remaining table titles of a page with its untitled tables within
+`extraction.second_pass_title_distance_pt`. A region under a table title that holds no ruled table is a `table_image`
+(a raster, or a vector region tall enough for `tables.image_min_rows` lines); an untitled ruled table next to an
+unclaimed figure title is a figure. Such a grid under a figure title keeps
+its figure number and file, and its record carries `title_kind_mismatch: "table_titled_figure"` with
+`title_kind_source: "script"` (every element record carries both keys, null when nothing is flagged). A region that overlaps a table box by `extraction.table_overlap_ratio` is dropped.
+The id and file name of a titled element is its printed number (`F2.3`, `T4`), an untitled one `F-u<NN>` or
+`T-u<NN>`. Each title (found by `element_labels.py` from the marker words of `assets/element_markers.json`) is attached
+to at most one element. Every threshold is in `assets/figure_criteria.json` with its provenance, and the thresholds are
 proposals to tune on the counts of the real reports. The vocabulary (title, legend, notes) is defined in the
 work-ugs-audit skill.
 

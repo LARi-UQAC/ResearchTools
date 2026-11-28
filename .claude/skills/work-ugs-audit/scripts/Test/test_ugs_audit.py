@@ -11,7 +11,7 @@ _LOOP_ENGINEER_SCRIPTS = _SCRIPTS_DIR.parent.parent / "loop-engineer" / "scripts
 if _LOOP_ENGINEER_SCRIPTS.exists() and str(_LOOP_ENGINEER_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LOOP_ENGINEER_SCRIPTS))
 
-from ugs_audit import audit_report, audit_item
+from ugs_audit import audit_report, audit_item, audit_fingerprint
 from ugs_bridge import NotRun
 from ugs_text import StepContext
 from ugs_grade import grade_item
@@ -34,7 +34,9 @@ def make_ctx():
     return StepContext(
         prompts={
             "audit_item": "AUDIT {{ITEM}} {{GRADE_RECORD}} {{EVIDENCE_PAGES}}",
-            "grade_item": "GRADE {{ITEM}} {{SECTIONS}} {{LEVELS}} {{LANGUAGE_OF_REPORT}} {{CALIBRATION_NOTE}}"
+            "grade_item": "GRADE {{ITEM}} {{SECTIONS}} {{LEVELS}} {{LANGUAGE_OF_REPORT}} {{CALIBRATION_NOTE}}",
+            # The retry template of a model-named item with too few elements (review round 1, finding 7).
+            "retry_grade_item": "## fr_few\nFew.\n\n## en_few\nFew.\n"
         },
         schemas={
             "audit_item": {"type": "object"},
@@ -56,6 +58,7 @@ class TestAuditItem(unittest.TestCase):
         self.record = {
             "item_id": "I01",
             "status": "rated",
+            "level": "complete_correct",
             "score": 8.0,
             "comment": "Good",
             "evidence": [{"page": 1, "quote": "text"}],
@@ -90,12 +93,29 @@ class TestAuditItem(unittest.TestCase):
             audit_item(self.item, self.record, self.pages, call, self.ctx)
         self.assertEqual(ctx.exception.kind, "unreachable")
 
-    def test_evidence_pages_are_the_pages_named_by_the_evidence(self):
+    def test_the_prompt_carries_the_level_and_the_element_verdicts(self):
+        # Review round 1, decision 4: the auditor checks the level and the verdicts, not a summary of them.
+        record = dict(self.record, level="partial", model_score="present 1, partial 0, absent 1",
+                      elements=[{"element": "a", "verdict": "present", "page": 1},
+                                {"element": "b", "verdict": "absent", "page": None}])
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        audit_item(self.item, record, self.pages, call, self.ctx)
+        prompt = call.prompts[0]
+        self.assertIn('"level": "partial"', prompt)
+        self.assertIn('"verdict": "absent"', prompt)
+        self.assertNotIn("present 1, partial 0", prompt)
+
+    def test_the_cited_pages_are_always_sent(self):
+        # Review round 2, item 5: the cited pages are joined with the selection, so the cited page is always there.
         call = FakeCall([{"verdict": "agree", "reason": "ok"}])
         audit_item(self.item, self.record, self.pages, call, self.ctx)
-        prompt = call.prompts[0]
-        self.assertIn("text on page 1", prompt)
-        self.assertNotIn("text on page 2", prompt)
+        self.assertIn("text on page 1", call.prompts[0])
+
+    def test_each_quote_is_paired_with_its_element_name(self):
+        record = dict(self.record, evidence=[{"element": "Method named", "page": 1, "quote": "text on page one"}])
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        audit_item(self.item, record, self.pages, call, self.ctx)
+        self.assertIn("- Method named (page 1): text on page one", call.prompts[0])
 
     def test_audit_item_skips_an_evidence_page_that_is_not_an_int(self):
         bad_records = [
@@ -126,6 +146,7 @@ class TestAuditReport(unittest.TestCase):
                 {
                     "item_id": "I01",
                     "status": "rated",
+                    "level": "complete_correct",
                     "score": 8.0,
                     "comment": "Good",
                     "evidence": [{"page": 1, "quote": "text"}],
@@ -150,13 +171,13 @@ class TestAuditReport(unittest.TestCase):
         # Auditor agrees with new record
         call = FakeCall([
             {"verdict": "disagree", "reason": "bad"}, # Audit 1
-            {"status": "rated", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]}, # Regrade
+            {"status": "rated", "elements": [{"element": "x", "verdict": "present", "page": 1, "quote": "text on page 1"}], "comment": "Better"}, # Regrade
             {"verdict": "agree", "reason": "ok"} # Audit 2
         ])
         result = audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "")
         item = result["items"][0]
         self.assertEqual(item["audit"], "agree")
-        self.assertEqual(item["score"], 9.0)
+        self.assertEqual(item["score"], 10)  # every element present: the whole maximum (2026-11-27)
         self.assertFalse(item["flag"])
 
     def test_disagree_twice_keeps_the_first_record_and_flags(self):
@@ -165,7 +186,7 @@ class TestAuditReport(unittest.TestCase):
         # Auditor disagrees again
         call = FakeCall([
             {"verdict": "disagree", "reason": "bad"}, # Audit 1
-            {"status": "rated", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]}, # Regrade
+            {"status": "rated", "elements": [{"element": "x", "verdict": "present", "page": 1, "quote": "text on page 1"}], "comment": "Better"}, # Regrade
             {"verdict": "disagree", "reason": "still bad"} # Audit 2
         ])
         result = audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "")
@@ -232,7 +253,7 @@ class TestAuditReport(unittest.TestCase):
         # Disagree -> Regrade -> Agree
         call = FakeCall([
             {"verdict": "disagree", "reason": "specific_reason"},
-            {"status": "rated", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]},
+            {"status": "rated", "elements": [{"element": "x", "verdict": "present", "page": 1, "quote": "text on page 1"}], "comment": "Better"},
             {"verdict": "agree", "reason": "ok"}
         ])
         audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "calibration_note")
@@ -260,6 +281,7 @@ class TestAuditTimeoutIsOneItem(unittest.TestCase):
             return {
                 "item_id": item_id,
                 "status": "rated",
+                "level": "complete_correct",
                 "score": 8.0,
                 "comment": "Good",
                 "evidence": [{"page": 1, "quote": "text"}],
@@ -291,7 +313,7 @@ class TestMissingInTheAudit(unittest.TestCase):
         self.item = {"id": "I01", "title": "Intro", "max_points": 10}
         self.pages = ["text on page 1", "text on page 2"]
         self.record = {
-            "item_id": "I01", "status": "rated", "score": 5, "comment": "CMT_ONE",
+            "item_id": "I01", "status": "rated", "level": "attempted", "score": 5, "comment": "CMT_ONE",
             "evidence": [{"page": 1, "quote": "text"}], "missing": "MISS_ONE", "audit": "not_run", "flag": False,
         }
 
@@ -308,6 +330,79 @@ class TestMissingInTheAudit(unittest.TestCase):
         result = audit_report(rubric, self.pages, grade, call, self.ctx, "en", "")
         self.assertEqual(result["items"][0]["missing"], "MISS_ONE")
         self.assertEqual(result["items"][0]["comment"], "CMT_ONE")
+
+
+from unittest import mock as _mock
+
+_MIN_ELEMENTS = _mock.patch("ugs_grade.read_min_model_elements", return_value=1)
+
+
+def setUpModule():
+    """Pin the minimum of model-named elements to 1: these tests pin the audit rules (review round 1, finding 7)."""
+    _MIN_ELEMENTS.start()
+
+
+def tearDownModule():
+    _MIN_ELEMENTS.stop()
+
+
+class Killed(Exception):
+    """Stands for a process killed in the middle of the audit (fictitious, R21)."""
+
+
+def _rated(item_id, score=8.0):
+    """Return one fictitious rated grade record that is not audited yet."""
+    return {"item_id": item_id, "status": "rated", "level": "complete_correct", "score": score, "comment": "Good",
+            "evidence": [{"page": 1, "quote": "text"}], "audit": "not_run", "flag": False}
+
+
+class AuditResumeTest(unittest.TestCase):
+    """Plan 30 Task 1: the audit resumes at the first item not audited; an agree is kept, a not_run is retried."""
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.rubric = {"assessment_type": "lab_report", "total_points": 11,
+                       "items": [{"id": "I%02d" % n, "title": "T", "max_points": 1} for n in range(1, 12)]}
+        self.pages = ["text on page 1", "text on page 2"]
+
+    def test_a_run_killed_after_four_of_eleven_items_audits_seven_on_the_rerun(self):
+        grade = {"report_id": "R01", "loop": 1, "items": [_rated("I%02d" % n, 1.0) for n in range(1, 12)]}
+        saved = {}
+
+        def on_item(item_id, record):
+            saved[item_id] = record
+
+        # First run: four agree, then the process is killed during the fifth audit.
+        first = FakeCall([{"verdict": "agree", "reason": "ok"}] * 4 + [Killed()])
+        with self.assertRaises(Killed):
+            audit_report(self.rubric, self.pages, grade, first, self.ctx, "en", "", on_item)
+        self.assertEqual(len(saved), 4)
+        # The file as the run left it: the four audited records, the others as they were graded.
+        resumed = {"report_id": "R01", "loop": 1,
+                   "items": [saved.get(item["item_id"], item) for item in grade["items"]]}
+        second = FakeCall([{"verdict": "agree", "reason": "ok"}] * 7)
+        result = audit_report(self.rubric, self.pages, resumed, second, self.ctx, "en", "")
+        self.assertEqual(len(second.prompts), 7)
+        self.assertEqual([item["audit"] for item in result["items"]], ["agree"] * 11)
+
+    def test_an_agree_is_kept_and_a_not_run_is_retried(self):
+        agreed = dict(_rated("I01"), audit="agree", audit_fingerprint=audit_fingerprint(_rated("I01")))
+        retry = dict(_rated("I02"), audit="not_run")
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        result = audit_report({"assessment_type": "lab_report", "total_points": 2, "items": [
+            {"id": "I01", "title": "T", "max_points": 1}, {"id": "I02", "title": "T", "max_points": 1}]},
+            self.pages, {"report_id": "R01", "loop": 1, "items": [agreed, retry]}, call, self.ctx, "en", "")
+        self.assertEqual(len(call.prompts), 1)
+        self.assertEqual([item["audit"] for item in result["items"]], ["agree", "agree"])
+
+    def test_a_record_whose_grade_changed_since_its_audit_is_audited_again(self):
+        audited = dict(_rated("I01", 8.0), audit="agree", audit_fingerprint=audit_fingerprint(_rated("I01", 8.0)))
+        edited = dict(audited, score=9.0)
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        audit_report({"assessment_type": "lab_report", "total_points": 1, "items": [
+            {"id": "I01", "title": "T", "max_points": 1}]},
+            self.pages, {"report_id": "R01", "loop": 1, "items": [edited]}, call, self.ctx, "en", "")
+        self.assertEqual(len(call.prompts), 1)
 
 
 if __name__ == '__main__':

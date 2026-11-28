@@ -202,5 +202,44 @@ class TestFigureExtract(unittest.TestCase):
         self.assertEqual(exit_code, 2)
 
 
+class _StubTable:
+    """A fictitious table as PyMuPDF 1.27 can return it: no cells means a lazy bbox that raises."""
+
+    def __init__(self, cells, bbox=(10.0, 20.0, 110.0, 80.0), markdown="| a | b |"):
+        self.cells = cells
+        self._bbox = bbox
+        self._markdown = markdown
+
+    @property
+    def bbox(self):
+        if not self.cells:
+            raise ValueError("min() arg is an empty sequence")
+        return self._bbox
+
+    def to_markdown(self):
+        if not self.cells:
+            raise ValueError("min() arg is an empty sequence")
+        return self._markdown
+
+
+class TestTablesWithoutCells(unittest.TestCase):
+    """F0: a table with no cells is counted as dropped, never a crash of the scan."""
+
+    def test_table_without_cells_is_dropped_and_counted(self):
+        kept, dropped = figure_extract._usable_tables([_StubTable([]), _StubTable([(0, 0, 1, 1)])])
+        self.assertEqual(dropped, 1)
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0][1], "| a | b |")
+
+    def test_table_whose_markdown_fails_is_dropped(self):
+        broken = _StubTable([(0, 0, 1, 1)])
+        broken.to_markdown = lambda: (_ for _ in ()).throw(ValueError("empty"))
+        kept, dropped = figure_extract._usable_tables([broken])
+        self.assertEqual((kept, dropped), ([], 1))
+
+    def test_no_table_gives_no_drop(self):
+        self.assertEqual(figure_extract._usable_tables([]), ([], 0))
+
+
 if __name__ == '__main__':
     unittest.main()

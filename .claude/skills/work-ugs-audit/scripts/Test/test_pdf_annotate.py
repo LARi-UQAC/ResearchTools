@@ -54,6 +54,17 @@ class TestPdfAnnotate(unittest.TestCase):
     def tearDown(self):
         self.tmpdir.cleanup()
 
+    def test_unknown_kind_is_a_named_error(self):
+        """F1: an annotation kind with no colour raises, it is never painted black in silence."""
+        items = [{"page": 1, "kind": "citation", "quote": "This is a test", "rect": None, "comment": "x"}]
+        with self.assertRaises(AnnotateError) as ctx:
+            annotate(self.src_pdf, items, self.dst_pdf, self.colors, "Fictitious author")
+        self.assertIn("citation", str(ctx.exception))
+
+    def test_shipped_colours_include_citation(self):
+        """F1: the shipped configuration gives the citation kind its own colour."""
+        from ugs_config import load, default_path
+        self.assertIn("citation", load(default_path())["annotation.colors"])
     def test_normalize_function(self):
         # Test basic normalization
         self.assertEqual(normalize("  hello   world  "), "hello world")
@@ -97,6 +108,32 @@ class TestPdfAnnotate(unittest.TestCase):
         self.assertEqual(annot.info["title"], self.author)
         self.assertEqual(annot.info["content"], "Good start.")
         doc.close()
+
+    def test_an_empty_comment_draws_a_highlight_and_no_note(self):
+        items = [{"page": 1, "kind": "technical", "code": "I02", "quote": "This is a test document.",
+                  "rect": None, "comment": ""}]
+        result = annotate(self.src_pdf, items, self.dst_pdf, self.colors, self.author)
+        self.assertEqual(result["placed"], 1)
+        import fitz
+        doc = fitz.open(self.dst_pdf)
+        page = doc[0]
+        annots = list(page.annots())
+        self.assertEqual(len(annots), 1)
+        self.assertEqual(annots[0].type[0], 8)  # Highlight only: no text note (type 0) beside it
+        self.assertEqual(annots[0].info["content"], "")
+        doc.close()
+
+    def test_identical_quotes_on_one_page_are_one_highlight(self):
+        item = {"page": 1, "kind": "technical", "code": "I01", "quote": "This is a test document.",
+                "rect": None, "comment": "Once."}
+        result = annotate(self.src_pdf, [item, dict(item, comment="")], self.dst_pdf, self.colors, self.author)
+        self.assertEqual(result["placed"], 1)
+        self.assertEqual(result["duplicates"], [1])
+        import fitz
+        doc = fitz.open(self.dst_pdf)
+        annots = list(doc[0].annots())
+        doc.close()
+        self.assertEqual(len(annots), 1)
 
     def test_missing_quote_is_reported_not_placed(self):
         items = [

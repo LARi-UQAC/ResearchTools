@@ -697,5 +697,56 @@ class TestBridgeLog(unittest.TestCase):
         self.assertEqual(SpyBridge.written, [(Path("log-path-for-the-test"), {"event": "start"})])
 
 
+class RecordingDeps:
+    """Fake deps that record the schema sent to the payload and then refuse the call (fictitious, R21)."""
+
+    def __init__(self):
+        self.sent_schemas = []
+
+    def tag(self, role):
+        return "fictitious-tag"
+
+    def window(self, tag, role):
+        return 100000
+
+    def count(self, prompt, tag, window):
+        return 10
+
+    def payload(self, prompt, tag, window, schema, reserve):
+        self.sent_schemas.append(schema)
+        raise ugs_bridge.NotRun("unreachable", "recorded, not sent")
+
+
+class SchemaThroughTheBridgeTest(unittest.TestCase):
+    """Review round 3: the schema the grader passes is the one the bridge puts in the payload's format field."""
+
+    def test_the_per_item_schema_reaches_the_payload_format_field(self):
+        import ugs_grade
+        from ugs_text import StepContext
+        schema_file = Path(__file__).resolve().parent.parent.parent / "prompts" / "schemas.json"
+        base = json.loads(schema_file.read_text(encoding="utf-8"))["grade_item"]
+        deps = RecordingDeps()
+        call = lambda prompt, schema, images=None: ugs_bridge.call(
+            "writer", prompt, schema, images, deps=deps, timeout=1, reserve=10, image_tokens=0,
+            max_image_bytes=10 ** 6)
+        ctx = StepContext(prompts={"grade_item": "G {{ITEM}} {{SECTIONS}} {{LEVELS}} {{LANGUAGE_OF_REPORT}} "
+                                                 "{{CALIBRATION_NOTE}}"},
+                          schemas={"grade_item": base}, levels={"absent": 0}, window_tokens=100000,
+                          reserve_tokens=10, count=lambda text: len(text.split()), grade_retries=0,
+                          audit_retries=0, min_word_len=3)
+        item = {"id": "I01", "title": "T", "max_points": 2,
+                "elements": [{"id": "E1", "text": "Alpha"}, {"id": "E2", "text": "Beta"}]}
+        settings = {"quote": {"min_chars": 12, "min_words": 3, "min_word_share": 0.9, "window_factor": 1.3,
+                              "page_window": 1, "max_words": 24},
+                    "unverified_as": "partial", "step": ugs_grade.Decimal("0.001"), "max_elements": 12,
+                    "comment_openings": ["le rapport"], "min_model_elements": 1}
+        with self.assertRaises(ugs_bridge.NotRun):
+            ugs_grade.grade_item(item, ["Fictive page text here."], call, ctx, "en", "", settings=settings)
+        sent = deps.sent_schemas[0]
+        self.assertEqual(sent["properties"]["elements"]["minItems"], 2)
+        self.assertEqual(sent["properties"]["elements"]["items"]["properties"]["id"]["enum"], ["E1", "E2"])
+        self.assertNotIn("minItems", base["properties"]["elements"])
+
+
 if __name__ == "__main__":
     unittest.main()

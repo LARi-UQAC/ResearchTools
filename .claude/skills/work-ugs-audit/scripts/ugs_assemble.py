@@ -1,4 +1,5 @@
 import json
+import re
 import os
 from pathlib import Path
 from typing import Callable, List, Dict, Any, Optional, Tuple
@@ -12,39 +13,438 @@ _SHIPPED_CRITERIA = _SKILLS_DIR / "figure-review" / "assets" / "figure_criteria.
 sys.path.insert(0, str(_FIGURE_REVIEW_SCRIPTS))
 
 from figure_checks import failure_comment, load_criteria
-from grade_total import compute
+from grade_total import compute, recompute
+import ugs_grade
+from ugs_config import default_path
+
+
+class ScoreNotReproduced(ValueError):
+    """Raised when a stored section score is not the one its elements give (plan 29, owner 2026-11-27).
+
+    The ledger note carries the code, never the score, so the run is blocked with the code it names.
+    """
+
+    code = "score_not_reproduced"
+    # The ledger note has at most 60 characters and names the remedy (review round 2, finding 4).
+    ledger_note = "error=score_not_reproduced; run --recompute"
+    REMEDY = ("re-run the section scores with grade_total.py RUBRIC GRADE --recompute --write OUT --yes, then rerun "
+              "assemble on OUT")
+
+
+def check_scores(rubric: dict, grade: dict) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Stop the assembly when a stored section score is not reproduced by the same recomputation the command uses
+        (plan 29, Task 2). An item with no elements or no stored score is not compared.
+    Inputs:
+        rubric (dict): the rubric of the report.
+        grade (dict): the grade of the report, as grade.json holds it.
+    Outputs:
+        None.
+    Raises:
+        ScoreNotReproduced: naming the ids of the items whose stored score differs from the recomputed one.
+    --------------------------------------------------------------------------
+    """
+    result = recompute(rubric, grade, ugs_grade.load_grade_scale(), ugs_grade.read_grade_step(default_path()))
+    differing = [item["item_id"] for item in result["items"] if item["match"] is False]
+    if differing:
+        raise ScoreNotReproduced("stored score not reproduced for items: " + ", ".join(differing)
+                                 + "; remedy: " + ScoreNotReproduced.REMEDY)
 from pdf_annotate import annotate
-from pdf_annex import DEFAULT_LABELS, render_rows, build_html, append_annex, load_labels, render_checks
+from pdf_annex import DEFAULT_LABELS, TITLE_KIND_CODES, TITLE_PLACEMENT_CHECK_ID, render_rows, build_html, append_annex, load_labels, render_checks, item_comment
 from ref_check import check_all, _default_resolver
-from ugs_text import split_body_and_references
+from ugs_text import REF_HEADING_RE, split_body_and_references
 from ugs_tables import load_elements
 import ugs_config
 import element_labels
-from crossref_checks import run_checks, load_settings as load_checks_settings, DEFAULT_MARKERS_PATH
+import crossref_checks
+import front_matter
+from crossref_checks import (TITLE_KIND_CHECK_ID, run_checks, load_settings as load_checks_settings, DEFAULT_MARKERS_PATH,
+                             misplaced_citations, load_citation_rules)
 
 REPORT_LANGUAGES = ("fr", "en")
 CHECKS_FILE_NAME = "checks.json"
+CITATION_CHECK_ID = crossref_checks.CITATION_CHECK_ID
+FIGURE_COUNT_CHECK_ID = crossref_checks.FIGURE_COUNT_CHECK_ID
+TABLE_COUNT_CHECK_ID = crossref_checks.TABLE_COUNT_CHECK_ID
+UNTITLED_CHECK_ID = crossref_checks.UNTITLED_CHECK_ID
+APPENDIX_CHECK_ID = crossref_checks.APPENDIX_CHECK_ID
+APPENDIX_STATUS = {"ok": "ok", "not_ok": "not_ok", "not_applicable": "not_applicable"}
+CITATION_CODE = "CIT"
+CITATION_KIND = "citation"
 META_NAME_KEY = "reports.meta_file_name"
 ELEMENTS_NAME_KEY = "reports.elements_file_name"
 EXCLUDED_PAGES_KEY = "excluded_pages"
 
 
-def grade_annotations(rubric: dict, grade: dict) -> List[dict]:
+def _body_pages(pages: List[str]) -> List[str]:
     """
-    Purpose: Generate annotations for rated items with evidence.
+    Purpose: Keep the pages before the reference list, the only pages a citation placement is judged on (N5).
+    Details: The page holding the reference heading is kept up to that heading (F6); later pages are dropped.
+    Inputs:
+        pages: List[str] - the page texts of the report.
+    Outputs:
+        List[str] - the body pages, all of them when no reference list is found.
+    Raises:
+        None.
+    """
+    for index in range(1, len(pages) + 1):
+        if split_body_and_references(pages[:index])[1]:
+            kept = []
+            for line in pages[index - 1].split("\n"):  # F6: the body lines before the reference heading stay
+                if REF_HEADING_RE.match(line.strip()):
+                    break
+                kept.append(line)
+            return pages[:index - 1] + ["\n".join(kept)]
+    return list(pages)
+
+
+def citation_placement_row(body_pages: List[str], language: str) -> dict:
+    """
+    Purpose: Build the check row of misplaced citations for checks.json and the annex (N5).
+    Inputs:
+        body_pages: List[str] - the body page texts (see _body_pages).
+        language: str - the report language, selecting the abbreviations of citation_rules.json.
+    Outputs:
+        dict - {"id", "status" (ok or not_ok), "detail": {"count": n}}.
+    Raises:
+        CrossrefConfigError: the citation rules file lacks the language (R3).
+    """
+    found = misplaced_citations(body_pages, load_citation_rules(language))
+    status = "ok" if not found else "not_ok"
+    return {"id": CITATION_CHECK_ID, "status": status, "detail": {"count": len(found)}}
+
+
+def citation_annotations(body_pages: List[str], language: str) -> List[dict]:
+    """
+    Purpose: One annotation per misplaced citation, with its quote and its comment in the report language (N5).
+    Inputs:
+        body_pages: List[str] - the body page texts (see _body_pages).
+        language: str - the report language.
+    Outputs:
+        List[dict] - annotations with page, kind, code, quote, rect and comment.
+    Raises:
+        CrossrefConfigError: the citation rules file lacks the language (R3).
+    """
+    comment = load_labels(DEFAULT_LABELS, language)["citation_comment"]
+    return [{"page": found["page"], "kind": CITATION_KIND, "code": CITATION_CODE, "quote": found["quote"],
+             "rect": None, "comment": comment}
+            for found in misplaced_citations(body_pages, load_citation_rules(language))]
+
+
+COUNT_STATUS_TO_CHECK = {"ok": "ok", "mismatch": "not_ok", "not_found": "not_applicable"}
+
+
+def title_kind_row(figures: Optional[dict]) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the title_kind check row of the annex (N7, plan 20): every element whose printed title contradicts its
+        kind, by id.
+
+    Details:
+        The row reflects the script's flags and the annotations are built from the same field, so the two always
+        agree. not_ok with the ids when any element carries a flag, whatever the vision role did; ok when the keys
+        exist and nothing is flagged. not_applicable only when no element record carries the keys (an absent figures
+        file, or one written before the key existed), never ok: an old run must not read as a pass.
+
+    Inputs:
+        figures (dict | None): the figures.json of the report, None when absent.
+
+    Outputs:
+        row (dict): id, status and detail (ids only).
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    records = (figures or {}).get("figures", [])
+    if not any("title_kind_mismatch" in record for record in records):
+        return {"id": TITLE_KIND_CHECK_ID, "status": "not_applicable", "detail": {}}
+    ids = [record["figure_id"] for record in records if record.get("title_kind_mismatch")]
+    if not ids:
+        return {"id": TITLE_KIND_CHECK_ID, "status": "ok", "detail": {}}
+    return {"id": TITLE_KIND_CHECK_ID, "status": "not_ok", "detail": {"ids": ids}}
+
+
+def title_kind_annotations(figures: dict, language: str) -> List[dict]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        One PDF annotation per element whose title contradicts its kind (N7, plan 20), with the comment of its code in
+        the report language. A vision-only candidate is never annotated (review B).
+
+    Details:
+        The annotation quotes the printed caption (the title) when the record has one; otherwise it is placed on the
+        element rectangle.
+
+    Inputs:
+        figures (dict): the figures.json of the report.
+        language (str): "fr" or "en".
+
+    Outputs:
+        annotations (list[dict]): page, kind, code, quote (the caption), rect and comment, as the other annotations.
+
+    Raises:
+        AnnexError: from load_labels when a comment is missing from annex_labels.json (R3).
+    --------------------------------------------------------------------------
+    """
+    comments = load_labels(DEFAULT_LABELS, language)["title_kind_comments"]
+    annotations = []
+    for record in figures.get("figures", []):
+        code = record.get("title_kind_mismatch")
+        if code not in TITLE_KIND_CODES:
+            continue
+        # Review round 1, finding 6: drawn on the stored title rectangle, as the placement notes are.
+        rect = (record.get("title") or {}).get("rect") or record.get("rect")
+        annotations.append({"page": record.get("page"), "kind": "figure", "code": code,
+                            "quote": record.get("caption") or None, "rect": rect,
+                            "comment": comments[code], "on_rect": True})
+    return annotations
+
+
+# Plan 24 Task 3: the title the house rule expects, per element type (figure: centred below; table: left above).
+EXPECTED_PLACEMENT = {"figure": ("below", "center"), "table": ("above", "left"), "table_image": ("above", "left")}
+IN_IMAGE_POSITION_PREFIX = "in_image"
+
+
+def placement_code(element: dict) -> Optional[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Give the placement finding of one element's title (plan 24, Task 3), or None when the element is untitled or
+        its title follows the house rule.
+
+    Details:
+        A title drawn inside the image is always a finding ("in_image"). A figure title must lie below the figure and
+        be centred; a table title above the table and left-aligned. Notes below a table are not checked here.
+
+    Inputs:
+        element (dict): an element record of elements.json (title, element_type).
+
+    Outputs:
+        str | None: "in_image", "figure_misplaced", "table_misplaced", or None.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    title = element.get("title")
+    if not title:
+        return None
+    position = str(title.get("position") or "")
+    if position.startswith(IN_IMAGE_POSITION_PREFIX):
+        return "in_image"
+    kind = element.get("element_type")
+    if kind not in EXPECTED_PLACEMENT:
+        return None
+    expected_position, expected_alignment = EXPECTED_PLACEMENT[kind]
+    if position == expected_position and title.get("alignment") == expected_alignment:
+        return None
+    return "figure_misplaced" if kind == "figure" else "table_misplaced"
+
+
+def title_placement_row(elements: Optional[List[dict]]) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the title_placement check row of the annex (plan 24, Task 3): every titled element whose title is placed
+        against the house rule, by id.
+
+    Details:
+        not_applicable when no element carries a title (or no element file exists), never ok in that case. not_ok with
+        the ids of the findings, ok when every title follows the rule.
+
+    Inputs:
+        elements (list[dict] | None): the records of elements.json, None when the file is absent.
+
+    Outputs:
+        dict: id, status and detail (ids only).
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    records = elements or []
+    if not any(record.get("title") for record in records):
+        return {"id": TITLE_PLACEMENT_CHECK_ID, "status": "not_applicable", "detail": {}}
+    ids = [str(record.get("element_id")) for record in records if placement_code(record) is not None]
+    if not ids:
+        return {"id": TITLE_PLACEMENT_CHECK_ID, "status": "ok", "detail": {}}
+    return {"id": TITLE_PLACEMENT_CHECK_ID, "status": "not_ok", "detail": {"ids": ids}}
+
+
+def title_placement_annotations(elements: List[dict], language: str) -> List[dict]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        One PDF annotation per title placed against the house rule (plan 24, Task 3), with the comment of its code in
+        the report language.
+
+    Details:
+        A text title is quoted so the annotation sits on its words; a title drawn inside the image has no text layer,
+        so its annotation carries no quote and is placed on the element rectangle.
+
+    Inputs:
+        elements (list[dict]): the records of elements.json.
+        language (str): "fr" or "en".
+
+    Outputs:
+        list[dict]: page, kind, code, quote, rect and comment, as the other annotations.
+
+    Raises:
+        AnnexError: from load_labels when a comment is missing from annex_labels.json (R3).
+    --------------------------------------------------------------------------
+    """
+    comments = load_labels(DEFAULT_LABELS, language)["title_placement_comments"]
+    annotations = []
+    for record in elements:
+        code = placement_code(record)
+        if code is None:
+            continue
+        quote = None if code == "in_image" else (record["title"].get("text") or None)
+        # The note sits on the title rectangle when it is stored (plan 28), else on the element rectangle; a quote no
+        # page holds is drawn on that rectangle by pdf_annotate, so no finding goes without its note.
+        rect = record["title"].get("rect") or record.get("rect")
+        # The annotation colours have no table kind (annotation.colors): a table is annotated as a figure, as title_kind does.
+        annotations.append({"page": record.get("page"), "kind": "figure", "code": code, "quote": quote,
+                            "rect": rect, "comment": comments[code], "on_rect": True})
+    return annotations
+
+
+def count_rows(meta: dict) -> List[dict]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Turn the declared against extracted counts of a report (report_meta.json, plan 6, E2) into two check rows,
+        one for the figures and one for the tables, shown in the annex.
+
+    Details:
+        A mismatch is `not_ok` and shows the declared and the extracted count; a list not found, or a report prepared
+        before the counts existed, is `not_applicable` with no number. The printed numbers that differ stay in
+        report_meta.json: the annex shows the counts only.
+
+    Inputs:
+        meta (dict): the report_meta.json of the report ({} when the file is absent).
+
+    Outputs:
+        List[dict]: the rows figure_counts, table_counts and untitled_elements, each with id, status and detail.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    rows = []
+    for check_id, kind in ((FIGURE_COUNT_CHECK_ID, "figure"), (TABLE_COUNT_CHECK_ID, "table")):
+        status = COUNT_STATUS_TO_CHECK.get(meta.get(f"{kind}_count_status"), "not_applicable")
+        detail: dict = {}
+        if status in ("ok", "not_ok"):
+            detail = {"declared": meta[f"declared_{kind}s"], "extracted": meta[f"extracted_{kind}s"]}
+        rows.append({"id": check_id, "status": status, "detail": detail})
+    if "untitled_figures" in meta or "untitled_tables" in meta:
+        untitled = meta.get("untitled_figures", {}).get("count", 0) + meta.get("untitled_tables", {}).get("count", 0)
+        rows.append({"id": UNTITLED_CHECK_ID, "status": "not_ok" if untitled else "ok", "detail": {"count": untitled}})
+    else:  # a report prepared before this check existed: not applicable, never zero
+        rows.append({"id": UNTITLED_CHECK_ID, "status": "not_applicable", "detail": {}})
+    return rows
+
+
+def _plain_line(line: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Remove the markup of a Markdown line (heading marks, bold, italics, table bars) before a heading test.
+
+    Inputs:
+        line (str): one line of a page text.
+
+    Outputs:
+        str: the stripped line.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    return re.sub(r"[#*_|]", "", line).strip()
+
+
+def appendix_row(pages: List[str], meta: dict) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the annex row that checks the appendices of a report (plan 15, N4): each appendix listed in the
+        contents is found after the references, and each one found there is listed.
+
+    Details:
+        The reference heading is searched from the body start (review round 1 I3), so a contents line 'Références'
+        does not start the end. The heading test is the one of ugs_text, after the Markdown markup is removed.
+
+    Inputs:
+        pages (List[str]): the text of each page, index 0 for page 1.
+        meta (dict): report_meta.json; its front_roles give the contents pages and body_start the search start.
+
+    Outputs:
+        dict: id, status and detail; the detail holds missing (listed, not found) and extra (found, not listed) ids.
+
+    Raises:
+        FrontMatterEntryError: when the appendix settings are missing from the data file.
+    --------------------------------------------------------------------------
+    """
+    roles = meta.get("front_roles") or {}
+    body_start = roles.get("body_start") or 1
+    end_start = next((index + 1 for index in range(max(body_start, 1) - 1, len(pages))
+                      if any(REF_HEADING_RE.match(_plain_line(line)) for line in pages[index].splitlines())), None)
+    result = crossref_checks.appendix_check(pages, roles.get("table_of_contents"), end_start,
+                                            front_matter.load_appendix_settings())
+    status = APPENDIX_STATUS[result["status"]]
+    detail: dict = {}
+    if status in ("ok", "not_ok"):
+        detail = {"missing": result["listed_missing"], "extra": result["unlisted_present"]}
+    return {"id": APPENDIX_CHECK_ID, "status": status, "detail": detail}
+
+
+def _read_report_meta(path: Path) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the report_meta.json of a report; a file that is absent gives an empty dict (no count is then judged).
+
+    Inputs:
+        path (Path): the metadata file of the report.
+
+    Outputs:
+        dict: the parsed object, or {} when the file does not exist.
+
+    Raises:
+        ValueError: when the file exists but is not a JSON object.
+    --------------------------------------------------------------------------
+    """
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must hold a JSON object")
+    return data
+
+
+def grade_annotations(rubric: dict, grade: dict, language: str) -> List[dict]:
+    """
+    Purpose: Generate annotations for rated items with evidence. The note carries the same comment as the annex row
+        (item_comment, owner 2026-11-27).
     Inputs:
         rubric: dict - The rubric definition.
         grade: dict - The grade data.
+        language: str - The report language, fr or en, which selects the labels of the comment.
     Outputs:
         List[dict] - List of annotation dictionaries.
     """
     annotations = []
+    labels = load_labels(DEFAULT_LABELS, language)
     for item in grade.get("items", []):
         if item.get("status") != "rated":
             continue
         item_id = item.get("item_id")
-        score = item.get("score")
-        comment = item.get("comment", "")
         max_points = None
         for r_item in rubric.get("items", []):
             if r_item.get("id") == item_id:
@@ -54,14 +454,33 @@ def grade_annotations(rubric: dict, grade: dict) -> List[dict]:
         if max_points is None:
             continue
 
-        for evidence in item.get("evidence", []):
+        # One note per item (owner, 2026-11-27): the earliest quote, in page then document order, carries the comment;
+        # the other quotes of the item are highlights with no note.
+        ordered = sorted(enumerate(item.get("evidence", [])), key=lambda pair: (pair[1].get("page") or 0, pair[0]))
+        note = item_comment(item, max_points, labels)
+        for position, (_, evidence) in enumerate(ordered):
             annotations.append({
                 "page": evidence.get("page"),
                 "kind": "technical",
                 "code": item_id,
                 "quote": evidence.get("quote"),
                 "rect": None,
-                "comment": f"{item_id} {score} / {max_points}: {comment}"
+                "comment": note if position == 0 else "",
+                "note": note,
+                "note_group": item_id,
+            })
+        if ordered:
+            # Review round 1, finding 1: when no quote of the item can be placed, its note goes on the first page.
+            annotations.append({
+                "page": ordered[0][1].get("page"),
+                "kind": "technical",
+                "code": item_id,
+                "quote": None,
+                "rect": None,
+                "comment": note,
+                "note": note,
+                "note_group": item_id,
+                "fallback": True,
             })
     return annotations
 
@@ -289,9 +708,12 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
     grade_path = report_dir / "grade.json"
     grade = json.loads(grade_path.read_text(encoding="utf-8"))
 
+    # Plan 29, Task 2: a stored score the elements do not give stops the run before any output is written.
+    check_scores(rubric, grade)
+
     # Compute totals
     totals = compute(rubric, grade)
-    (report_dir / "totals.json").write_text(json.dumps(totals, indent=2), encoding="utf-8")
+    _atomic_write_text(report_dir / "totals.json", json.dumps(totals, indent=2))  # plan 30: atomic step write
 
     # Read optional files
     language_path = report_dir / "language.json"
@@ -299,10 +721,13 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
 
     figures_path = report_dir / "figures.json"
     figures_data = json.loads(figures_path.read_text(encoding="utf-8")) if figures_path.exists() else None
+    elements_name = ugs_config.load(ugs_config.default_path())[ELEMENTS_NAME_KEY]
+    elements_path = report_dir.parent.parent / report_id / elements_name
+    elements = load_elements(elements_path) if elements_path.exists() else None
 
     # Generate annotations
     annotations = []
-    annotations.extend(grade_annotations(rubric, grade))
+    annotations.extend(grade_annotations(rubric, grade, language))
     
     if language_data:
         # ugs_language.py returns "annotations" key
@@ -320,6 +745,13 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
     if figures_data:
         figure_criteria = criteria if criteria is not None else load_criteria(_SHIPPED_CRITERIA)["criteria"]
         annotations.extend(figure_annotations(figures_data, figure_criteria, language))
+        annotations.extend(title_kind_annotations(figures_data, language))
+    if elements is not None:
+        annotations.extend(title_placement_annotations(elements, language))
+
+    # N5: misplaced citations on the body pages, one annotation each and one row of the checks table.
+    body_pages = _body_pages(pages)
+    annotations.extend(citation_annotations(body_pages, language))
 
     # Reference annotations
     body_text, refs = split_body_and_references(pages)
@@ -336,7 +768,7 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
         )
         annotations.extend(reference_annotations(ref_results, refs, settings["ref_comments"], language, settings["quote_chars"]))
 
-    (report_dir / "annotations.json").write_text(json.dumps(annotations, indent=2), encoding="utf-8")
+    _atomic_write_text(report_dir / "annotations.json", json.dumps(annotations, indent=2))  # plan 30: atomic
 
     # Annotate PDF
     dst_pdf = report_dir / "annotated.pdf"
@@ -350,6 +782,13 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
 
     # Cross-reference checks (spec R9): saved in the loop folder and printed in the annex.
     checks, excluded = run_report_checks(src_pdf, report_dir.parent.parent / report_id, pages)
+    checks.append(citation_placement_row(body_pages, language))
+    meta_name = ugs_config.load(ugs_config.default_path())[META_NAME_KEY]
+    report_meta = _read_report_meta(report_dir.parent.parent / report_id / meta_name)
+    checks.extend(count_rows(report_meta))
+    checks.append(title_kind_row(figures_data))
+    checks.append(title_placement_row(elements))  # plan 24 task 3
+    checks.append(appendix_row(pages, report_meta))
     _atomic_write_text(report_dir / CHECKS_FILE_NAME, json.dumps(checks, indent=2))
 
     # Append annex

@@ -1,0 +1,127 @@
+{
+  "table_of_contents_markers": {
+    "fr": [
+      "table des matieres",
+      "tables des matieres"
+    ],
+    "en": [
+      "table of contents",
+      "contents"
+    ],
+    "provenance": "Issue 126 plan 10, F1: heading words of a table of contents in each language; the page is read by its first lines; plural variant 'Tables des matieres' as printed by real report R01 (2026-11-25)"
+  },
+  "figure_list_markers": {
+    "fr": [
+      "liste des figures",
+      "tables des figures"
+    ],
+    "en": [
+      "list of figures"
+    ],
+    "provenance": "Issue 126 plan 10, F1: heading words of the list of figures in each language; variant 'Tables des figures' as printed by real report R01 (2026-11-25)"
+  },
+  "table_list_markers": {
+    "fr": [
+      "liste des tableaux"
+    ],
+    "en": [
+      "list of tables"
+    ],
+    "provenance": "Issue 126 plan 10, F1: heading words of the list of tables in each language"
+  },
+  "executive_summary_markers": {
+    "fr": [
+      "sommaire executif",
+      "resume executif"
+    ],
+    "en": [
+      "executive summary"
+    ],
+    "provenance": "Issue 126 plan 10, F1: heading words of the executive summary in each language"
+  },
+  "max_list_words": {
+    "value": 600,
+    "provenance": "proposal 2026-11-25, tune on the counts of the real reports: a list page holds fewer words than a body page"
+  },
+  "min_entry_lines": {
+    "value": 3,
+    "provenance": "proposal 2026-11-25, tune on the counts of the real reports: entry lines (text ending with a page number) that make a continuation page"
+  },
+  "heading_max_chars": {
+    "value": 40,
+    "provenance": "proposal 2026-11-25, tune on the counts of the real reports: a heading marker starts within the first 40 characters of the page text (the text layer is joined into one line, so lines cannot mark a heading)"
+  },
+  "language_mode": {
+    "value": {
+      "cover": "none",
+      "version_signature": "none",
+      "table_of_contents": "spelling_only",
+      "list_of_figures": "spelling_only",
+      "list_of_tables": "spelling_only",
+      "executive_summary": "full"
+    },
+    "provenance": "Issue 126 plan 16, N3 (owner, 2026-11-25): no language correction on the cover and the version page, spelling only on the table of contents and the lists, full correction on the summary; a page absent from this map is body and is judged in full"
+  },
+  "figure_entry_words": {
+    "fr": [
+      "Figure"
+    ],
+    "en": [
+      "Figure"
+    ],
+    "provenance": "Issue 126 plan 5, E1: the word that opens a printed figure entry in each language"
+  },
+  "table_entry_words": {
+    "fr": [
+      "Tableau"
+    ],
+    "en": [
+      "Table"
+    ],
+    "provenance": "Issue 126 plan 5, E1: the word that opens a printed table entry in each language"
+  },
+  "entry_number_pattern": {
+    "value": "\\d+(?:[.\\-]\\d+)*|[A-Z]\\.\\d+",
+    "provenance": "Issue 126 plan 5, E1 and N2: a printed number kept as a string (12, 2.1, A.1); a dot after it ends the number"
+  },
+  "appendix_markers": {
+    "fr": [
+      "Annexe",
+      "Annexes"
+    ],
+    "en": [
+      "Appendix",
+      "Appendices"
+    ],
+    "provenance": "Issue 126 plan 15, N4 (owner, 2026-11-25): the word that opens an appendix heading or a contents entry; an id after it is a capital letter, a roman numeral or a number"
+  },
+  "dot_leader_pattern": {
+    "value": "\\.{3,}\\s*\\d{1,4}\\b",
+    "provenance": "Issue 126 review round 1 (M3): a dot leader followed by a page number ends a contents entry; was a literal in front_pages.py"
+  },
+  "entry_start_pattern": {
+    "value": "[A-Za-zÀ-ÿ]{2,12}\\.?\\s*(?:\\d{1,3}(?:[.\\-]\\d+)*|[A-Z]\\.\\d+)(?!\\d)",
+    "provenance": "Issue 126 review round 1 (I2): a page whose text opens with an entry (a word, then its printed number) continues the list whatever its count"
+  },
+  "appendix_plural_markers": {
+    "fr": [
+      "Annexes"
+    ],
+    "en": [
+      "Appendices"
+    ],
+    "provenance": "Issue 126 review round 1 (I3): the plural appendix words; after a plural word a number is a page number, not an id"
+  },
+  "appendix_id_pattern": {
+    "value": "[A-Z]{1,4}|\\d{1,2}",
+    "provenance": "Issue 126 review round 1 (I3): an appendix id is a capital letter group (A, B, roman numerals included) or a number of one or two digits (after a singular word only)"
+  },
+  "front_max_words": {
+    "value": 150,
+    "provenance": "Issue 126 review round 2 (N1), proposal 2026-11-25, tune on the real reports: a page with more words is body; a shorter unknown page (acknowledgements, foreword) stays in the front matter"
+  },
+  "chapter_heading_pattern": {
+    "value": "^\\W*(?:chapitre|chapter|section)\\s*\\d+",
+    "provenance": "Issue 126 review round 2 (N1, N2): a page opening with a chapter word and a number is body, never a list continuation"
+  }
+}

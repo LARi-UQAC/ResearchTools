@@ -36,7 +36,7 @@ def _layout_margin() -> float:
     Outputs:
         float - The page margin in points.
     """
-    data = json.loads(LABELS_FILE.read_text(encoding="utf-8"))
+    data = json.loads(LABELS_FILE.read_text(encoding="utf-8-sig"))
     return float(data["layout"]["page_margin"])
 
 
@@ -66,7 +66,7 @@ def _fixture_grade() -> dict:
          "validation": "ok"},
         {"item_id": "I02", "status": "not_run", "score": None, "comment": ""},
         {"item_id": "I03", "status": "rated", "score": 0.0, "comment": "Citation absente.",
-         "validation": "quote_not_found"},
+         "validation": "evidence_missing"},
     ]}
 
 
@@ -177,7 +177,7 @@ class TestAnnexLayout(unittest.TestCase):
 
     def test_missing_key_is_named_with_its_file(self):
         broken = self.test_dir / "labels.json"
-        data = json.loads(LABELS_FILE.read_text(encoding="utf-8"))
+        data = json.loads(LABELS_FILE.read_text(encoding="utf-8-sig"))
         del data["fr"]["comment"]
         broken.write_text(json.dumps(data), encoding="utf-8")
         with self.assertRaises(pdf_annex.AnnexError) as ctx:
@@ -214,7 +214,7 @@ class TestAnnexLayout(unittest.TestCase):
 
     def test_refused_proof_shows_its_label_under_the_comment(self):
         rows = pdf_annex.render_rows(_fixture_rubric(), _fixture_grade(), _fixture_totals(), self.fr)
-        label = html_lib.escape(self.fr["validation_values"]["quote_not_found"])
+        label = html_lib.escape(self.fr["validation_values"]["evidence_missing"])
         self.assertEqual(rows.count(label), 1)
         self.assertIn(f"Citation absente.", rows)
         self.assertLess(rows.index("Citation absente."), rows.index(label))

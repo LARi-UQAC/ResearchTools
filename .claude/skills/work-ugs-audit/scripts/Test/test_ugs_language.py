@@ -245,5 +245,200 @@ class TestLanguageReport(unittest.TestCase):
         self.assertEqual(result["annotations"][0]["comment"], "Just reason")
 
 
+class TestPageModes(unittest.TestCase):
+    """Issue 126 plan 16 N3: a front page is judged by its mode (none, spelling_only, full); fictitious text (R34)."""
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.entries = [
+            {"code": "SP", "label_fr": "Ortho", "label_en": "Spelling", "severity": "minor"},
+            {"code": "G", "label_fr": "Gram", "label_en": "Grammar", "severity": "minor"},
+        ]
+        self.pages = [
+            "Cover text with a cover word.",
+            "A page with an error: recieve is wrong, the cat sat.",
+        ]
+        self.spelling = {"code": "SP", "quote": "recieve", "proposed": "receive", "reason": "Spelling"}
+        self.grammar = {"code": "G", "quote": "is wrong", "proposed": "is incorrect", "reason": "Grammar"}
+
+    def test_page_of_mode_none_is_not_sent(self):
+        call = FakeCall([{"findings": [self.spelling]}])
+        result = ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en", page_modes={1: "none"})
+        self.assertEqual(len(call.calls), 1)
+        self.assertFalse(any("Cover text" in prompt for prompt in call.calls))
+        self.assertEqual([a["page"] for a in result["annotations"]], [2])
+
+    def test_spelling_only_page_keeps_only_spelling(self):
+        call = FakeCall([{"findings": []}, {"findings": [self.spelling, self.grammar]}])
+        result = ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en",
+                                              page_modes={2: "spelling_only"})
+        self.assertEqual([a["code"] for a in result["annotations"]], ["SP"])
+
+    def test_dropped_scope_counts_the_non_spelling_findings(self):
+        """Review round 1 M1 (Issue 126): the findings dropped on a spelling-only page are counted in the result."""
+        call = FakeCall([{"findings": []}, {"findings": [self.spelling, self.grammar]}])
+        result = ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en",
+                                              page_modes={2: "spelling_only"})
+        self.assertEqual(result["dropped_scope"], 1)
+        self.assertEqual([a["code"] for a in result["annotations"]], ["SP"])
+
+    def test_no_map_is_unchanged(self):
+        call = FakeCall([{"findings": []}, {"findings": [self.spelling, self.grammar]}])
+        result = ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en")
+        self.assertEqual(sorted(a["code"] for a in result["annotations"]), ["G", "SP"])
+
+    def test_unknown_mode_is_named_error_before_any_call(self):
+        call = FakeCall([])
+        with self.assertRaises(ValueError) as ctx:
+            ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en", page_modes={2: "judge"})
+        self.assertIn("judge", str(ctx.exception))
+        self.assertEqual(call.calls, [])
+
+
+class TestSpellingGuard(unittest.TestCase):
+    """N1 cause b: a spelling finding of a correct word (both reform spellings, or quote equal to proposal) is refused."""
+
+    CODES = {"SP", "AG"}
+
+    def _record(self, findings, page_text, accepted=None):
+        from ugs_language import _answer_record
+        accepted_set = {"règlementation", "réglementation"} if accepted is None else accepted
+        return _answer_record({"findings": findings}, 1, page_text, self.CODES, "SP", accepted_set)
+
+    def test_finding_equal_to_its_quote_is_rejected(self):
+        finding = {"code": "SP", "quote": "Normes", "proposed": "normes", "reason": "fictitious"}
+        rec = self._record([dict(finding, proposed="Normes")], "Normes, standards and rules.", accepted=set())
+        self.assertEqual(rec["annotations"], [])
+        self.assertEqual(rec["rejected_correct"], 1)
+
+    def test_accepted_variant_is_not_a_spelling_fault(self):
+        finding = {"code": "SP", "quote": "règlementation", "proposed": "réglementation", "reason": "fictitious"}
+        rec = self._record([finding], "2.2.3 Normes et règlementation, fictitious page.")
+        self.assertEqual(rec["annotations"], [])
+        self.assertEqual(rec["rejected_correct"], 1)
+
+    def test_real_fault_still_reported(self):
+        finding = {"code": "SP", "quote": "la chevaux", "proposed": "les chevaux", "reason": "fictitious"}
+        rec = self._record([finding], "Il y a la chevaux dans le champ.")
+        self.assertEqual(len(rec["annotations"]), 1)
+        self.assertEqual(rec["rejected_correct"], 0)
+
+    def test_rejected_correct_is_counted_and_summed(self):
+        from ugs_language import _result
+        bad = {"code": "SP", "quote": "règlementation", "proposed": "réglementation", "reason": "fictitious"}
+        rec = self._record([bad, bad], "Une règlementation fictive.")
+        self.assertEqual(rec["rejected_correct"], 2)
+        result = _result({1: rec, 2: dict(rec, rejected_correct=3)})
+        self.assertEqual(result["rejected_correct"], 5)
+
+    def test_accepted_list_comes_with_provenance(self):
+        from ugs_language import load_accepted, ACCEPTED_SPELLINGS_PATH
+        accepted = load_accepted("fr", ACCEPTED_SPELLINGS_PATH)
+        self.assertIn("règlementation", accepted)
+        self.assertIn("réglementation", accepted)
+
+    def test_real_fault_in_an_accepted_word_quote_is_reported(self):
+        """N1: an accepted word in the quote does not hide a real fault next to it (obligatoir is not a reform pair)."""
+        finding = {"code": "SP", "quote": "règlementation obligatoir", "proposed": "réglementation obligatoire",
+                   "reason": "fictitious"}
+        rec = self._record([finding], "Une règlementation obligatoir fictive.")
+        self.assertEqual(len(rec["annotations"]), 1)
+        self.assertEqual(rec["rejected_correct"], 0)
+
+    def test_capitalised_accepted_word_is_refused(self):
+        """F3: a capitalised accepted spelling at the start of a sentence is the same word."""
+        finding = {"code": "SP", "quote": "Règlementation", "proposed": "Réglementation", "reason": "fictitious"}
+        rec = self._record([finding], "Règlementation des fictives règles.")
+        self.assertEqual(rec["annotations"], [])
+        self.assertEqual(rec["rejected_correct"], 1)
+
+    def test_accepted_word_inside_a_multi_word_quote_is_refused(self):
+        """F3: an accepted word of a multi-word quote is recognised (la règlementation)."""
+        finding = {"code": "SP", "quote": "la règlementation", "proposed": "la réglementation", "reason": "fictitious"}
+        rec = self._record([finding], "Voir la règlementation fictive.")
+        self.assertEqual(rec["annotations"], [])
+        self.assertEqual(rec["rejected_correct"], 1)
+
+    def test_plural_accepted_forms_are_data(self):
+        from ugs_language import load_accepted, ACCEPTED_SPELLINGS_PATH
+        accepted = load_accepted("fr", ACCEPTED_SPELLINGS_PATH)
+        self.assertIn("règlementations", accepted)
+        self.assertIn("réglementations", accepted)
+
+    def test_missing_language_in_accepted_file_is_named(self):
+        from ugs_language import load_accepted, LanguageDataError
+        path = Path(tempfile.mkdtemp()) / "accepted_spellings.json"
+        path.write_text('{"fr": {"value": [], "provenance": "t"}}', encoding="utf-8")
+        with self.assertRaises(LanguageDataError) as ctx:
+            load_accepted("en", path)
+        self.assertIn("en", str(ctx.exception))
+        self.assertIn("accepted_spellings.json", str(ctx.exception))
+
+    def test_spelling_code_is_read_from_the_categories(self):
+        from ugs_language import spelling_code
+        self.assertEqual(spelling_code(), "SP")
+
+
+class TestCommentLanguage(unittest.TestCase):
+    """Plan 22 task 1 (R01 case 3): a comment written in another language than the report is replaced by the label of
+    its code in the report language; a short or undecidable comment is kept as written. Fictitious text only (R34)."""
+
+    CODES = {"SP"}
+    LABELS = {"SP": "Orthographe"}
+    PAGE = "Le chat dort sur le tapis de la maison. Le chien mange."
+
+    @classmethod
+    def setUpClass(cls):
+        from ugs_text import load_hints
+        cls.hints = load_hints(ugs_language.ASSETS_DIR / "language_hints.json")
+
+    def _record(self, findings, report="fr", min_words=6, hints=None):
+        return ugs_language._answer_record({"findings": findings}, 1, self.PAGE, self.CODES, None, None,
+                                           report_language=report, labels=self.LABELS,
+                                           hints=hints or self.hints, min_words=min_words)
+
+    @staticmethod
+    def _finding(quote, proposed, reason):
+        return {"code": "SP", "quote": quote, "proposed": proposed, "reason": reason}
+
+    def test_an_english_comment_in_a_french_report_is_replaced_by_the_label(self):
+        record = self._record([self._finding("chat", "chats",
+                                             "The plural form is wrong in this sentence of the report.")])
+        self.assertEqual(record["annotations"][0]["comment"], "Orthographe")
+        self.assertEqual(record["comment_language_replaced"], 1)
+
+    def test_a_french_comment_is_kept(self):
+        reason = "Le pluriel est faux dans cette phrase du rapport."
+        record = self._record([self._finding("chat", "chats", reason)])
+        self.assertEqual(record["annotations"][0]["comment"], f"chats - {reason}")
+        self.assertEqual(record["comment_language_replaced"], 0)
+
+    def test_a_short_comment_is_kept(self):
+        record = self._record([self._finding("chat", "chats", "Wrong plural form")], min_words=6)
+        self.assertEqual(record["annotations"][0]["comment"], "chats - Wrong plural form")
+        self.assertEqual(record["comment_language_replaced"], 0)
+
+    def test_an_undecidable_comment_is_kept(self):
+        record = self._record([self._finding("chat", "chats", "xq zv wk pj tn bb cc dd")])
+        self.assertEqual(record["annotations"][0]["comment"], "chats - xq zv wk pj tn bb cc dd")
+        self.assertEqual(record["comment_language_replaced"], 0)
+
+    def test_the_replacements_are_counted(self):
+        record = self._record([
+            self._finding("chat", "chats", "The plural form is wrong in this sentence of the report."),
+            self._finding("dort", "dorment", "The verb agreement is wrong in this sentence of the report."),
+        ])
+        self.assertEqual(record["comment_language_replaced"], 2)
+        self.assertEqual([a["comment"] for a in record["annotations"]], ["Orthographe", "Orthographe"])
+
+    def test_without_a_report_language_nothing_is_checked(self):
+        record = ugs_language._answer_record(
+            {"findings": [self._finding("chat", "chats", "The plural form is wrong in this sentence.")]},
+            1, self.PAGE, self.CODES, None, None)
+        self.assertEqual(record["annotations"][0]["comment"],
+                         "chats - The plural form is wrong in this sentence.")
+        self.assertEqual(record["comment_language_replaced"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

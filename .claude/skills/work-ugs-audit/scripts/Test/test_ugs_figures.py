@@ -5,6 +5,7 @@ data only (R34).
 """
 import copy
 import json
+import os
 import re
 import shutil
 import sys
@@ -82,9 +83,10 @@ class TestUgsFigures(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def report(self, call, vision_ok=True, existing=None, on_figure=None, criteria=None, language="en"):
+    def report(self, call, vision_ok=True, existing=None, on_figure=None, criteria=None, language="en", elements=None):
         return ugs_figures.figures_report(self.pdf, self.report_dir, "R01", self.pages, call, self.ctx,
-                                          criteria or self.criteria, language, vision_ok, existing, on_figure)
+                                          criteria or self.criteria, language, vision_ok, existing, on_figure,
+                                          elements=elements)
 
     def test_script_verdicts_are_recorded_without_any_model_call_when_vision_is_not_ok(self):
         model = FakeModel()
@@ -275,6 +277,301 @@ class TestUgsFigures(unittest.TestCase):
         with self.assertRaises(KeyError) as ctx:
             self.report(FakeModel(), criteria=broken)
         self.assertIn("jpeg_quality", str(ctx.exception))
+
+
+    # --- N7 signal 2 (plan 20): the vision role says an element is a table ---
+
+    def test_a_vision_table_below_the_weak_grid_is_a_candidate_and_vetoed(self):
+        # Review 6: a region clearly below the weak grid vetoes the vision table; it stays a candidate only.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_grid_reading="none", title_grid=False)
+        result = self.report(FakeModel(kind="table"), elements=elements)
+        record = result["figures"][0]
+        self.assertEqual(record["kind"], "table")
+        self.assertEqual(record["title_kind_candidate"], "table_titled_figure")
+        self.assertIsNone(record["title_kind_mismatch"])
+        self.assertIsNone(record["title_kind_source"])
+
+    def test_a_vision_table_on_a_weak_grid_is_flagged_by_vision(self):
+        # Review 6: between the weak and the strong grid, the vision answer decides.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_grid_reading="weak", title_grid=False)
+        record = self.report(FakeModel(kind="table"), elements=elements)["figures"][0]
+        self.assertEqual(record["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(record["title_kind_source"], "vision")
+
+    def test_a_vision_table_on_an_unreadable_region_is_flagged_by_vision(self):
+        # Review 6 (F7): a region with too few words cannot be read, so the vision table flags.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_grid_reading=None, title_grid=None)
+        record = self.report(FakeModel(kind="table"), elements=elements)["figures"][0]
+        self.assertEqual(record["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(record["title_kind_source"], "vision")
+
+    def test_a_table_image_below_the_weak_grid_is_vetoed_and_one_on_a_weak_grid_is_flagged(self):
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        vetoed = self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=False)
+        vetoed["title_grid_reading"] = "none"
+        weak = self.table_image_record("T-i02", title="Tableau 3: Mesures", title_grid=False)
+        weak["title_grid_reading"] = "weak"
+        elements.extend([vetoed, weak])
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        by_id = {f["figure_id"]: f for f in result["figures"]}
+        self.assertIsNone(by_id["T-i01"]["title_kind_mismatch"])
+        self.assertEqual(by_id["T-i02"]["title_kind_mismatch"], "figure_titled_table")
+
+    def test_an_untitled_element_is_never_a_candidate_or_a_flag(self):
+        # Review B: an element without a printed title is never flagged, whatever the vision says.
+        elements = self.element_records([None, None])
+        result = self.report(FakeModel(kind="table"), elements=elements)
+        for record in result["figures"]:
+            self.assertIsNone(record["title_kind_candidate"])
+            self.assertIsNone(record["title_kind_mismatch"])
+
+    def test_a_script_flagged_table_is_judged_as_kind_table_with_general_criteria_only(self):
+        # Review H: a flagged table_titled_figure is judged as a table, so chart-only criteria are not applicable.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_kind_mismatch="table_titled_figure", title_kind_source="script")
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        record = result["figures"][0]
+        self.assertEqual(record["kind"], "table")
+        self.assertEqual(record["criteria"]["axis_titles"]["verdict"], "not_applicable")
+        self.assertEqual(record["title_kind_source"], "script")
+
+    def test_a_table_image_with_a_non_table_vision_kind_and_no_grid_is_flagged_by_vision(self):
+        # Review C: a table_image is sent to vision; a kind other than table or other, with no grid, is a mismatch.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements.append(self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=False))
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        record = next(f for f in result["figures"] if f["figure_id"] == "T-i01")
+        self.assertEqual(record["element_type"], "table_image")
+        self.assertEqual(record["title_kind_mismatch"], "figure_titled_table")
+        self.assertEqual(record["title_kind_source"], "vision")
+
+    def test_a_table_image_whose_grid_reading_is_a_grid_is_not_flagged(self):
+        # Review C: the grid rule says grid, so a vision chart answer does not flag it.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements.append(self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=True))
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        record = next(f for f in result["figures"] if f["figure_id"] == "T-i01")
+        self.assertIsNone(record["title_kind_mismatch"])
+
+    def test_an_untitled_table_image_is_never_flagged(self):
+        # Review 2.1: a table_image without a printed title is never flagged, whatever the vision kind.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements.append(self.table_image_record("T-i02", title=None, title_grid=False))
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        record = next(f for f in result["figures"] if f["figure_id"] == "T-i02")
+        self.assertIsNone(record["title_kind_mismatch"])
+        self.assertIsNone(record["title_kind_source"])
+
+    def test_an_existing_table_image_record_gets_on_figure_again(self):
+        # Review minor: a resumed run reports each saved table image through on_figure, as it does for figures.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements.append(self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=True))
+        saved = {"T-i01": {"figure_id": "T-i01", "element_type": "table_image", "kind": "table", "criteria": {},
+                           "title_kind_mismatch": None, "title_kind_source": None}}
+        seen = []
+        self.report(FakeModel(kind="table"), elements=elements, existing=saved,
+                    on_figure=lambda figure_id, record: seen.append(figure_id))
+        self.assertIn("T-i01", seen)
+
+    def test_a_table_image_judged_as_a_table_is_not_flagged(self):
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements.append(self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=False))
+        result = self.report(FakeModel(kind="table"), elements=elements)
+        record = next(f for f in result["figures"] if f["figure_id"] == "T-i01")
+        self.assertIsNone(record["title_kind_mismatch"])
+
+    def test_the_figures_document_says_whether_vision_was_validated(self):
+        result = self.report(FakeModel(), vision_ok=False, elements=self.element_records([None, None]))
+        self.assertIs(result["vision_validated"], False)
+        result = self.report(FakeModel(), elements=self.element_records([None, None]))
+        self.assertIs(result["vision_validated"], True)
+
+    def table_image_record(self, element_id, title, title_grid):
+        """A table_image element record as extract_elements writes it, with its file in the figures folder."""
+        figures = self.report_dir / "figures"
+        figures.mkdir(parents=True, exist_ok=True)
+        pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 60, 40), False)
+        pixmap.clear_with(200)
+        pixmap.save(str(figures / f"{element_id}.png"))
+        return {"element_id": element_id, "element_type": "table_image", "page": 1, "rect": [50, 400, 400, 500],
+                "file": f"{element_id}.png", "title": {"text": title} if title else None, "title_grid": title_grid,
+                "title_kind_mismatch": None, "title_kind_source": None, "legend": "", "notes": [],
+                "caption": title, "source": "vector"}
+
+    def test_a_chart_judged_under_a_figure_title_is_not_flagged(self):
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        self.assertIsNone(result["figures"][0]["title_kind_mismatch"])
+        self.assertIsNone(result["figures"][0]["title_kind_source"])
+
+    def test_a_script_flag_is_never_overwritten_by_a_vision_answer(self):
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_kind_mismatch="table_titled_figure", title_kind_source="script")
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        record = result["figures"][0]
+        self.assertEqual(record["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(record["title_kind_source"], "script")
+
+    def test_without_vision_the_script_flag_stays_and_vision_adds_nothing(self):
+        elements = self.element_records([None, None])
+        result = self.report(FakeModel(kind="table"), vision_ok=False, elements=elements)
+        self.assertIsNone(result["figures"][0]["title_kind_mismatch"])
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_kind_mismatch="table_titled_figure", title_kind_source="script")
+        result = self.report(FakeModel(), vision_ok=False, elements=elements)
+        self.assertEqual(result["figures"][0]["title_kind_source"], "script")
+
+    def test_the_figure_schema_and_the_probe_schema_accept_the_kind_table(self):
+        schemas = json.loads((Path(__file__).resolve().parent.parent.parent / "prompts" / "schemas.json")
+                             .read_text(encoding="utf-8"))
+        self.assertIn("table", schemas["figure"]["properties"]["kind"]["enum"])
+        self.assertIn("table", schemas["vision_probe"]["properties"]["figure_kind"]["enum"])
+
+    def test_the_figure_prompt_names_the_kind_table(self):
+        self.assertIn("table (a grid of rows and columns", FIGURE_PROMPT)
+
+    def _borrowed_model(self, borrowed):
+        def answer(prompt):
+            return {"kind": "chart", "borrowed": borrowed,
+                    "criteria": [{"id": i, "verdict": "pass", "reason": "r"} for i in SENT_LINE.findall(prompt)]}
+        return FakeModel(script=[answer, answer, answer])
+
+    def test_a_borrowed_figure_without_source_fails(self):
+        # Issue 126, plan 22/21 task 2 (R01 case 2): a figure the model reads as borrowed needs a source in its title
+        result = self.report(self._borrowed_model(True), language="fr")
+        entry = result["figures"][0]["criteria"]["source_cited"]
+        self.assertEqual(entry["verdict"], "fail")
+        self.assertEqual(entry["reason"], "Figure empruntée sans source : citer la source dans le titre.")
+
+    def test_an_own_figure_without_source_is_not_applicable(self):
+        result = self.report(self._borrowed_model(False))
+        self.assertEqual(result["figures"][0]["criteria"]["source_cited"]["verdict"], "not_applicable")
+
+    def test_an_answer_without_the_borrowed_key_is_unknown_and_not_a_fail(self):
+        result = self.report(FakeModel())
+        self.assertEqual(result["figures"][0]["criteria"]["source_cited"]["verdict"], "not_applicable")
+
+    def test_vision_not_validated_never_fails_the_source(self):
+        result = self.report(FakeModel(), vision_ok=False)
+        self.assertEqual(result["figures"][0]["criteria"]["source_cited"]["verdict"], "not_applicable")
+
+    def test_a_cited_source_passes_whatever_borrowed_says(self):
+        pages = [{"text": "Figure 1 shows the plant.\n\nMore text.", "image": True,
+                  "caption": "Figure 1: The plant [1]."}]
+        pdf = make_report(self.tmp / "cited.pdf", pages)
+        with fitz.open(str(pdf)) as doc:
+            texts = [page.get_text() for page in doc]
+        result = ugs_figures.figures_report(pdf, self.report_dir, "R01", texts, self._borrowed_model(True),
+                                            self.ctx, self.criteria, "fr", True, None, None)
+        self.assertEqual(result["figures"][0]["criteria"]["source_cited"]["verdict"], "pass")
+
+
+class TestTitleKindFromAnswer(unittest.TestCase):
+    """N7 (plan 20): the mapping from an element type and a vision kind to the title mismatch."""
+
+    def test_the_four_combinations(self):
+        self.assertEqual(ugs_figures.title_kind_from_answer("figure", "table"), "table_titled_figure")
+        self.assertIsNone(ugs_figures.title_kind_from_answer("figure", "chart"))
+        self.assertEqual(ugs_figures.title_kind_from_answer("table_image", "chart"), "figure_titled_table")
+        self.assertIsNone(ugs_figures.title_kind_from_answer("table_image", "table"))
+
+    def test_other_is_never_a_mismatch_for_a_table_image(self):
+        self.assertIsNone(ugs_figures.title_kind_from_answer("table_image", "other"))
+
+    def test_a_diagram_under_a_table_title_is_a_mismatch(self):
+        self.assertEqual(ugs_figures.title_kind_from_answer("table_image", "diagram"), "figure_titled_table")
+
+
+class TestCitingParagraph(unittest.TestCase):
+    """D5: a body sentence opening "Figure N shows" is a citation; a caption line is not, whatever its dash."""
+
+    def test_body_sentence_starting_with_figure_is_a_citation(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2 shows the response."], 2), "Figure 2 shows the response.")
+
+    def test_abbreviated_marker_at_the_start_is_a_citation(self):
+        self.assertTrue(ugs_figures.citing_text(["Fig. 2 shows the response."], 2))
+
+    def test_caption_with_colon_is_not_a_citation(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2: Response curve."], 2), "")
+
+    def test_caption_with_hyphen_is_not_a_citation(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2 - Response curve."], 2), "")
+
+    def test_caption_with_en_dash_is_not_a_citation(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2 – Response curve."], 2), "")
+
+    def test_two_part_number_is_not_one_part(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2.1 shows the loop."], 2), "")
+
+
+class RealR01AcceptanceTest(unittest.TestCase):
+    """
+    Real-data acceptance on the owner's R01 report (review D, 2026-11-26). Skipped unless UGS_REAL_WORK names the
+    check work folder of a completed figures step (loop-1/R01/figures.json). Only ids and counts are asserted (R34).
+    The expected set is the owner's list, exactly: a flag outside it, or a missing one, is a failure.
+    """
+
+    EXPECTED = {"F%d" % n for n in range(1, 8)} | {"F16", "F17", "F18"}
+
+    def setUp(self):
+        work = os.environ.get("UGS_REAL_WORK", "")
+        if not work:
+            self.skipTest("UGS_REAL_WORK is not set (owner's real-data check)")
+        self.figures_path = Path(work) / "loop-1" / "R01" / "figures.json"
+        if not self.figures_path.is_file():
+            self.skipTest("no figures.json for R01 in UGS_REAL_WORK yet")
+
+    def test_the_flagged_set_is_the_owner_list_exactly(self):
+        document = json.loads(self.figures_path.read_text(encoding="utf-8"))
+        self.assertTrue(document.get("vision_validated"), "the acceptance run must validate the vision role")
+        flagged = {f["figure_id"] for f in document["figures"] if f.get("title_kind_mismatch")}
+        self.assertEqual(flagged, self.EXPECTED)
+
+    def test_every_flag_carries_its_source_and_no_candidate_is_flagged(self):
+        document = json.loads(self.figures_path.read_text(encoding="utf-8"))
+        for record in document["figures"]:
+            if record.get("title_kind_mismatch"):
+                self.assertIn(record.get("title_kind_source"), ("script", "vision"))
+            else:
+                self.assertIsNone(record.get("title_kind_source"))
+
+
+class RealR01FiguresTest(unittest.TestCase):
+    """
+    Plan 21 task 3 on the owner's R01 report (2026-11-26): skipped unless UGS_REAL_WORK names the check work folder
+    holding loop-1/R01/figures.json (UGS_REAL_WORK unset is a skip, R11). Only ids and verdict codes are asserted (R34):
+    the titled figures F1 to F18 pass the numbering, the untitled F-u01 and F-u02 are not applicable, and no figure
+    fails the source check, because no figure is marked borrowed without a source.
+    """
+
+    TITLED = ["F%d" % number for number in range(1, 19)]
+    UNTITLED = ["F-u01", "F-u02"]
+
+    def setUp(self):
+        work = os.environ.get("UGS_REAL_WORK")
+        if not work:
+            self.skipTest("UGS_REAL_WORK is not set: the R01 figures check runs on the owner's report only")
+        path = Path(work) / "loop-1" / "R01" / "figures.json"
+        if not path.is_file():
+            self.skipTest("loop-1/R01/figures.json is absent: run the figures step first")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        self.records = {record["figure_id"]: record for record in data["figures"]}
+
+    def _verdict(self, figure_id, criterion):
+        return self.records.get(figure_id, {}).get("criteria", {}).get(criterion, {}).get("verdict")
+
+    def test_every_titled_figure_passes_the_numbering(self):
+        self.assertEqual([fid for fid in self.TITLED if self._verdict(fid, "numbered_in_sequence") != "pass"], [])
+
+    def test_untitled_elements_are_not_applicable_to_the_numbering(self):
+        self.assertEqual([self._verdict(fid, "numbered_in_sequence") for fid in self.UNTITLED],
+                         ["not_applicable", "not_applicable"])
+
+    def test_no_figure_fails_the_source_check(self):
+        self.assertEqual([fid for fid in self.records if self._verdict(fid, "source_cited") == "fail"], [])
 
 
 if __name__ == "__main__":

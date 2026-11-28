@@ -12,9 +12,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 TABLE_TYPE = "table"
+TABLE_IMAGE_TYPE = "table_image"  # plan 8: included in the page text only once its Markdown exists
 FIGURE_TYPE = "figure"
-TABLE_HEADING = "## Table {element_id} (detected)"
-TABLE_PAGE_LINE = "Page {page}"
+TABLE_TEXT_PATH = Path(__file__).resolve().parent.parent / "assets" / "table_text.json"
+TABLE_TEXT_KEYS = ("heading", "page_line")
 SEPARATOR_PATTERN = r"[\s|:\-]*"
 IGNORED_CHARS_PATTERN = r"[\s|]"
 MIN_ANCHOR_KEY = "tables.min_anchor_chars"
@@ -53,6 +54,63 @@ def load_min_anchor_chars(path: Optional[Path] = None) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise TablesError(f"missing or invalid key '{MIN_ANCHOR_KEY}' in {config_path.name}")
     return value
+
+
+def load_table_text(language: str, path: Optional[Path] = None) -> Dict[str, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the heading and the page line that introduce an added table, for one report language (D3).
+
+    Inputs:
+        language (str): the report language, `fr` or `en`
+        path (Path | None): the data file; None means assets/table_text.json
+
+    Outputs:
+        texts (dict): {"heading": str, "page_line": str}, the templates with their {element_id} and {page} slots.
+
+    Raises:
+        TablesError: the file is not readable JSON, the language is not in it (the message names the language
+        and the file, no English fallback), or one of the two keys is missing (R3).
+    --------------------------------------------------------------------------
+    """
+    text_path = Path(path) if path is not None else TABLE_TEXT_PATH
+    try:
+        raw = json.loads(text_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise TablesError(f"{text_path.name} is not readable JSON: {exc}") from None
+    entry = raw.get(language) if isinstance(raw, dict) else None
+    if not isinstance(entry, dict):
+        raise TablesError(f"language '{language}' is not in {text_path.name}")
+    texts = {}
+    for key in TABLE_TEXT_KEYS:
+        slot = entry.get(key)
+        value = slot.get("value") if isinstance(slot, dict) else None
+        if not isinstance(value, str) or not value:
+            raise TablesError(f"key '{language}.{key}' is missing or empty in {text_path.name}")
+        texts[key] = value
+    return texts
+
+
+def _fill_slots(template: str, values: Dict[str, Any]) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Replace the named slots of a template in one pass, so a value containing braces or a percent sign is
+        copied as it is and never interpreted, nor is a slot inside a value substituted again.
+
+    Inputs:
+        template (str): the template with {name} slots
+        values (dict): the value of each slot name
+
+    Outputs:
+        text (str): the filled template.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    return re.sub(r"\{(element_id|page)\}", lambda match: str(values[match.group(1)]), template)
 
 
 def _require(record: Dict[str, Any], key: str) -> Any:
@@ -183,11 +241,15 @@ def tables_on_page(elements: List[Dict[str, Any]], page: int) -> List[Dict[str, 
         TablesError: a table record has no `rect`.
     --------------------------------------------------------------------------
     """
-    found = [e for e in elements if e.get("element_type") == TABLE_TYPE and e.get("page") == page]
+    found = [e for e in elements if e.get("page") == page and (
+        e.get("element_type") == TABLE_TYPE
+        or (e.get("element_type") == TABLE_IMAGE_TYPE and e.get("markdown")))]
     return sorted(found, key=_top)
 
 
-def enrich_page_text(text: str, tables: List[Dict[str, Any]], min_anchor_chars: Optional[int] = None) -> str:
+def enrich_page_text(text: str, tables: List[Dict[str, Any]], language: str,
+                     min_anchor_chars: Optional[int] = None,
+                     table_texts: Optional[Dict[str, str]] = None) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -204,6 +266,7 @@ def enrich_page_text(text: str, tables: List[Dict[str, Any]], min_anchor_chars: 
     Inputs:
         text (str): the text of one page
         tables (list[dict]): the table records of that page, in reading order (see tables_on_page)
+        language (str): the report language, `fr` or `en`, selecting the heading and the page line (D3)
         min_anchor_chars (int | None): the shortest anchor that proves presence; None reads
             `tables.min_anchor_chars` from the configuration
 
@@ -211,10 +274,12 @@ def enrich_page_text(text: str, tables: List[Dict[str, Any]], min_anchor_chars: 
         page_text (str): the text with the missing tables appended, or `text` itself when nothing is added.
 
     Raises:
-        TablesError: a table record has no `element_id` or no `page`, or the configured minimum is absent.
+        TablesError: a table record has no `element_id` or no `page`, the language has no text, or the
+        configured minimum is absent.
     --------------------------------------------------------------------------
     """
     minimum = load_min_anchor_chars() if min_anchor_chars is None else min_anchor_chars
+    texts = load_table_text(language) if table_texts is None else table_texts
     haystack = _key(text)
     blocks = []
     for table in tables:
@@ -224,8 +289,9 @@ def enrich_page_text(text: str, tables: List[Dict[str, Any]], min_anchor_chars: 
             continue
         element_id = _require(table, "element_id")
         page = _require(table, "page")
-        blocks.append("\n".join([TABLE_HEADING.format(element_id=element_id),
-                                 TABLE_PAGE_LINE.format(page=page), "", markdown]))
+        values = {"element_id": element_id, "page": page}
+        blocks.append("\n".join([_fill_slots(texts["heading"], values),
+                                 _fill_slots(texts["page_line"], values), "", markdown]))
     if not blocks:
         return text
     body = "\n\n".join(blocks)

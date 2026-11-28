@@ -338,5 +338,21 @@ class TestRunReport(unittest.TestCase):
         self.assertEqual(mocks["grade"].call_count, 1)
 
 
+class AtomicStepWriteTest(unittest.TestCase):
+    """Plan 30 Task 1: a step's JSON write is atomic; a crash before the replace keeps the previous complete file."""
+
+    def test_a_crash_before_the_replace_keeps_the_previous_file(self):
+        import ugs_run
+        folder = Path(tempfile.mkdtemp())
+        path = folder / "grade.json"
+        ugs_run._write_json(path, {"v": 1})
+        before = path.read_bytes()
+        with patch("os.replace", side_effect=OSError("crash")):
+            with self.assertRaises(OSError):
+                ugs_run._write_json(path, {"v": 2})
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["grade.json"])
+
+
 if __name__ == "__main__":
     unittest.main()

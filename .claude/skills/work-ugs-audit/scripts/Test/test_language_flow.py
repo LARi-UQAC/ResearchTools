@@ -224,7 +224,10 @@ class TestLanguageResume(unittest.TestCase):
         final = self.saved()
         self.assertEqual(sorted({annotation["page"] for annotation in final["annotations"]}), [1, 2, 3])
         self.assertEqual(final["not_run"], [])
-        self.assertEqual(set(final), {"annotations", "rejected", "not_run"})
+        # N1: the result also counts the spelling findings refused as correct words (rejected_correct).
+        # Plan 22 task 1: comment_language_replaced counts the comments replaced for their language
+        self.assertEqual(set(final), {"annotations", "rejected", "rejected_correct", "dropped_scope",
+                                      "comment_language_replaced", "not_run"})
         self.assertIn("- [x] language", self.ledger_path.read_text(encoding="utf-8"))
 
     def test_language_partial_is_saved_per_page(self):
@@ -234,6 +237,31 @@ class TestLanguageResume(unittest.TestCase):
         partial = self.saved()
         self.assertEqual(sorted(partial["pages"]), ["1"])
         self.assertEqual([a["page"] for a in partial["annotations"]], [1])
+
+
+class TestFrontModesFromMeta(unittest.TestCase):
+    """Issue 126 plan 16 N3: the language step reads the front roles of report_meta.json (fictitious roles)."""
+
+    def test_modes_come_from_the_recorded_front_roles(self):
+        import json
+        import tempfile
+        import ugs_run
+        work = Path(tempfile.mkdtemp(prefix="ugs-modes-"))
+        (work / "R01").mkdir()
+        meta = {"front_roles": {"cover": [1], "version_signature": None, "table_of_contents": [2],
+                                "list_of_figures": [3], "list_of_tables": None, "executive_summary": [4]}}
+        (work / "R01" / "report_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        modes = ugs_run._page_modes(work, "R01")
+        self.assertEqual(modes, {1: "none", 2: "spelling_only", 3: "spelling_only", 4: "full"})
+
+    def test_no_front_roles_gives_no_map(self):
+        import json
+        import tempfile
+        import ugs_run
+        work = Path(tempfile.mkdtemp(prefix="ugs-modes-"))
+        (work / "R01").mkdir()
+        (work / "R01" / "report_meta.json").write_text(json.dumps({"language": "fr"}), encoding="utf-8")
+        self.assertEqual(ugs_run._page_modes(work, "R01"), {})
 
 
 if __name__ == "__main__":

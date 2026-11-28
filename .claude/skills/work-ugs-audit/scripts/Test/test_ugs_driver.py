@@ -64,6 +64,28 @@ TEXT_ANSWER = {"assessment_type": "lab_report", "total_points": 10,
                "items": [{"id": "I01", "title": "Method", "max_points": 10, "text": TEXT_SOURCE}]}
 
 
+def answer_for_points(points):
+    """
+    Purpose: Give the fake model's answer that makes the points of a maximum of 10 (test fake only): every element
+        present, and the report claimed exceptional at 9.5 points or more, which gives 10 points; otherwise
+        complete_correct, 8.75 points.
+    Inputs:
+        points: float - the points the fake model used to mean.
+    Outputs:
+        dict - a rated answer with its elements.
+    Raises:
+        None.
+    """
+    # Points now come from the elements (2026-11-27): eight elements, all present gives 10; seven present and one
+    # absent gives 8.75, the score the old level gave, so the batch statistics of these tests stay unchanged.
+    quote = "Introduction text of the fictitious report"
+    present = 8 if points >= 9.5 else 7
+    elements = [{"element": "Element %d" % (index + 1), "verdict": "present" if index < present else "absent",
+                 "page": 1 if index < present else None, "quote": quote if index < present else None}
+                for index in range(8)]
+    return {"status": "rated", "elements": elements, "exceptional": points >= 9.5}
+
+
 class FakeModel:
     """A kind-aware call: a valid answer for every schema, the score read from `SCORE=` in the prompt."""
 
@@ -82,8 +104,9 @@ class FakeModel:
             if "SCORE=" in prompt:
                 score = float(prompt.split("SCORE=")[1].split()[0])
             comment = prompt[:300] if self.echo else "ok"
-            return {"status": "rated", "score": score, "comment": comment,
-                    "evidence": [{"page": 1, "quote": "Introduction text"}]}
+            answer = answer_for_points(score)
+            answer["comment"] = comment
+            return answer
         if schema == SCHEMAS["audit_item"]:
             return {"verdict": "agree", "reason": "r"}
         if schema == SCHEMAS["language"]:
@@ -148,6 +171,10 @@ class TestUgsDriver(unittest.TestCase):
         patcher = patch("ugs_driver.ugs_config.annotation_author", return_value="Fictitious Author")
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Plan 30: an unreachable model is retried after a pause of driver.unreachable_pause_s; no test waits for it.
+        sleeper = patch("ugs_driver.time.sleep")
+        sleeper.start()
+        self.addCleanup(sleeper.stop)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -493,7 +520,9 @@ class TestUgsDriver(unittest.TestCase):
     # --- batch ---
 
     def test_batch_in_band_exits_0_and_writes_batch_json(self):
-        self.graded_batch([9, 8.5, 9.5, 8.8])
+        # Plan 25 (review round 1): the fake names its elements; the points are computed from them, so these eight reports give 88 and 100
+        # percent: a mean of 91 and a sample standard deviation of 3.2, both in the calibration band.
+        self.graded_batch([9, 8.5, 9.5, 8.8, 9, 8.8, 9.5, 8.5])
         code, lines, _ = self.drv(["batch", "--work", str(self.work), "--loop", "1"])
         self.assertEqual(code, 0)
         self.assertEqual(lines[0]["verdict"], "in_band")
@@ -559,6 +588,147 @@ class TestUgsDriver(unittest.TestCase):
         self.assertEqual(self.model.calls, [])
 
 
+    # --- run_done.json: the completion marker (plan 18, N6) ---
+
+    def marker_path(self):
+        return self.work / ugs_driver.RUN_DONE_NAME
+
+    def marker(self):
+        return json.loads(self.marker_path().read_text(encoding="utf-8"))
+
+    def test_a_finished_run_writes_the_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        code, _, _ = self.run_loop()
+        self.assertEqual(code, 0)
+        record = self.marker()
+        self.assertEqual(record["exit_code"], 0)
+        self.assertEqual(record["loop"], 1)
+        self.assertEqual(record["reports"], ["R01"])
+        self.assertEqual(record["open_steps"], 0)
+        self.assertIsNone(record["stopped_at"])
+
+    def test_an_unreachable_model_writes_the_marker_with_stopped_at(self):
+        self.add_reports([9])
+        self.prepare()
+        down = FakeModel(fail_with=NotRun("unreachable", "down"))
+        code, _, _ = self.run_loop(model=down)
+        self.assertEqual(code, 1)
+        record = self.marker()
+        self.assertEqual(record["exit_code"], 1)
+        self.assertEqual(record["stopped_at"], {"report": "R01", "step": "grade I01", "kind": "unreachable"})
+        self.assertGreaterEqual(record["open_steps"], 1)
+
+    def test_a_refused_run_writes_no_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        code, _, _ = self.run_loop(loop=2)
+        self.assertEqual(code, 2)
+        self.assertFalse(self.marker_path().exists())
+
+    def test_a_new_run_removes_an_old_marker_first(self):
+        self.add_reports([9])
+        self.prepare()
+        self.marker_path().write_text(json.dumps({"exit_code": 0, "planted": True}), encoding="utf-8")
+        code, _, _ = self.run_loop(model=FakeModel(fail_with=NotRun("unreachable", "down")))
+        self.assertEqual(code, 1)
+        record = self.marker()
+        self.assertEqual(record["exit_code"], 1)
+        self.assertNotIn("planted", record)
+
+    def test_a_refusal_before_any_work_folder_work_removes_a_planted_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        self.marker_path().write_text(json.dumps({"exit_code": 0, "planted": True}), encoding="utf-8")
+        code, _, _ = self.run_loop(extra=["--steps", "unknown_step"])
+        self.assertEqual(code, 2)
+        self.assertFalse(self.marker_path().exists())
+
+    def test_a_refused_loop_removes_a_planted_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        self.marker_path().write_text(json.dumps({"exit_code": 0, "planted": True}), encoding="utf-8")
+        code, _, _ = self.run_loop(loop=2)
+        self.assertEqual(code, 2)
+        self.assertFalse(self.marker_path().exists())
+
+    def test_a_driver_refusal_inside_the_loop_writes_exit_2_in_the_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        with patch("ugs_driver.run_report", side_effect=ugs_driver.DriverError("planted refusal")):
+            code, _, _ = self.run_loop()
+        self.assertEqual(code, 2)
+        self.assertEqual(self.marker()["exit_code"], 2)
+
+    def test_an_ordinary_error_inside_the_loop_writes_exit_1_and_propagates_to_main(self):
+        self.add_reports([9])
+        self.prepare()
+        with patch("ugs_driver.run_report", side_effect=RuntimeError("planted")):
+            code, lines, _ = self.run_loop()
+        self.assertEqual(code, 1)
+        self.assertEqual(self.marker()["exit_code"], 1)
+        self.assertEqual(lines[-1], {"status": "failed", "error": "RuntimeError"})
+
+    def test_a_marker_write_failure_never_masks_the_original_error(self):
+        self.add_reports([9])
+        self.prepare()
+        with patch("ugs_driver.run_report", side_effect=RuntimeError("planted")):
+            with patch("ugs_driver.write_run_done", side_effect=OSError("planted write failure")):
+                code, lines, _ = self.run_loop()
+        self.assertEqual(code, 1)
+        self.assertEqual(lines[-1], {"status": "failed", "error": "RuntimeError"})
+
+    def test_a_failed_replace_removes_the_temporary_marker(self):
+        work = self.tmp / "w"
+        work.mkdir()
+        with patch("ugs_driver.os.replace", side_effect=OSError("planted replace failure")):
+            with self.assertRaises(OSError):
+                ugs_driver.write_run_done(work, {key: 0 for key in ugs_driver.RUN_DONE_KEYS})
+        self.assertEqual(sorted(p.name for p in work.iterdir()), [])
+
+    def test_an_unremovable_marker_is_a_named_refusal_with_exit_2_and_no_traceback(self):
+        # Review 5: a marker path that cannot be removed is refused with a reason, never a traceback.
+        self.add_reports([9])
+        self.prepare()
+        self.marker_path().mkdir()
+        code, lines, _ = self.run_loop()
+        self.assertEqual(code, 2)
+        self.assertEqual(lines[-1]["status"], "refused")
+        self.assertIn("completion marker", lines[-1]["error"])
+
+    def test_an_argparse_refusal_writes_no_marker(self):
+        # Review 5: the argument parser refuses before the work folder is known, so nothing is written.
+        self.add_reports([9])
+        self.prepare()
+        with self.assertRaises(SystemExit) as ctx:
+            with contextlib.redirect_stderr(io.StringIO()):
+                ugs_driver.main(["run", "--work", str(self.work), "--reports", str(self.reports), "--no-such-option"],
+                                call=self.model, fetch=None, window=100000,
+                                count=lambda text: len(text.split()))
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertFalse(self.marker_path().exists())
+
+    def test_a_dry_run_writes_no_marker(self):
+        self.add_reports([9])
+        self.prepare()
+        code, _, _ = self.drv(["run", "--work", str(self.work), "--reports", str(self.reports), "--loop", "1",
+                               "--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertFalse(self.marker_path().exists())
+
+    def test_the_marker_holds_no_report_text(self):
+        self.add_reports([9])
+        self.prepare()
+        self.run_loop()
+        self.assertNotIn(MARKER, self.marker_path().read_text(encoding="utf-8"))
+
+    def test_the_marker_is_written_without_a_temporary_file_left_behind(self):
+        self.add_reports([9])
+        self.prepare()
+        self.run_loop()
+        self.assertEqual(sorted(p.name for p in self.work.glob("*.tmp")), [])
+
+
 class TestOcrPreflightRefusal(unittest.TestCase):
 
     def test_preflight_refusal_is_named_when_tesseract_is_missing(self):
@@ -575,6 +745,368 @@ class TestOcrPreflightRefusal(unittest.TestCase):
             with self.assertRaises(OcrUnavailable) as ctx:
                 text_quality.ocr_preflight(["fra", "eng"])
         self.assertIn("TESSDATA_PREFIX", str(ctx.exception))
+
+
+class TestStepsFilter(unittest.TestCase):
+    """N1: `run --steps` runs only the named steps; an unknown name is refused naming it."""
+
+    def test_empty_steps_list_is_refused(self):
+        """F5: `--steps ""` names no step and is refused, never read as every step."""
+        with self.assertRaises(ugs_driver.DriverError):
+            ugs_driver.parse_steps("")
+        with self.assertRaises(ugs_driver.DriverError):
+            ugs_driver.parse_steps(" , ")
+
+    def test_unknown_steps_are_refused_before_any_write(self):
+        """F5: the steps are parsed at the top of run, before the dry-run return and before loop_state.json."""
+        import argparse
+        args = argparse.Namespace(work="Z:/no-such-work-folder", reports="Z:/no-such-reports", loop=1,
+                                  only=None, steps="bogus", dry_run=True)
+        with self.assertRaises(ugs_driver.DriverError) as ctx:
+            ugs_driver.cmd_run(args, None, None, None, None)
+        self.assertIn("bogus", str(ctx.exception))
+
+    def test_steps_filter_runs_only_named_steps(self):
+        self.assertEqual(ugs_driver.parse_steps("language,figures"), ["language", "figures"])
+        self.assertEqual(ugs_driver.parse_steps(" language "), ["language"])
+        self.assertIsNone(ugs_driver.parse_steps(None))
+
+    def test_unknown_step_is_refused(self):
+        with self.assertRaises(ugs_driver.DriverError) as ctx:
+            ugs_driver.parse_steps("grade,bogus")
+        self.assertIn("bogus", str(ctx.exception))
+
+class TestLoopStateRefusal(unittest.TestCase):
+    """Review round 2 F (Issue 126): the driver refuses a corrupt loop state, it never reads it as loop 1."""
+
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp(prefix="ugs-driver-loop-"))
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.work, ignore_errors=True)
+
+    def test_corrupt_loop_state_is_refused(self):
+        (self.work / "loop_state.json").write_text("{broken", encoding="utf-8")
+        with self.assertRaises(ugs_driver.DriverError):
+            ugs_driver._current_loop(self.work)
+
+    def test_loop_state_that_is_not_an_object_is_refused(self):
+        (self.work / "loop_state.json").write_text("[3]", encoding="utf-8")
+        with self.assertRaises(ugs_driver.DriverError):
+            ugs_driver._current_loop(self.work)
+
+
+FIXTURE_EXPECTED = json.loads((ugs_driver.ASSETS / "vision_probe_fixture.json").read_text(encoding="utf-8"))
+
+
+def _probe_call(words, kind="chart", fail=False):
+    """A fictitious vision answer: the words and kind of the shipped fixture, and a token count with and without
+    the image (the probe measures the image cost as the difference). No model is called (R21)."""
+    def call(prompt, schema, images=None):
+        if fail:
+            raise NotRun("unreachable", "the daemon went away")
+        if images:
+            return ({"figure_kind": kind, "visible_text": words}, {"prompt_tokens": 150})
+        return ({"figure_kind": kind, "visible_text": []}, {"prompt_tokens": 50})
+    return call
+
+
+class TestVisionProbeByRun(unittest.TestCase):
+    """Plan 22 task 3: the run probes the vision role itself when no verdict exists, and never twice (R01 case 4
+    context). A fictitious chart and its words only."""
+
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        shutil.rmtree(self.work, ignore_errors=True)
+
+    def test_run_probes_vision_when_no_verdict_exists(self):
+        status, reason = ugs_driver.run_vision_probe(self.work, call_usage=_probe_call(FIXTURE_EXPECTED["words"]))
+        self.assertEqual((status, reason), ("ran", ""))
+        verdict = json.loads((self.work / "vision_probe.json").read_text(encoding="utf-8"))
+        self.assertIs(verdict["ok"], True)
+
+    def test_run_does_not_probe_twice(self):
+        (self.work / "vision_probe.json").write_text(json.dumps({"ok": True, "image_tokens": 100}), encoding="utf-8")
+
+        def must_not_be_called(prompt, schema, images=None):
+            raise AssertionError("the model was called although a verdict exists")
+        status, _reason = ugs_driver.run_vision_probe(self.work, call_usage=must_not_be_called)
+        self.assertEqual(status, "present")
+
+    def test_a_not_ok_verdict_is_probed_again(self):
+        # Review round 1, decision 5: a verdict that is not ok is no reason to skip the probe.
+        (self.work / "vision_probe.json").write_text(json.dumps({"ok": False}), encoding="utf-8")
+        status, _reason = ugs_driver.run_vision_probe(self.work, call_usage=_probe_call(FIXTURE_EXPECTED["words"]))
+        self.assertEqual(status, "ran")
+        self.assertIs(json.loads((self.work / "vision_probe.json").read_text(encoding="utf-8"))["ok"], True)
+
+    def test_an_exception_of_the_probe_is_reported_by_its_type(self):
+        with patch.object(ugs_driver.vision_probe, "main", side_effect=ValueError("secret detail")):
+            status, reason = ugs_driver.run_vision_probe(self.work, call_usage=None)
+        self.assertEqual((status, reason), ("failed", "ValueError"))
+        self.assertNotIn("secret", reason)
+
+    def test_a_failed_probe_is_recorded_as_not_validated_and_the_run_goes_on(self):
+        # The probe writes ok false when the model does not answer; the figures step then runs with vision not
+        # validated, so the status is "ran" and the verdict says ok false.
+        status, reason = ugs_driver.run_vision_probe(self.work, call_usage=_probe_call([], fail=True))
+        self.assertEqual(status, "failed")
+        self.assertTrue(reason)
+        verdict = json.loads((self.work / "vision_probe.json").read_text(encoding="utf-8"))
+        self.assertIs(verdict["ok"], False)
+
+
+class FlakyModel(FakeModel):
+    """Refuses the first `failures` calls as unreachable, then answers like FakeModel (fictitious, R21)."""
+
+    def __init__(self, failures):
+        super().__init__()
+        self.failures = failures
+
+    def __call__(self, kind, prompt, schema, images=None):
+        if self.failures > 0:
+            self.failures -= 1
+            self.calls.append((kind, prompt))
+            raise NotRun("unreachable", "down for a moment")
+        return super().__call__(kind, prompt, schema, images)
+
+
+class RunContinueTests(unittest.TestCase):
+    """Plan 30, Task 2: run --continue restarts with the arguments of the interrupted run; unreachable is retried."""
+
+    # The helpers of TestUgsDriver, shared without rerunning its tests.
+    drv = TestUgsDriver.drv
+    add_reports = TestUgsDriver.add_reports
+    run_loop = TestUgsDriver.run_loop
+    marker = TestUgsDriver.marker
+    marker_path = TestUgsDriver.marker_path
+
+    def setUp(self):
+        TestUgsDriver.setUp(self)
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+
+    def state_path(self):
+        return self.work / "run_state.json"
+
+    def test_continue_without_run_state_is_refused_naming_the_file(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        code, _, text = self.drv(["run", "--work", str(self.work), "--continue"])
+        self.assertEqual(code, 2)
+        self.assertIn("run_state.json", text)
+
+    def test_continue_with_steps_is_refused(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        TestUgsDriver.run_loop(self)
+        code, _, _ = self.drv(["run", "--work", str(self.work), "--continue", "--steps", "language"])
+        self.assertEqual(code, 2)
+
+    def test_continue_dry_run_prints_the_arguments_and_writes_nothing(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        TestUgsDriver.run_loop(self)
+        marker_before = self.marker_path().read_bytes()
+        code, lines, _ = self.drv(["run", "--work", str(self.work), "--continue", "--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertTrue(any(line.get("dry_run") for line in lines))
+        self.assertEqual(self.marker_path().read_bytes(), marker_before)
+
+    def test_a_run_started_with_only_and_steps_continues_exactly_those(self):
+        self.add_reports([9, 8])
+        TestUgsDriver.prepare(self)
+        TestUgsDriver.run_loop(self, extra=["--only", "R01", "--steps", "language"])
+        self.assertEqual(json.loads(self.state_path().read_text(encoding="utf-8"))["reports"], str(self.reports))
+        code, lines, _ = self.drv(["run", "--work", str(self.work), "--continue"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.marker()["reports"], ["R01"])
+        self.assertEqual({line.get("report_id") for line in lines if "report_id" in line}, {"R01"})
+
+    def test_an_unreachable_model_is_retried_twice_then_the_run_finishes(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        with patch("ugs_driver.time.sleep") as sleep:
+            code, _, _ = self.run_loop(model=FlakyModel(2))
+        self.assertEqual(code, 0)
+        self.assertEqual(self.marker()["unreachable_retries"], 2)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_an_unreachable_model_four_times_stops_after_the_configured_retries(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        with patch("ugs_driver.time.sleep") as sleep:
+            code, _, _ = self.run_loop(model=FlakyModel(4))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.marker()["unreachable_retries"], 3)
+        self.assertEqual(sleep.call_count, 3)
+
+    def test_the_continued_run_records_the_stop_it_continues_from(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        code, _, _ = self.run_loop(model=FakeModel(fail_with=NotRun("unreachable", "down")))
+        self.assertEqual(code, 1)
+        stopped = self.marker()["stopped_at"]
+        code, _, _ = self.drv(["run", "--work", str(self.work), "--continue"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.marker()["continued_from"], stopped)
+
+
+IN_BAND = [9, 8.5, 9.5, 8.8, 9, 8.8, 9.5, 8.5]  # the in-band batch of test_batch_in_band_exits_0_and_writes_batch_json
+
+
+class AutoCommandTests(unittest.TestCase):
+    """The auto subcommand (owner, 2026-11-28): prepare when needed, run every report, batch, summary, one line."""
+
+    drv = TestUgsDriver.drv
+    add_reports = TestUgsDriver.add_reports
+
+    def setUp(self):
+        TestUgsDriver.setUp(self)
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+        gpu = patch("ugs_driver.gpu_busy", return_value=[])
+        self.gpu = gpu.start()
+        self.addCleanup(gpu.stop)
+
+    def auto(self, extra=(), model=None):
+        return self.drv(["auto", "--reports", str(self.reports), "--rubric", str(self.rubric_file),
+                         "--type", "lab_report", *extra], model=model)
+
+    def test_a_new_folder_is_prepared_graded_and_summarised(self):
+        self.add_reports(IN_BAND)
+        code, lines, _ = self.auto()
+        self.assertEqual(code, 0)
+        self.assertTrue((self.work / "rubric.json").is_file())
+        summary = [line for line in lines if line.get("step") == "summary"]
+        self.assertEqual(sorted(line["report_id"] for line in summary), ["R0%d" % n for n in range(1, 9)])
+        self.assertTrue(all("total" in line and "percent" in line for line in summary))
+        text = (self.work / "ledger.md").read_text(encoding="utf-8")
+        self.assertEqual(ugs_driver.ledger_counts(text)["open"], 0)
+        self.assertTrue((self.work / "loop-1" / "batch.json").is_file())
+
+    def test_a_second_auto_makes_no_model_call(self):
+        self.add_reports(IN_BAND)
+        self.auto()
+        self.model.calls.clear()
+        code, _, _ = self.auto()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.model.calls, [])
+
+    def test_a_stopped_run_is_resumed_by_the_same_command(self):
+        self.add_reports(IN_BAND)
+        code, _, _ = self.auto(model=FlakyModel(failures=20))
+        self.assertEqual(code, 1)
+        code, _, _ = self.auto()
+        self.assertEqual(code, 0)
+        text = (self.work / "ledger.md").read_text(encoding="utf-8")
+        self.assertEqual(ugs_driver.ledger_counts(text)["open"], 0)
+
+    def test_a_new_folder_without_type_is_refused_and_nothing_is_written(self):
+        self.add_reports([9])
+        code, _, text = self.drv(["auto", "--reports", str(self.reports), "--rubric", str(self.rubric_file)])
+        self.assertEqual(code, 2)
+        self.assertIn("--type", text)
+        self.assertFalse(self.work.exists())
+
+    def test_a_missing_default_rubric_is_refused_naming_the_file(self):
+        self.add_reports([9])
+        code, _, text = self.drv(["auto", "--reports", str(self.reports), "--type", "lab_report"])
+        self.assertEqual(code, 2)
+        self.assertIn(ugs_driver._load_config()["auto.rubric_name"], text)
+
+    def test_a_busy_gpu_stops_before_anything_and_ignore_gpu_goes_on(self):
+        self.add_reports(IN_BAND)
+        self.gpu.return_value = ["python.exe"]
+        code, _, text = self.auto()
+        self.assertEqual(code, 2)
+        self.assertIn("python.exe", text)
+        self.assertIn("--ignore-gpu", text)
+        self.assertFalse(self.work.exists())
+        code, _, _ = self.auto(extra=["--ignore-gpu"])
+        self.assertEqual(code, 0)
+
+    def test_dry_run_writes_nothing(self):
+        self.add_reports([9])
+        code, lines, _ = self.auto(extra=["--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertTrue(any(line.get("dry_run") for line in lines))
+        self.assertFalse(self.work.exists())
+
+
+@unittest.skipUnless(os.name == "nt", "the launcher is a Windows batch file")
+class LauncherTests(unittest.TestCase):
+    """report-ugs-correction.bat holds no logic: it finds the interpreter and calls auto (R37: never PATH)."""
+
+    BAT = Path(__file__).resolve().parent.parent / "report-ugs-correction.bat"
+
+    def launch(self, *args):
+        import subprocess
+        # A .bat given as argv[0] runs through cmd with its own quoting; "cmd /c" would strip the outer quotes of a
+        # path holding a space (the clone path has one).
+        return subprocess.run([str(self.BAT), *args], capture_output=True, text=True, timeout=120)
+
+    def test_no_argument_prints_the_usage_and_exits_2(self):
+        done = self.launch()
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("Usage", done.stdout)
+
+    def test_a_dry_run_reaches_auto_and_writes_nothing(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(tmp, ignore_errors=True))
+        reports = tmp / "fictitious reports"
+        reports.mkdir()
+        rubric = tmp / "rubric.json"
+        rubric.write_text(json.dumps(RUBRIC), encoding="utf-8")
+        import subprocess
+        root = self.BAT.parents[4]
+        common = subprocess.run(["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                capture_output=True, text=True, timeout=30).stdout.strip()
+        candidates = [root / ".venv-skills" / "Scripts" / "python.exe"]
+        if common:
+            candidates.append(Path(common).parent / ".venv-skills" / "Scripts" / "python.exe")
+        if not any(path.is_file() for path in candidates):  # skipped only when no interpreter exists at all
+            self.skipTest("no .venv-skills in this clone or its main clone")
+        done = self.launch(str(reports), "--rubric", str(rubric), "--type", "lab_report", "--ignore-gpu", "--dry-run")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn('"step": "auto"', done.stdout)
+        self.assertFalse((reports / ugs_driver.WORK_FOLDER_NAME).exists())
+
+    def test_the_launcher_holds_no_logic_and_never_uses_path(self):
+        text = self.BAT.read_text(encoding="utf-8")
+        self.assertIn("ugs_driver.py\" auto", text)
+        self.assertNotIn("where python", text.lower())
+        for word in ("prepare", " batch", "--continue"):
+            self.assertNotIn(word, text.split("rem", 1)[0])
+
+
+class GpuBusyTests(unittest.TestCase):
+    """gpu_busy reads nvidia-smi through an injected runner (R21): other programs only, by file name."""
+
+    class Done:
+        def __init__(self, stdout, returncode=0):
+            self.stdout, self.returncode = stdout, returncode
+
+    def test_the_model_server_is_allowed_and_another_program_is_named(self):
+        output = "11, C:\\Fict\\ollama.exe\n12, C:\\Fict\\llama-server.exe\n13, C:\\Other\\python.exe\n"
+        busy = ugs_driver.gpu_busy(run=lambda *a, **k: self.Done(output),
+                                   allowed=["ollama.exe", "llama-server.exe"], timeout=5)
+        self.assertEqual(busy, ["python.exe"])
+
+    def test_no_program_gives_an_empty_list(self):
+        busy = ugs_driver.gpu_busy(run=lambda *a, **k: self.Done(""), allowed=["ollama.exe"], timeout=5)
+        self.assertEqual(busy, [])
+
+    def test_no_nvidia_smi_or_a_timeout_gives_none(self):
+        def missing(*a, **k):
+            raise FileNotFoundError("nvidia-smi")
+
+        def slow(*a, **k):
+            raise ugs_driver.subprocess.TimeoutExpired("nvidia-smi", 5)
+        self.assertIsNone(ugs_driver.gpu_busy(run=missing, allowed=[], timeout=5))
+        self.assertIsNone(ugs_driver.gpu_busy(run=slow, allowed=[], timeout=5))
+        self.assertIsNone(ugs_driver.gpu_busy(run=lambda *a, **k: self.Done("", 9), allowed=[], timeout=5))
 
 
 if __name__ == "__main__":

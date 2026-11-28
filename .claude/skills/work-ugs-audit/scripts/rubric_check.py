@@ -14,6 +14,8 @@ ID_PATTERN = r"^I[0-9]{2}$"
 class RubricError(ValueError):
     """Raised when a rubric is malformed or its points do not add up."""
 
+    code = "rubric_error"  # the ledger note of a run blocked by it (review round 2, finding 9)
+
 
 def _fmt(value: Decimal) -> str:
     """

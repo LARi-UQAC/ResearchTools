@@ -80,6 +80,8 @@
   "sweep": {
     "model": "qwen3.8:latest",
     "_model_comment": "The coder-role tag actually installed here. Measured 2026-09-05 by 'ollama show': architecture qwen35, 27.3B parameters, Q4_K_M, 262144 native context, plus a 460.73M CLIP projector - about 17 GB of weights against a 6144 MiB card. Replace it here, never in the code.",
+    "accepted_ctx_log_ratios": [1, 2],
+    "_accepted_ctx_log_ratios_comment": "Provenance: measured 2026-11-25 on gemma4 26B (sliding-window plus global attention). The server log counted both caches: requested 262144, log 524288; requested 131072, log 262144, while ollama ps showed the requested window. A log window that is one of these multiples of the request is accepted only when /api/ps reports the request itself (R0, R4, R8).",
     "num_ctx": 8192,
     "_num_ctx_comment": "Held CONSTANT across every rung, because the experiment varies exactly one thing. 8192 rather than the tag's native 262144: the KV cache at full context would not fit, the daemon would clamp it silently, and a clamped window makes two rungs incomparable. Small enough that KV cache is not what is being measured - the weights dominate either way.",
     "threads": [4, 6, 8, 10, 12, 14, 16, 20],

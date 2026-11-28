@@ -5,14 +5,15 @@ Pipeline stage: figure-review, element extraction (plan 2 of issue 122).
 """
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_MARKERS_PATH = Path(__file__).resolve().parent.parent / "assets" / "element_markers.json"
 
 # Prefix lists the markers file must carry (R3: a missing key is a named error).
 PREFIX_KEYS = ("figure_prefixes", "table_prefixes", "note_prefixes")
 # Numeric entries, each {"value": number, "provenance": str} (R4).
-NUMERIC_KEYS = ("max_title_distance_pt", "max_note_distance_pt", "centre_tolerance_ratio")
+NUMERIC_KEYS = ("max_title_distance_pt", "max_note_distance_pt", "centre_tolerance_ratio", "column_min_words",
+                "title_line_gap_ratio", "title_line_min_width_pt")
 
 # Element type to the prefix list it must start with.
 ELEMENT_PREFIX_KEYS = {"figure": "figure_prefixes", "table": "table_prefixes"}
@@ -184,13 +185,109 @@ def _overlaps(block: tuple, rect: "fitz.Rect") -> bool:
     return block[0] < rect.x1 and block[2] > rect.x0 and block[1] < rect.y1 and block[3] > rect.y0
 
 
-def _alignment(block: tuple, rect: "fitz.Rect", tolerance_ratio: float) -> str:
+def lines_alignment(lines: List[tuple], rect: "fitz.Rect", tolerance_ratio: float,
+                    column: Optional[Tuple[float, float]] = None, min_width: float = 0.0) -> Optional[str]:
     """
-    Purpose: Measure how a block is aligned against the element, from the horizontal centres.
+    Purpose: Measure a title from its own lines against the element edges (owner, 2026-11-27, plan 28): a line is
+        centred when its left gap and its right gap to the element differ by no more than the tolerance; the title
+        is "center" when its last line is centred, "left" when its first line starts within the tolerance of the
+        element left edge, and "right" otherwise. A single line spanning the width is "center".
+    Details: The tolerance is tolerance_ratio of the element width, the shipped centre_tolerance_ratio.
+    Inputs:
+        lines: List[tuple] - the title lines as (x0, y0, x1, y1), in any order.
+        rect: fitz.Rect - the element rectangle.
+        tolerance_ratio: float - the share of the element width within which a gap counts as equal.
+    Outputs:
+        Optional[str] - "left", "center" or "right", or None when there is no line.
+    Raises:
+        None.
+    """
+    # Review round 2 follow-up (2026-11-27): a stray sliver narrower than min_width is not a title line.
+    lines = [line for line in lines if line[2] - line[0] >= min_width]
+    if not lines:
+        return None
+    tolerance = tolerance_ratio * rect.width
+    ordered = sorted(lines, key=lambda line: line[1])
+
+    def centred(line: tuple) -> bool:
+        """
+        Purpose: Tell whether one title line is centred on the element.
+        Inputs:
+            line: tuple - (x0, y0, x1, y1) of the line.
+        Outputs:
+            bool - True when the left and right gaps differ by no more than the tolerance.
+        Raises:
+            None.
+        """
+        if abs((line[0] - rect.x0) - (rect.x1 - line[2])) <= tolerance:
+            return True
+        # Review round 1, finding 2: a line centred on the text column is centred, as _alignment decides for a block.
+        if column is not None:
+            column_centre = (column[0] + column[1]) / 2
+            column_tolerance = tolerance_ratio * (column[1] - column[0])
+            return abs((line[0] + line[2]) / 2 - column_centre) <= column_tolerance
+        return False
+
+    if centred(ordered[-1]):
+        return ALIGN_CENTER
+    if ordered[0][0] - rect.x0 <= tolerance:
+        return ALIGN_LEFT
+    return ALIGN_RIGHT
+
+
+def _lines_inside(block: tuple, line_boxes: Optional[List[tuple]], gap_ratio: float = 0.5,
+                  min_width: float = 0.0) -> List[tuple]:
+    """
+    Purpose: Give the page lines that lie inside a text block's rectangle (one pixel of slack for rounding).
+    Inputs:
+        block: tuple - a block tuple of page.get_text("blocks").
+        line_boxes: Optional[List[tuple]] - the (x0, y0, x1, y1) of every text line of the page, or None.
+    Outputs:
+        List[tuple] - the lines inside the block, empty when none were given.
+    Raises:
+        None.
+    """
+    if not line_boxes:
+        return []
+    # Review round 2 follow-up (2026-11-27): a sliver narrower than min_width, or a line with no letter or digit (a
+    # glyph or a border fragment), is not title text and is never a title line.
+    inside = sorted((box for box in line_boxes
+                     if box[0] >= block[0] - 1 and box[2] <= block[2] + 1
+                     and box[1] >= block[1] - 1 and box[3] <= block[3] + 1
+                     and box[2] - box[0] >= min_width
+                     and (len(box) < 5 or not isinstance(box[4], str) or any(ch.isalnum() for ch in box[4]))),
+                    key=lambda box: box[1])
+    # Review round 1, finding 8: the title stops at the caption. Review round 2, finding 5: it stops also at a vertical
+    # gap larger than gap_ratio of the caption line height (a blank line), and at a sentence end (. ! ?). A colon does
+    # not end a title (a caption may wrap on one). A line box without its text keeps every line (no cut).
+    title = []
+    previous = None
+    for box in inside:
+        if previous is not None:
+            line_height = previous[3] - previous[1]
+            if line_height > 0 and box[1] - previous[3] > gap_ratio * line_height:
+                break
+        title.append(box)
+        previous = box
+        text = box[4].rstrip() if len(box) > 4 and isinstance(box[4], str) else ""
+        if text.endswith((".", "!", "?")):
+            break
+    return title
+
+
+def _alignment(block: tuple, rect: "fitz.Rect", tolerance_ratio: float,
+               column: Optional[Tuple[float, float]] = None) -> str:
+    """
+    Purpose: Measure how a block is aligned against the element, from the horizontal centres (plan 24, Task 2).
+    Details: A block centred on the element is "center". A block centred on the page text column (when given) is
+        "center" too, so a figure that sits off the column can still carry a title centred under the text. Otherwise
+        the block is "left" or "right" of the element centre.
     Inputs:
         block: tuple - the block tuple, its x0 and x1 are used.
         rect: fitz.Rect - the element rectangle.
-        tolerance_ratio: float - the share of the element width within which a block counts as centred.
+        tolerance_ratio: float - the share of the element width (of the column width for the column) within which a
+            block counts as centred.
+        column: Optional[Tuple[float, float]] - the left and right edges of the page text column, or None.
     Outputs:
         str - "left", "center" or "right".
     Raises:
@@ -201,6 +298,10 @@ def _alignment(block: tuple, rect: "fitz.Rect", tolerance_ratio: float) -> str:
     tolerance = tolerance_ratio * rect.width
     if abs(block_centre - element_centre) <= tolerance:
         return ALIGN_CENTER
+    if column is not None:
+        column_centre = (column[0] + column[1]) / 2
+        if abs(block_centre - column_centre) <= tolerance_ratio * (column[1] - column[0]):
+            return ALIGN_CENTER
     return ALIGN_LEFT if block_centre < element_centre else ALIGN_RIGHT
 
 
@@ -222,8 +323,76 @@ def _gap_and_position(block: tuple, rect: "fitz.Rect") -> Optional[tuple]:
     return None
 
 
+def _title_placement(block: tuple, rect: "fitz.Rect", overlap_allowed: float) -> Optional[tuple]:
+    """
+    Purpose: Place a title block against an element, allowing a caption that reaches into the element's edge.
+    Details: A drawing's box can run a few points into the caption under it (plan 17, R01 page 17). A block that
+        straddles the bottom or top edge, beside the element horizontally, by no more than overlap_allowed points
+        is still the title on that side. A block lying inside the element is never a title.
+    Inputs:
+        block: tuple - the block tuple.
+        rect: fitz.Rect - the element rectangle.
+        overlap_allowed: float - the largest overlap in points that still counts as beside the edge.
+    Outputs:
+        tuple or None - (gap in points, "below" or "above"), None when the block is not a title of the element.
+    Raises:
+        None.
+    """
+    placement = _gap_and_position(block, rect)
+    if placement is not None:
+        return placement
+    if min(block[2], rect.x1) <= max(block[0], rect.x0):
+        return None
+    if block[1] < rect.y1 < block[3] and rect.y1 - block[1] <= overlap_allowed:
+        return 0.0, POSITION_BELOW
+    if block[1] < rect.y0 < block[3] and block[3] - rect.y0 <= overlap_allowed:
+        return 0.0, POSITION_ABOVE
+    return None
+
+
+def text_column(blocks: List[tuple], markers: Dict[str, Any]) -> Optional[Tuple[float, float]]:
+    """
+    Purpose: Measure the page text column as the median left and right edges of its body blocks (plan 24, Task 2).
+    Details: A body block holds at least column_min_words words; a shorter block is a caption or a label and does not
+        define the column.
+    Inputs:
+        blocks: List[tuple] - the tuples of page.get_text("blocks") for one page.
+        markers: Dict[str, Any] - the data returned by load_markers.
+    Outputs:
+        Optional[Tuple[float, float]] - (left, right) in points, or None when no block is long enough.
+    Raises:
+        MarkerError: If column_min_words is missing.
+    """
+    min_words = _marker_value(markers, "column_min_words")
+    body = [block for block in blocks
+            if len(block) >= 7 and block[6] == TEXT_BLOCK_TYPE and len(_clean(block[4]).split()) >= min_words]
+    if not body:
+        return None
+    lefts = sorted(block[0] for block in body)
+    rights = sorted(block[2] for block in body)
+    middle = len(body) // 2
+    return _median(lefts, middle), _median(rights, middle)
+
+
+def _median(values: List[float], middle: int) -> float:
+    """
+    Purpose: Give the median of a sorted list of edges, the mean of the two middle values for an even count.
+    Inputs:
+        values: List[float] - the sorted values, not empty.
+        middle: int - len(values) // 2.
+    Outputs:
+        float - the median.
+    Raises:
+        None.
+    """
+    if len(values) % 2:
+        return float(values[middle])
+    return (values[middle - 1] + values[middle]) / 2
+
+
 def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
-               markers: Dict[str, Any]) -> Optional[Dict[str, str]]:
+               markers: Dict[str, Any], column: Optional[Tuple[float, float]] = None,
+               line_boxes: Optional[List[tuple]] = None) -> Optional[Dict[str, Any]]:
     """
     Purpose: Find the title of a figure or a table: the nearest text block that opens with a marker
         word of its type, looking below first for a figure and above first for a table.
@@ -245,14 +414,16 @@ def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
     max_distance = _marker_value(markers, "max_title_distance_pt")
     tolerance = _marker_value(markers, "centre_tolerance_ratio")
 
+    overlap_allowed = _marker_value(markers, "title_overlap_pt")
+
     found: Dict[str, List[tuple]] = {POSITION_BELOW: [], POSITION_ABOVE: []}
     for block in blocks:
-        if len(block) < 7 or block[6] != TEXT_BLOCK_TYPE or _overlaps(block, rect):
+        if len(block) < 7 or block[6] != TEXT_BLOCK_TYPE:
             continue
         text = _clean(block[4])
         if not _starts_with_marker(text, prefixes):
             continue
-        placement = _gap_and_position(block, rect)
+        placement = _title_placement(block, rect, overlap_allowed)
         if placement is None or placement[0] > max_distance:
             continue
         found[placement[1]].append((placement[0], block, text))
@@ -261,11 +432,86 @@ def find_title(blocks: List[tuple], rect: "fitz.Rect", element_type: str,
         candidates = sorted(found[direction], key=lambda item: item[0])
         if candidates:
             _, block, text = candidates[0]
+            min_width = _marker_value(markers, "title_line_min_width_pt")
+            lines = _lines_inside(block, line_boxes, _marker_value(markers, "title_line_gap_ratio"), min_width)
+            alignment = lines_alignment(lines, rect, tolerance, column, min_width) if lines else None
             return {
                 "text": text,
                 "position": direction,
-                "alignment": _alignment(block, rect, tolerance),
+                "alignment": alignment or _alignment(block, rect, tolerance, column),
+                "rect": [block[0], block[1], block[2], block[3]],
+                "lines": [[box[0], box[2]] for box in sorted(lines, key=lambda box: box[1])],
             }
+    return None
+
+
+IN_IMAGE_TOP = "in_image_top"
+IN_IMAGE_BOTTOM = "in_image_bottom"
+
+
+def _lines_of(words: List[tuple]) -> List[List[tuple]]:
+    """
+    Purpose: Group OCR word tuples into their lines, in reading order (top to bottom, left to right in a line).
+    Details: A word carries its block and line numbers at indices 5 and 6 (PyMuPDF and the page OCR); a tuple
+        without them is taken as a line of its own.
+    Inputs:
+        words: List[tuple] - the word tuples (x0, y0, x1, y1, text, ...).
+    Outputs:
+        List[List[tuple]] - the lines, each sorted by x0, the lines sorted by their top edge.
+    Raises:
+        None.
+    """
+    groups: Dict[tuple, List[tuple]] = {}
+    for index, word in enumerate(words):
+        key = (word[5], word[6]) if len(word) >= 7 else ("single", index)
+        groups.setdefault(key, []).append(word)
+    lines = [sorted(members, key=lambda item: item[0]) for members in groups.values()]
+    return sorted(lines, key=lambda members: min(item[1] for item in members))
+
+
+def find_in_image_title(words: List[tuple], rect: "fitz.Rect", element_type: str, markers: Dict[str, Any],
+                        band_ratio: float) -> Optional[Dict[str, str]]:
+    """
+    Purpose: Find a title drawn inside a raster element: a line opening with a marker word of its type, lying in the
+        top or the bottom band of the element (plan 24, Task 1).
+    Details: The band is band_ratio of the element height at each edge. A marker word inside the drawing, or a line
+        that does not open with a marker, is not a title. The top band is preferred for a table and the bottom band
+        for a figure, the same order as find_title. The alignment is measured on the line, as for a text title.
+    Inputs:
+        words: List[tuple] - the OCR word tuples of the element region (clipped to the element by the caller).
+        rect: fitz.Rect - the element rectangle.
+        element_type: str - "figure" or "table".
+        markers: Dict[str, Any] - the data returned by load_markers.
+        band_ratio: float - the share of the element height read at each edge, above 0 and at most one half.
+    Outputs:
+        Optional[Dict[str, str]] - {"text", "position" ("in_image_top" or "in_image_bottom"), "alignment"}, or None.
+    Raises:
+        ValueError: If element_type is unknown or band_ratio is outside (0, 0.5].
+        MarkerError: If the markers lack the prefix list or the centring tolerance.
+    """
+    if element_type not in ELEMENT_PREFIX_KEYS:
+        raise ValueError(f"unknown element type '{element_type}' (expected figure or table)")
+    if isinstance(band_ratio, bool) or not isinstance(band_ratio, (int, float)) or not 0 < band_ratio <= 0.5:
+        raise ValueError(f"band_ratio must be a number above 0 and at most 0.5, got {band_ratio!r}")
+    prefixes = _marker_prefixes(markers, ELEMENT_PREFIX_KEYS[element_type])
+    tolerance = _marker_value(markers, "centre_tolerance_ratio")
+    band = band_ratio * rect.height
+    found: Dict[str, List[tuple]] = {IN_IMAGE_TOP: [], IN_IMAGE_BOTTOM: []}
+    for members in _lines_of(words):
+        text = _clean(" ".join(item[4] for item in members))
+        if not _starts_with_marker(text, prefixes):
+            continue
+        box = (min(item[0] for item in members), min(item[1] for item in members),
+               max(item[2] for item in members), max(item[3] for item in members))
+        if box[3] <= rect.y0 + band:
+            found[IN_IMAGE_TOP].append((box, text))
+        elif box[1] >= rect.y1 - band:
+            found[IN_IMAGE_BOTTOM].append((box, text))
+    order = [IN_IMAGE_TOP, IN_IMAGE_BOTTOM] if element_type == "table" else [IN_IMAGE_BOTTOM, IN_IMAGE_TOP]
+    for position in order:
+        if found[position]:
+            box, text = found[position][0]
+            return {"text": text, "position": position, "alignment": _alignment(box, rect, tolerance)}
     return None
 
 

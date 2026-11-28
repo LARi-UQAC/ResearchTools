@@ -10,13 +10,14 @@ logos) and adds the Markdown of each table to the text of its page. The result i
 Exit codes: 0 done, 1 unexpected failure, 2 refusal.
 """
 import argparse
+import dataclasses
 import json
 import os
 import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 FIGURE_REVIEW_DIR = SCRIPTS_DIR.parent.parent / "figure-review"
@@ -26,12 +27,18 @@ for _folder in (SCRIPTS_DIR, FIGURE_REVIEW_DIR / "scripts"):
 
 import fitz  # noqa: E402
 import element_labels  # noqa: E402
+import count_check  # noqa: E402
+import count_loop  # noqa: E402
+import front_matter  # noqa: E402
+import front_pages  # noqa: E402
 import page_roles  # noqa: E402
 import text_quality  # noqa: E402
 import ugs_config  # noqa: E402
-from figure_extract import ELEMENT_SETTING_KEYS, extract_elements  # noqa: E402
+from figure_extract import ELEMENT_SETTING_KEYS, _element_id, extract_elements  # noqa: E402
 from text_quality import OcrUnavailable, TextQualityError  # noqa: E402
-from ugs_tables import enrich_page_text, tables_on_page  # noqa: E402
+import table_image  # noqa: E402
+from ugs_tables import (TABLE_IMAGE_TYPE, TablesError, enrich_page_text, load_min_anchor_chars,  # noqa: E402
+                        load_table_text, tables_on_page)
 from ugs_text import LanguageUndecidable, detect_language, load_hints  # noqa: E402
 
 EXIT_OK = 0
@@ -39,6 +46,9 @@ EXIT_FAILURE = 1
 EXIT_REFUSAL = 2
 IDS_FILE_NAME = "ids.json"
 PAGES_FOLDER = "pages"
+TABLE_STATS_FILE = "table_extraction.json"
+ATTEMPTS_FOLDER = ".attempts"
+UNTITLED_FOLDER = "untitled"
 PAGE_FILE_PREFIX = "p"
 ASSETS_DIR = SCRIPTS_DIR.parent / "assets"
 HINTS_FILE = ASSETS_DIR / "language_hints.json"
@@ -88,6 +98,7 @@ class PrepHooks:
     preflight: Callable[[List[str]], None]
     ocr_page: Callable[[Path, int, str], str]
     find_elements: Callable[[Path, Path, List[int]], List[Dict[str, Any]]]
+    ocr_words: Optional[Callable[[Path, int, Sequence[float], str], List[tuple]]] = None
 
 
 def _is_pdf(file_path: Path) -> bool:
@@ -138,9 +149,11 @@ def _load_context() -> dict:
         hints = load_hints(HINTS_FILE)
         ocr = text_quality.load_ocr_settings()
         markers = page_roles.load_markers(PAGE_ROLES_FILE)
-    except (OSError, ValueError, TextQualityError, page_roles.PageRolesConfigError) as error:
+        front_matter_settings = front_matter.load_entry_settings()
+    except (OSError, ValueError, TextQualityError, page_roles.PageRolesConfigError,
+            front_pages.FrontMatterConfigError) as error:
         raise PrepareError(f"data file unreadable: {error}") from error
-    return {"hints": hints, "ocr": ocr, "markers": markers}
+    return {"hints": hints, "ocr": ocr, "markers": markers, "front_matter": front_matter_settings}
 
 
 def _ocr_languages(language_codes: Dict[str, List[str]]) -> List[str]:
@@ -229,25 +242,694 @@ def _run_ocr_page(pdf_path: Path, page_number: int, tesseract_language: str, dpi
     return "\n".join(chunk.get("text", "") for chunk in chunks)
 
 
-def _run_find_elements(pdf_path: Path, figures_dir: Path, skip_pages: List[int]) -> List[Dict[str, Any]]:
+def _page_words(page: Any, tesseract_language: str, dpi: int) -> List[tuple]:
+    """
+    Purpose: Run the OCR of one page object and return every word it reads (review M3/M4, series C).
+    Details: Takes a page object rather than a path, so a stub page can stand in for PyMuPDF in the tests.
+    Inputs:
+        page (Any): a PyMuPDF page, or an object with the same get_textpage_ocr and get_text methods.
+        tesseract_language (str): the Tesseract code(s), joined with '+' when there are several.
+        dpi (int): the resolution of the OCR, in dots per inch.
+    Outputs:
+        List[tuple]: the word tuples (x0, y0, x1, y1, text, ...) of the whole page.
+    Raises:
+        None: the caller wraps any error of the page object.
+    """
+    textpage = page.get_textpage_ocr(language=tesseract_language, dpi=dpi, full=True)
+    return list(page.get_text("words", textpage=textpage))
+
+
+# Exception type name -> fixed failure category, the only OCR failure detail a PrepareError carries (security).
+OCR_FAILURE_CATEGORIES = {"FileNotFoundError": "tesseract_missing", "IndexError": "page_out_of_range"}
+OCR_FAILURE_DEFAULT = "ocr_failed"
+
+
+def _ocr_page_words(pdf_path: Path, page_number: int, tesseract_language: str, dpi: int) -> List[tuple]:
+    """
+    Purpose: OCR one page of a PDF and return its word tuples, for a table drawn as an image (plan 8, E3).
+    Inputs:
+        pdf_path (Path): the PDF.
+        page_number (int): the 1-based page.
+        tesseract_language (str): the Tesseract code(s), joined with '+' when there are several.
+        dpi (int): the resolution of the OCR, in dots per inch.
+    Outputs:
+        List[tuple]: the word tuples of the page.
+    Raises:
+        PrepareError: when the OCR fails; the message holds a fixed failure category and the exception type name,
+            never the error text, which can carry the PDF path.
+    """
+    try:
+        document = fitz.open(str(pdf_path))
+        try:
+            return _page_words(document[page_number - 1], tesseract_language, dpi)
+        finally:
+            document.close()
+    except Exception as error:
+        # Security correction: the error text can hold the PDF path, so only a fixed category and the type name go out.
+        category = OCR_FAILURE_CATEGORIES.get(type(error).__name__, OCR_FAILURE_DEFAULT)
+        raise PrepareError(f"OCR of a table drawn as an image failed: {category} ({type(error).__name__})") from None
+
+
+def _words_in_rect(words: List[tuple], rect: Sequence[float]) -> List[tuple]:
+    """
+    Purpose: Keep the words whose centre lies inside a region of the page (review M4, series C).
+    Inputs:
+        words (List[tuple]): word tuples (x0, y0, x1, y1, text, ...) of the page.
+        rect (Sequence[float]): the region as x0, y0, x1, y1 in points.
+    Outputs:
+        List[tuple]: the words inside the region, in their original order.
+    Raises:
+        None.
+    """
+    x0, y0, x1, y1 = rect
+    kept = []
+    for word in words:
+        centre_x = (word[0] + word[2]) / 2
+        centre_y = (word[1] + word[3]) / 2
+        if x0 <= centre_x <= x1 and y0 <= centre_y <= y1:
+            kept.append(word)
+    return kept
+
+
+def _make_ocr_words_hook(dpi: int, page_reader: Callable[[Path, int, str, int], List[tuple]] = _ocr_page_words
+                         ) -> Callable[[Path, int, Sequence[float], str], List[tuple]]:
+    """
+    Purpose: Build the word-box OCR hook of one preparation run, which OCRs each page once and caches its words
+        (review M3, series C): two tables drawn as images on one page cost one OCR.
+    Inputs:
+        dpi (int): the resolution of the OCR, in dots per inch.
+        page_reader (Callable): reads every word of one page; the real one is _ocr_page_words.
+    Outputs:
+        Callable: ocr_words(pdf_path, page_number, rect, tesseract_language) -> words inside the rect.
+    Raises:
+        None.
+    """
+    cache: Dict[tuple, List[tuple]] = {}
+
+    def ocr_words(pdf_path: Path, page_number: int, rect: Sequence[float], tesseract_language: str) -> List[tuple]:
+        """
+        Purpose: Return the words of one region, reading the page only the first time it is asked for.
+        Inputs:
+            pdf_path (Path): the PDF.
+            page_number (int): the 1-based page.
+            rect (Sequence[float]): the region as x0, y0, x1, y1 in points.
+            tesseract_language (str): the Tesseract code(s).
+        Outputs:
+            List[tuple]: the words inside the region.
+        Raises:
+            PrepareError: when the page OCR fails.
+        """
+        key = (str(pdf_path), page_number, tesseract_language)
+        if key not in cache:
+            cache[key] = page_reader(pdf_path, page_number, tesseract_language, dpi)
+        return _words_in_rect(cache[key], rect)
+
+    return ocr_words
+
+
+def _read_table_images(elements: List[Dict[str, Any]], pdf_file: Path, hooks: PrepHooks, language: str,
+                       language_codes: Dict[str, List[str]],
+                       settings: table_image.ImageSettings) -> List[Dict[str, Any]]:
+    """
+    Purpose: Give each table drawn as an image its Markdown rows, read by OCR, or mark it unreadable (plan 8, E3).
+    Details: OCR is called only for a table_image record, so a report with none needs no OCR hook. A record with no
+        usable row keeps its type and gets the status table_image_unreadable, never an empty table.
+    Inputs:
+        elements (list[dict]): the element records of the report, changed in place.
+        pdf_file (Path): the PDF of the report.
+        hooks (PrepHooks): the word-box OCR hook.
+        language (str): the report language, to choose the Tesseract codes.
+        language_codes (dict): the language map of the OCR data file.
+        settings (table_image.ImageSettings): the column gap, the minimum rows and the row overlap ratio.
+    Outputs:
+        list[dict]: the same records; each table_image has markdown, or the status table_image_unreadable.
+    Raises:
+        PrepareError: when a table_image exists and no OCR hook was given, or the Tesseract codes are unknown.
+    """
+    images = [record for record in elements if record.get("element_type") == TABLE_IMAGE_TYPE]
+    if not images:
+        return elements
+    if hooks.ocr_words is None:
+        raise PrepareError("a table drawn as an image needs an OCR hook, none was given")
+    try:
+        tesseract_language = "+".join(text_quality.tesseract_codes(language, language_codes))
+    except text_quality.QualityConfigError as error:
+        raise PrepareError(str(error)) from None
+    for record in images:
+        words = hooks.ocr_words(pdf_file, record["page"], record["rect"], tesseract_language)
+        try:
+            record["markdown"] = table_image.words_to_markdown(
+                words, settings.column_gap_pt, settings.min_rows, settings.row_overlap_ratio)
+        except table_image.TableImageUnreadable as error:
+            record["status"] = "table_image_unreadable"
+            record["status_reason"] = str(error)  # counts only, never the words (review M1)
+    return elements
+
+
+def _tables_dropped(report_dir: Path) -> int:
+    """
+    Purpose: Read how many tables the element extraction dropped for having no readable cells (F0).
+    Inputs:
+        report_dir (Path): the report folder, holding TABLE_STATS_FILE once the extraction has run.
+    Outputs:
+        int - the count; 0 when the extraction wrote no statistics file.
+    Raises:
+        PrepareError: the statistics file is unreadable or holds no whole number.
+    """
+    return _read_tables_dropped(report_dir / TABLE_STATS_FILE)
+
+
+def _read_tables_dropped(path: Path) -> int:
+    """
+    Purpose: Read the count of dropped tables from one extraction statistics file.
+    Inputs:
+        path (Path): the statistics file; 0 when it does not exist.
+    Outputs:
+        int - the count of tables dropped.
+    Raises:
+        PrepareError: the statistics file is unreadable or holds no whole number.
+    """
+    if not path.exists():
+        return 0
+    try:
+        value = json.loads(path.read_text(encoding="utf-8")).get("tables_dropped")
+    except (OSError, ValueError, AttributeError) as error:
+        raise PrepareError(f"{TABLE_STATS_FILE} is unreadable") from error
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise PrepareError(f"{TABLE_STATS_FILE} holds no whole number of dropped tables")
+    return value
+
+
+def _run_find_elements(pdf_path: Path, figures_dir: Path, skip_pages: List[int],
+                       overrides: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Purpose: Extract the elements of a PDF with figure-review's extract_elements, the settings and the markers read
         from the figure-review data files.
+    Details: overrides replace some extraction settings for one attempt of the count loop (plan 12 Task 3).
     Inputs:
         pdf_path (Path): the PDF.
         figures_dir (Path): the folder for the figure files.
         skip_pages (list[int]): the 1-based pages to leave out (excluded pages).
+        overrides (dict | None): extraction setting values replacing the file's, for one attempt.
     Outputs:
         list[dict]: the element records in reading order.
     Raises:
         PrepareError: when a settings or marker file is unreadable or incomplete.
     """
     settings = _load_extraction_settings()
+    if overrides:
+        settings.update(overrides)
     try:
         markers = element_labels.load_markers(ELEMENT_MARKERS_FILE)
     except (OSError, ValueError, element_labels.MarkerError) as error:
         raise PrepareError("the element markers file is unreadable or incomplete") from error
-    return extract_elements(pdf_path, figures_dir, settings, markers, skip_pages=skip_pages)
+    stats: Dict[str, Any] = {}
+    records = extract_elements(pdf_path, figures_dir, settings, markers, skip_pages=skip_pages, stats=stats)
+    _write_atomic(figures_dir.parent / TABLE_STATS_FILE, json.dumps(stats, indent=2))
+    return records
+
+
+def _load_loop_settings() -> tuple:
+    """
+    Purpose: Read the count loop settings (count_max_iterations, count_gap_steps_pt) from the extraction block of
+        the figure criteria file (plan 12 E6, R0, R3).
+    Inputs:
+        None.
+    Outputs:
+        tuple - (max_iterations, steps) as count_loop.read_loop_settings returns them.
+    Raises:
+        PrepareError: when the file is unreadable or a loop setting is missing or malformed (the message names it).
+    """
+    try:
+        document = json.loads(FIGURE_CRITERIA_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise PrepareError("the figure criteria file is unreadable") from error
+    block = document.get(EXTRACTION_BLOCK) if isinstance(document, dict) else None
+    if not isinstance(block, dict):
+        raise PrepareError(f"the '{EXTRACTION_BLOCK}' block is missing from the figure criteria")
+    try:
+        return count_loop.read_loop_settings(block)
+    except count_loop.CountLoopError as error:
+        raise PrepareError(str(error)) from None
+
+
+def _memoized_ocr(ocr_words: Optional[Callable]) -> Optional[Callable]:
+    """
+    Purpose: Wrap the word-box OCR hook so that one region of one page is read once per preparation (plan 11).
+    Inputs:
+        ocr_words (Callable | None): the word-box OCR hook, or None when there is none.
+    Outputs:
+        Callable | None - the memoized hook, or None when ocr_words is None.
+    Raises:
+        None: an error of the hook is not cached and propagates to the caller.
+    """
+    if ocr_words is None:
+        return None
+    cache: Dict[tuple, Any] = {}
+
+    def memoized(pdf_path: Path, page_number: int, rect: Sequence[float], tesseract_language: str) -> List[tuple]:
+        """
+        Purpose: Return the words of one region, reading it through the hook only on the first call.
+        Inputs:
+            pdf_path (Path): the PDF.
+            page_number (int): the 1-based page.
+            rect (Sequence[float]): the region rectangle.
+            tesseract_language (str): the Tesseract codes.
+        Outputs:
+            List[tuple] - the word boxes of the region.
+        Raises:
+            Exception: whatever the hook raised the first time, raised again without a second OCR.
+        """
+        key = (str(pdf_path), page_number, tuple(round(float(v), 2) for v in rect), tesseract_language)
+        if key not in cache:
+            try:
+                cache[key] = ("ok", ocr_words(pdf_path, page_number, rect, tesseract_language))
+            except Exception as error:  # review minor: a failed OCR is remembered and raised again, not repeated
+                cache[key] = ("error", error)
+        state, value = cache[key]
+        if state == "error":
+            raise value
+        return value
+
+    return memoized
+
+
+def _classify_untitled_records(records: List[Dict[str, Any]], folder: Path, pdf_file: Path,
+                               ocr_words: Optional[Callable], tesseract_language: Callable[[], str],
+                               image_settings: table_image.ImageSettings, min_rows: int,
+                               min_cols: int) -> List[Dict[str, Any]]:
+    """
+    Purpose: Decide, for each untitled figure record, whether it is a table drawn as an image (plan 11, spec E5).
+    Details: An untitled figure whose OCR rebuilds a grid of min_rows by min_cols becomes a table_image with the
+        id T-u<NN> and its file is renamed to match. When OCR cannot run, the record stays a figure with the
+        status untitled_ocr_unavailable (a fixed category, never the error text).
+    Inputs:
+        records (list[dict]): the element records of one attempt, changed in place.
+        folder (Path): the folder holding the attempt's PNG files.
+        pdf_file (Path): the PDF of the report.
+        ocr_words (Callable | None): the memoized word-box OCR hook.
+        tesseract_language (Callable[[], str]): the Tesseract codes, computed only when OCR is needed.
+        image_settings (table_image.ImageSettings): the column gap, rows and overlap of a table drawn as an image.
+        min_rows (int): the fewest rows of an untitled table.
+        min_cols (int): the fewest columns of an untitled table.
+    Outputs:
+        list[dict]: the same records.
+    Raises:
+        PrepareError: when the Tesseract codes of the language are unknown.
+    """
+    for record in records:
+        if record.get("element_type") != "figure" or record.get("title") is not None:
+            continue
+        element_id = str(record.get("element_id", ""))
+        if not element_id.startswith("F-u"):
+            continue
+        if ocr_words is None:
+            record["status"] = "untitled_ocr_unavailable"
+            continue
+        codes = tesseract_language()  # review minor: a configuration error raises here, not as an OCR status
+        try:
+            words = ocr_words(pdf_file, record["page"], record["rect"], codes)
+        except (PrepareError, TextQualityError, OSError):
+            record["status"] = "untitled_ocr_unavailable"
+            continue
+        kind = table_image.classify_untitled(words, image_settings.column_gap_pt, min_rows, min_cols,
+                                             image_settings.row_overlap_ratio)
+        if kind != table_image.UNTITLED_TABLE:
+            continue
+        # Review I1: a distinct prefix, so the id never collides with a ruled table's T-u<NN>; a target file that
+        # already exists is never overwritten, the record stays a figure with a fixed status.
+        new_id = "T-i" + element_id[len("F-u"):]
+        old_file = folder / record["file"]
+        target = folder / f"{new_id}.png"
+        if target.exists():
+            record["status"] = "untitled_name_taken"
+            continue
+        if old_file.exists():
+            old_file.rename(target)
+        record.update({"element_type": TABLE_IMAGE_TYPE, "element_id": new_id, "file": f"{new_id}.png"})
+        record.pop("figure_id", None)
+        record.pop("drawing_area_ratio", None)
+    return records
+
+
+def _memoized_page_ocr(ocr_words: Optional[Callable]) -> Optional[Callable]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Give a page-level word reader that OCRs each page once (review A): the titled-figure grid rule reads the
+        whole page, then keeps the words of each region.
+
+    Inputs:
+        ocr_words (Callable | None): the word-box OCR hook (pdf, page, rect, codes).
+
+    Outputs:
+        Callable | None: a reader (pdf, page_number, codes) -> list of word tuples, memoized per page and language;
+        None when no OCR hook is given. A failed OCR is remembered and raised again without a second OCR.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    if ocr_words is None:
+        return None
+    cache: Dict[tuple, tuple] = {}
+
+    def page_words(pdf_path: Path, page_number: int, tesseract_language: str) -> List[tuple]:
+        """
+        --------------------------------------------------------------------------
+        Purpose: Return the word boxes of one whole page, reading it through the hook only on the first call.
+        Inputs:
+            pdf_path (Path): the PDF.
+            page_number (int): the 1-based page.
+            tesseract_language (str): the Tesseract codes.
+        Outputs:
+            list[tuple]: the word boxes of the page.
+        Raises:
+            Exception: whatever the hook raised the first time, raised again without a second OCR.
+        --------------------------------------------------------------------------
+        """
+        key = (str(pdf_path), page_number, tesseract_language)
+        if key not in cache:
+            with fitz.open(str(pdf_path)) as doc:
+                rect = doc[page_number - 1].rect
+            try:
+                cache[key] = ("ok", ocr_words(pdf_path, page_number, [rect.x0, rect.y0, rect.x1, rect.y1],
+                                              tesseract_language))
+            except Exception as error:  # noqa: BLE001 - remembered, then raised again on each later read
+                cache[key] = ("error", error)
+        state, value = cache[key]
+        if state == "error":
+            raise value
+        return value
+
+    return page_words
+
+
+def _region_words(pdf_file: Path, record: Dict[str, Any], page_words: Optional[Callable],
+                  tesseract_language: Callable[[], str]) -> Optional[List[tuple]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Give the word boxes of one element region: its own text layer for a vector region, the clipped words of the
+        page OCR for a raster one (review A).
+
+    Inputs:
+        pdf_file (Path): the PDF of the report.
+        record (dict): an element record with page (1-based), rect and source.
+        page_words (Callable | None): the page-level reader, None when OCR is unavailable.
+        tesseract_language (Callable[[], str]): the Tesseract codes, computed only for a raster.
+
+    Outputs:
+        list[tuple] | None: the words, or None when a raster cannot be read.
+
+    Raises:
+        PrepareError: when the Tesseract codes of the language are unknown.
+    --------------------------------------------------------------------------
+    """
+    rect = fitz.Rect(record["rect"])
+    if record.get("source") == "vector":
+        with fitz.open(str(pdf_file)) as doc:
+            return list(doc[record["page"] - 1].get_text("words", clip=rect))
+    if page_words is None:
+        return None
+    codes = tesseract_language()
+    try:
+        words = page_words(pdf_file, record["page"], codes)
+    except (PrepareError, TextQualityError, OSError):
+        return None
+    inside = []
+    for word in words:
+        centre = fitz.Point((word[0] + word[2]) / 2, (word[1] + word[3]) / 2)
+        if rect.contains(centre):
+            inside.append(word)
+    return inside
+
+
+IN_IMAGE_BAND_KEY = "in_image_title_band_ratio"
+IN_IMAGE_SOURCE = "image"
+IN_IMAGE_NAME_TAKEN = "in_image_name_taken"
+
+
+def _load_in_image_band() -> float:
+    """
+    Purpose: Read the share of the element height searched for a title drawn inside it (plan 24, Task 1), from the
+        `extraction` block of the figure criteria file (R0, R3).
+    Inputs:
+        None.
+    Outputs:
+        float - the band ratio, above 0 and at most 0.5.
+    Raises:
+        PrepareError: when the file is unreadable, the key is missing or the value is not a ratio of that range.
+    """
+    try:
+        document = json.loads(FIGURE_CRITERIA_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise PrepareError("the figure criteria file is unreadable") from error
+    block = document.get(EXTRACTION_BLOCK) if isinstance(document, dict) else None
+    entry = block.get(IN_IMAGE_BAND_KEY) if isinstance(block, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise PrepareError(f"extraction setting '{IN_IMAGE_BAND_KEY}' is missing from the figure criteria")
+    value = entry["value"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= 0.5:
+        raise PrepareError(f"extraction setting '{IN_IMAGE_BAND_KEY}' must be a ratio above 0 and at most 0.5")
+    return float(value)
+
+
+def _decide_in_image_titles(records: List[Dict[str, Any]], folder: Path, pdf_file: Path,
+                            page_words: Optional[Callable], tesseract_language: Callable[[], str],
+                            band_ratio: float, markers: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Purpose: Give an untitled raster figure the title written inside its image (plan 24, Task 1). The element then
+        takes its printed number as its id and file name, as a text title gives it.
+    Details: Runs inside the classify step of each count-loop attempt, so the count loop sees the titles found. Only a
+        raster figure with no title is read. A table marker found in the image makes the element a table_image. A
+        text title is never replaced. An id or a file already taken is never overwritten: the record keeps its id and
+        carries the status in_image_name_taken.
+    Inputs:
+        records (list[dict]): the element records of one attempt, changed in place.
+        folder (Path): the attempt folder holding the element files.
+        pdf_file (Path): the PDF of the report.
+        page_words (Callable | None): the page-level reader (pdf, page, codes), None when OCR is unavailable.
+        tesseract_language (Callable[[], str]): the Tesseract codes of the report language.
+        band_ratio (float): the share of the element height read at each edge.
+        markers (dict): the data returned by element_labels.load_markers.
+    Outputs:
+        list[dict]: the same records. A titled record carries title (text, position in_image_top or in_image_bottom,
+        alignment) and title_source "image".
+    Raises:
+        PrepareError: when the Tesseract codes of the language are unknown.
+    """
+    for record in records:
+        if record.get("element_type") != "figure" or record.get("title") is not None:
+            continue
+        if record.get("source") != "raster" or "rect" not in record or "page" not in record:
+            continue
+        words = _region_words(pdf_file, record, page_words, tesseract_language)
+        if not words:
+            continue
+        rect = fitz.Rect(record["rect"])
+        found, new_kind = None, "figure"
+        for element_type in ("figure", "table"):
+            found = element_labels.find_in_image_title(words, rect, element_type, markers, band_ratio)
+            if found is not None:
+                new_kind = "figure" if element_type == "figure" else TABLE_IMAGE_TYPE
+                break
+        if found is None:
+            continue
+        title = {"text": found["text"], "position": found["position"], "alignment": found["alignment"]}
+        taken = {str(other.get("element_id", "")).lower() for other in records if other is not record}
+        new_id = _element_id(new_kind, title, {}, taken)
+        new_file = f"{new_id}.png"
+        old_file = folder / record["file"] if record.get("file") else None
+        target = folder / new_file
+        if target.exists() and (old_file is None or target.resolve() != old_file.resolve()):
+            record["status"] = IN_IMAGE_NAME_TAKEN
+            continue
+        if old_file is not None and old_file.exists():
+            old_file.rename(target)
+        record.update({"element_type": new_kind, "element_id": new_id, "file": new_file, "title": title,
+                       "caption": title["text"], "title_source": IN_IMAGE_SOURCE})
+        if new_kind == "figure":
+            record["figure_id"] = new_id
+        else:
+            record.pop("figure_id", None)  # plan 7: a table_image has no figure_id nor ratio
+            record.pop("drawing_area_ratio", None)
+    return records
+
+
+def _decide_title_kinds(records: List[Dict[str, Any]], pdf_file: Path, page_words: Optional[Callable],
+                        tesseract_language: Callable[[], str], image_settings: table_image.ImageSettings,
+                        strong_rows: int, strong_cols: int, weak_rows: int, weak_cols: int,
+                        min_words: int) -> List[Dict[str, Any]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Flag a titled figure whose region is a grid of text as a table printed under a figure title (review A, the
+        script signal of N7), and record the grid reading of every titled element as title_grid.
+
+    Details:
+        Runs on the FINAL kept records, after the count loop, so the decision never depends on an attempt. An
+        untitled element is never flagged (review B). A flag already set by the ruled-grid branch is kept. Only
+        the grid rule decides here; the vision answer is a candidate and is decided in ugs_figures.
+
+    Inputs:
+        records (list[dict]): the element records of the kept attempt, changed in place.
+        pdf_file (Path): the PDF of the report.
+        page_words (Callable | None): the page-level reader, None when OCR is unavailable.
+        tesseract_language (Callable[[], str]): the Tesseract codes of the report language.
+        image_settings (table_image.ImageSettings): the column gap and row overlap of the grid rule.
+        strong_rows, strong_cols (int): the minimum rows and columns of a grid that is a table (titled minimums).
+        weak_rows, weak_cols (int): the minimums of a weak grid, the untitled ones (review 6).
+        min_words (int): the fewest words of a region; fewer make it unreadable (review 6).
+
+    Outputs:
+        list[dict]: the same records. title_grid_reading is strong, weak, none, or None when unreadable; title_grid is
+        True only for strong. A flagged figure carries title_kind_mismatch and title_kind_source "script".
+
+    Raises:
+        PrepareError: when the Tesseract codes of the language are unknown.
+    --------------------------------------------------------------------------
+    """
+    for record in records:
+        record.setdefault("title_kind_mismatch", None)  # every element record carries both keys (N7)
+        record.setdefault("title_kind_source", None)
+        if record.get("element_type") not in ("figure", "table_image") or record.get("title") is None:
+            continue
+        if "rect" not in record or "page" not in record:  # an element record from the finder always has both
+            continue
+        words = _region_words(pdf_file, record, page_words, tesseract_language)
+        if words is None or len(words) < min_words:  # review 6: too few words to read a grid at all
+            record["title_grid"] = None
+            record["title_grid_reading"] = None
+            continue
+        reading = table_image.grid_reading(words, image_settings, (strong_rows, strong_cols), (weak_rows, weak_cols))
+        record["title_grid_reading"] = reading
+        record["title_grid"] = reading == "strong"
+        if reading == "strong" and record["element_type"] == "figure" and not record.get("title_kind_mismatch"):
+            record["title_kind_mismatch"] = "table_titled_figure"
+            record["title_kind_source"] = "script"
+    return records
+
+
+def _extract_elements_with_loop(pdf_file: Path, report_dir: Path, figures_name: str, skip_pages: List[int],
+                                hooks: PrepHooks, declared_figures: Optional[int],
+                                classify: Optional[Callable[[List[Dict[str, Any]], Path], List[Dict[str, Any]]]] = None,
+                                declared: Optional[Dict[str, Any]] = None) -> tuple:
+    """
+    Purpose: Extract the elements of a report under the count loop (plan 12 Task 3, spec E6). Each attempt renders
+        into a folder of its own inside the report folder; only the kept attempt's files reach the figures folder.
+    Details: The kept attempt is the one whose figure count equals the declared count, else the closest one. The
+        table statistics of the kept attempt are written to the report's statistics file. The attempts folder is
+        removed at the end, so a rejected attempt leaves no file.
+    Inputs:
+        pdf_file (Path): the PDF of the report.
+        report_dir (Path): the report folder.
+        figures_name (str): the figures folder name, from the settings.
+        skip_pages (List[int]): the 1-based pages to leave out.
+        hooks (PrepHooks): the element finder; called with overrides only on a re-run.
+        declared_figures (Optional[int]): the declared figure count, None when the list was not found.
+    Outputs:
+        tuple - (records of the kept attempt, the attempts as count_loop records them).
+    Raises:
+        PrepareError: when the loop settings are missing or a statistics file is unreadable.
+    """
+    max_iterations, steps = _load_loop_settings()
+    scratch = report_dir / ATTEMPTS_FOLDER
+    if scratch.exists():
+        shutil.rmtree(scratch)
+    try:
+        return _run_loop_attempts(pdf_file, report_dir, figures_name, skip_pages, scratch, max_iterations, steps,
+                                  hooks, declared_figures, classify, declared)
+    finally:
+        if scratch.exists():
+            shutil.rmtree(scratch)
+
+
+def _run_loop_attempts(pdf_file: Path, report_dir: Path, figures_name: str, skip_pages: List[int], scratch: Path,
+                       max_iterations: int, steps: list, hooks: PrepHooks, declared_figures: Optional[int],
+                       classify: Optional[Callable], declared: Optional[Dict[str, Any]]) -> tuple:
+    """
+    Purpose: Run the attempts of the count loop and keep the chosen one (plan 12 Task 3). Called by
+        _extract_elements_with_loop, which removes the attempts folder whatever the outcome.
+    Inputs:
+        pdf_file (Path): the PDF of the report.
+        report_dir (Path): the report folder.
+        figures_name (str): the figures folder name.
+        skip_pages (List[int]): the 1-based pages to leave out.
+        scratch (Path): the attempts folder.
+        max_iterations (int): the re-runs allowed.
+        steps (list): the override dicts of the re-runs.
+        hooks (PrepHooks): the element finder.
+        declared_figures (Optional[int]): the declared figure count.
+        classify (Callable | None): the untitled-region rule of each attempt.
+        declared (dict | None): the declared counts, for the judge.
+    Outputs:
+        tuple - (records of the kept attempt, attempts).
+    Raises:
+        PrepareError: when a statistics file is unreadable.
+    """
+    folders: List[Path] = []
+    dropped: List[int] = []
+
+    def extract(overrides: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Purpose: Run one attempt of the extraction into its own folder and read its table statistics.
+        Inputs:
+            overrides (dict): the setting overrides of the attempt; empty on the first attempt.
+        Outputs:
+            list[dict] - the element records of the attempt.
+        Raises:
+            PrepareError: when the attempt's statistics file is unreadable.
+        """
+        folder = scratch / f"attempt{len(folders) + 1:02d}"
+        folders.append(folder)
+        stats_file = scratch / TABLE_STATS_FILE
+        if stats_file.exists():
+            stats_file.unlink()  # a previous attempt's statistics must not be read as this one's
+        kwargs = {"overrides": overrides} if overrides else {}
+        records = hooks.find_elements(pdf_file, folder, skip_pages, **kwargs)
+        if classify is not None:  # plan 11: an untitled region may become a table_image, its file renamed
+            records = classify(records, folder)
+        dropped.append(_read_tables_dropped(stats_file))
+        return records
+
+    def judge(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Purpose: Judge one attempt's figures against the declared list: count, missing and extra printed numbers.
+        Inputs:
+            records (list[dict]): the records of the attempt.
+        Outputs:
+            dict - extracted, missing and extra, as the count loop reads them.
+        Raises:
+            None.
+        """
+        counted = count_check.compare_counts(declared or {}, records)
+        return {"extracted": counted["extracted_figures"], "missing": counted["missing_figure_numbers"],
+                "extra": counted["extra_figure_numbers"]}
+
+    result = count_loop.run_count_loop(extract, declared_figures, steps, max_iterations,
+                                       judge=judge if declared is not None else None)
+    index = result["kept_attempt"]
+    kept = folders[index]
+    figures_dir = report_dir / figures_name
+    if figures_dir.exists():
+        shutil.rmtree(figures_dir)
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    if kept.exists():
+        for entry in kept.iterdir():
+            shutil.move(str(entry), str(figures_dir / entry.name))
+    # Owner N2: an element with no title is kept apart, in figures/untitled, so the figures folder holds only the
+    # titled numbers; the record names its file relative to the figures folder.
+    for record in result["records"]:
+        if record.get("title") is None and record.get("file"):
+            source = figures_dir / record["file"]
+            if source.exists():
+                untitled_dir = figures_dir / UNTITLED_FOLDER
+                untitled_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(source), str(untitled_dir / source.name))
+            record["file"] = f"{UNTITLED_FOLDER}/{source.name}"
+    _write_atomic(report_dir / TABLE_STATS_FILE, json.dumps({"tables_dropped": dropped[index]}))
+    return result["records"], result["attempts"]
 
 
 def _default_hooks(dpi: int) -> PrepHooks:
@@ -264,6 +946,7 @@ def _default_hooks(dpi: int) -> PrepHooks:
         preflight=_run_preflight,
         ocr_page=lambda pdf_path, page_number, language: _run_ocr_page(pdf_path, page_number, language, dpi),
         find_elements=_run_find_elements,
+        ocr_words=_make_ocr_words_hook(dpi),
     )
 
 
@@ -395,6 +1078,20 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     except LanguageUndecidable as error:
         return {"report_id": report_id, "pages": len(texts), "empty_pages": empty_pages,
                 "refused": f"{report_id}: {error}"}
+    # D4: the configured anchor length is read before any file of this report is written, so a missing key
+    # refuses the preparation with nothing on disk for it, instead of failing midway through the pages.
+    try:
+        minimum_anchor = load_min_anchor_chars()
+        table_texts = load_table_text(language)
+    except TablesError as error:
+        raise PrepareError(str(error)) from None
+    try:
+        image_settings = table_image.load_image_settings()
+        untitled_rows, untitled_cols = table_image.load_untitled_settings()
+        titled_rows, titled_cols = table_image.load_titled_settings()
+        titled_words = table_image.load_titled_min_words()
+    except table_image.TableImageError as error:
+        raise PrepareError(str(error)) from None
 
     repair_settings = {"min_replacement_chars": settings["text.min_replacement_chars"],
                        "min_words_per_page": settings["text.min_words_per_page"],
@@ -404,12 +1101,65 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     small_images = page_roles.small_image_counts(pdf_file, settings["pages.small_image_max_area_ratio"])
     excluded = page_roles.excluded_pages(new_texts, small_images, context["markers"])
     reasons = {entry["page"]: entry["reason"] for entry in excluded}
+    try:
+        front_roles = front_pages.find_front_roles(new_texts, language, context["front_matter"], small_images)
+        declared = front_matter.declared_counts(new_texts, front_roles, language, context["front_matter"])
+    except front_pages.FrontMatterConfigError as error:
+        raise PrepareError(str(error)) from None
 
     excluded_dir = report_dir / settings["text.excluded_folder"]
     if excluded_dir.exists():
         shutil.rmtree(excluded_dir)
-    skip_pages = sorted(reasons)
-    elements = hooks.find_elements(pdf_file, report_dir / settings["reports.figures_folder"], skip_pages)
+    # N3 (plan 16): a front page (cover, version, contents, lists) is never sent to the element finder as content.
+    front_skip = [page for page, mode in front_pages.page_modes(front_roles, context["front_matter"]).items()
+                  if mode != front_pages.FULL_MODE]
+    skip_pages = sorted(set(reasons) | set(front_skip))
+    ocr_words = _memoized_ocr(hooks.ocr_words)
+    memo_hooks = dataclasses.replace(hooks, ocr_words=ocr_words)
+
+    def tesseract_language() -> str:
+        """
+        Purpose: Give the Tesseract codes of the report language, as the table reading does.
+        Inputs:
+            None.
+        Outputs:
+            str - the codes joined with '+'.
+        Raises:
+            PrepareError: when the language has no Tesseract codes.
+        """
+        try:
+            return "+".join(text_quality.tesseract_codes(language, context["ocr"]["language_codes"]))
+        except text_quality.QualityConfigError as error:
+            raise PrepareError(str(error)) from None
+
+    page_ocr = _memoized_page_ocr(hooks.ocr_words)  # plan 24: one OCR per page, shared by every attempt
+    markers = element_labels.load_markers(ELEMENT_MARKERS_FILE)
+    in_image_band = _load_in_image_band()
+
+    def classify(records: List[Dict[str, Any]], folder: Path) -> List[Dict[str, Any]]:
+        """
+        Purpose: Apply the in-image title rule, then the untitled-region rule, to one attempt's records.
+        Inputs:
+            records (list[dict]): the records of the attempt.
+            folder (Path): the attempt folder.
+        Outputs:
+            list[dict] - the records, as _classify_untitled_records returns them.
+        Raises:
+            PrepareError: when the Tesseract codes are unknown.
+        """
+        records = _decide_in_image_titles(records, folder, pdf_file, page_ocr, tesseract_language, in_image_band,
+                                          markers)
+        return _classify_untitled_records(records, folder, pdf_file, ocr_words, tesseract_language,
+                                          image_settings, untitled_rows, untitled_cols)
+
+    elements, figure_attempts = _extract_elements_with_loop(pdf_file, report_dir, settings["reports.figures_folder"],
+                                                            skip_pages, memo_hooks, declared["declared_figures"],
+                                                            classify=classify, declared=declared)
+    elements = _decide_title_kinds(elements, pdf_file, _memoized_page_ocr(hooks.ocr_words), tesseract_language,
+                                   image_settings, titled_rows, titled_cols, untitled_rows, untitled_cols,
+                                   titled_words)  # review A: final records only; D and 6: the keys
+    elements = _read_table_images(elements, pdf_file, memo_hooks, language, context["ocr"]["language_codes"],
+                                  image_settings)
     _write_atomic(report_dir / settings["reports.elements_file_name"],
                   json.dumps(elements, indent=2, ensure_ascii=False))
 
@@ -420,11 +1170,14 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
             _write_atomic(page_path, marker)
             _write_atomic(excluded_dir / page_path.name, texts[number - 1])
         else:
-            _write_atomic(page_path, enrich_page_text(text, tables_on_page(elements, number)))
+            _write_atomic(page_path, enrich_page_text(text, tables_on_page(elements, number), language,
+                                                      minimum_anchor, table_texts))
 
     unreadable_pages = [entry["page"] for entry in quality if entry["empty"]]
     meta = {"language": language, "excluded_pages": excluded, "text_quality": quality,
-            "unreadable_pages": unreadable_pages}
+            "tables_dropped": _tables_dropped(report_dir),
+            "unreadable_pages": unreadable_pages, "front_roles": front_roles, **declared,
+            "figure_attempts": figure_attempts, **count_check.compare_counts(declared, elements)}
     _write_atomic(report_dir / settings["reports.meta_file_name"], json.dumps(meta, indent=2, ensure_ascii=False))
     return {"report_id": report_id, "pages": len(texts), "empty_pages": empty_pages}
 

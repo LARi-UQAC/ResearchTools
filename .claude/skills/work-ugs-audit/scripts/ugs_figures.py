@@ -133,12 +133,46 @@ def _effective_dpi(figure: Dict[str, Any]) -> Optional[float]:
     return round(size[0] / ((rect[2] - rect[0]) / POINTS_PER_INCH), 1)
 
 
+TABLE_IMAGE_TYPE = "table_image"
+
+
+def title_kind_from_answer(element_type: str, answer_kind: str) -> Optional[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether the vision kind of an element contradicts the kind its printed title announces (N7, plan 20).
+
+    Details:
+        A figure the model calls a table has a table printed under a figure title. A table_image (a table title over a
+        picture) the model calls anything but a table or other has a figure printed under a table title. The
+        mismatch is a fact about the title, so the caller keeps a script verdict over this one.
+
+    Inputs:
+        element_type (str): the element type of the record: figure or table_image
+        answer_kind (str): the kind named by the vision model, one of the figure schema kinds
+
+    Outputs:
+        mismatch (str | None): table_titled_figure, figure_titled_table, or None when the title fits.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    if element_type == "figure" and answer_kind == "table":
+        return "table_titled_figure"
+    if element_type == "table_image" and answer_kind not in ("table", "other"):
+        return "figure_titled_table"
+    return None
+
+
 def _valid_figure_answer(answer: Any, sent_ids: List[str]) -> bool:
     """True when the answer has a kind and only criteria that were sent, each with a known verdict."""
     if not isinstance(answer, dict) or not isinstance(answer.get("kind"), str):
         return False
     items = answer.get("criteria")
     if not isinstance(items, list):
+        return False
+    if "borrowed" in answer and not isinstance(answer["borrowed"], bool):
         return False
     return all(isinstance(i, dict) and i.get("id") in sent_ids and i.get("verdict") in VERDICTS for i in items)
 
@@ -179,8 +213,36 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
                   report_dir: Path, call: Callable, ctx: StepContext, language: str, settings: Dict[str, int],
                   printed: Optional[str]) -> None:
     """
-    Fit the image, ask the model once about the figure and write the verdicts into the record.
-    The citing paragraph is searched with the printed number only; without one it is left empty.
+    --------------------------------------------------------------------------
+    Purpose:
+        Fit the image, ask the model once about the figure and write the verdicts, the kind and the title keys into the
+        record.
+
+    Details:
+        The kind is the model's, except a script-flagged table_titled_figure, judged as "table" (review H). Title keys:
+        a titled figure whose answer is a table gets title_kind_candidate "table_titled_figure" and no flag (review B);
+        a table_image whose answer is not table or other, with no grid reading (title_grid not True), gets
+        title_kind_mismatch "figure_titled_table" with title_kind_source "vision" (review C). A script verdict is
+        never overwritten. The citing paragraph is searched with the printed number only; without one it is empty.
+
+    Inputs:
+        record (dict): the figure record, changed in place (kind, criteria, model_image, title keys)
+        fig (dict): the checked figure, with its file and its script criteria
+        criteria (list[dict]): the criteria to send; empty for a table_image (kind only)
+        pages (list[str]): the page texts of the report, for the citing paragraph
+        report_dir (Path): the report folder (figures and model_images)
+        call (Callable): the model call of the figure role
+        ctx (StepContext): the prompts, schemas and retry counts
+        language (str): the report language, for the criteria comments
+        settings (dict): the extraction settings (max_long_edge and the JPEG settings)
+        printed (str | None): the printed number of the element, None when untitled
+
+    Outputs:
+        None. The record is changed in place.
+
+    Raises:
+        NotRun: a model call that is not retryable propagates.
+    --------------------------------------------------------------------------
     """
     figure_id = record["figure_id"]
     fitted = fit_for_model(report_dir / "figures" / fig["file"], report_dir / "model_images", settings["max_long_edge"],
@@ -208,6 +270,22 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
             record["criteria"][cid] = {"verdict": "not_run", "reason": "invalid_answer"}
         return
     record["kind"] = answer["kind"]
+    if record.get("title_kind_mismatch") == "table_titled_figure":  # H: a script-flagged table is judged as a table
+        record["kind"] = "table"
+    if record.get("title_kind_source") != "script":  # N7: a script verdict on the title is never overwritten
+        mismatch = title_kind_from_answer(record.get("element_type") or "figure", answer["kind"])
+        # Review 6 (F7 rule): the vision answer flags unless the region is clearly below the weak grid ("none"), and
+        # an unreadable region ("None") or a weak one lets vision decide. A strong grid is a script flag already.
+        reading = record.get("title_grid_reading")
+        if record.get("element_type") == TABLE_IMAGE_TYPE:  # C: flagged by vision unless a grid or a veto says no
+            if mismatch and record.get("titled") and record.get("title_grid") is not True and reading != "none":
+                record["title_kind_mismatch"] = mismatch
+                record["title_kind_source"] = "vision"
+        elif mismatch and record.get("titled") and reading != "none":
+            record["title_kind_mismatch"] = mismatch
+            record["title_kind_source"] = "vision"
+        elif mismatch and record.get("titled"):  # vetoed: the answer stays a candidate, unflagged
+            record["title_kind_candidate"] = mismatch
     answered = {item["id"]: item for item in answer["criteria"]}
     for crit in sent:
         cid, item = crit["id"], answered.get(crit["id"])
@@ -221,6 +299,40 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
             if item["verdict"] == "fail":
                 result["comment"] = f"{failure_comment(cid, criteria, language)} {reason}"
             record["criteria"][cid] = result
+    _apply_source_rule(record, answer, criteria, language)
+
+
+def _apply_source_rule(record: Dict[str, Any], answer: Dict[str, Any], criteria: List[Dict[str, Any]],
+                       language: str) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Fail source_cited for a figure the model reads as borrowed (borrowed true) whose title cites no source. A
+        cited source passes whatever the model says, and an own figure stays not applicable (plan 21, R01 case 2).
+
+    Inputs:
+        record (dict): the figure record, changed in place (criteria).
+        answer (dict): the accepted model answer for this figure; its borrowed key may be absent (unknown).
+        criteria (list[dict]): the criteria of the run; the rule does nothing when source_cited is not among them.
+        language (str): the report language, for the failure comment.
+
+    Outputs:
+        None. The record is changed in place when the figure is borrowed without a source.
+
+    Raises:
+        ValueError: when the source_cited criterion has no reason_fr in the criteria file (R3).
+    --------------------------------------------------------------------------
+    """
+    crit = next((c for c in criteria if c["id"] == "source_cited"), None)
+    if crit is None or answer.get("borrowed") is not True:
+        return
+    if record["criteria"].get("source_cited", {}).get("verdict") == "pass":
+        return
+    if "reason_fr" not in crit:
+        raise ValueError("criterion 'source_cited' has no reason_fr in the criteria file")
+    reason = crit["reason_fr"]
+    record["criteria"]["source_cited"] = {"verdict": "fail", "reason": reason,
+                                          "comment": f"{failure_comment('source_cited', criteria, language)} {reason}"}
 
 
 def _judge_style(figures: List[Dict[str, Any]], criteria: List[Dict[str, Any]], report_dir: Path, call: Callable,
@@ -290,7 +402,9 @@ def figures_report(
             records are judged and no extraction runs (None keeps the extraction)
 
     Outputs:
-        report (dict): `report_id`, `figures` (a record per figure) and `report_criteria`.
+        report (dict): `report_id`, `figures` (a record per figure and per table image, with element_type, title_grid,
+            titled, title_kind_mismatch, title_kind_source and title_kind_candidate), `report_criteria` and
+            `vision_validated` (whether the vision role was validated for this run).
 
     Raises:
         NotRun: a model kind that is not retryable.
@@ -327,6 +441,13 @@ def figures_report(
             "printed_number": printed,
             "cited_in_text": bool(citing_text(pages, printed)) if printed else NOT_APPLICABLE,
             "criteria": dict(fig["criteria"]), "model_image": None,
+            "element_type": elements_by_id.get(figure_id, {}).get("element_type"),
+            "title_kind_mismatch": elements_by_id.get(figure_id, {}).get("title_kind_mismatch"),
+            "title_kind_source": elements_by_id.get(figure_id, {}).get("title_kind_source"),
+            "title_grid": elements_by_id.get(figure_id, {}).get("title_grid"),
+            "title_grid_reading": elements_by_id.get(figure_id, {}).get("title_grid_reading"),
+            "titled": elements_by_id.get(figure_id, {}).get("title") is not None,
+            "title_kind_candidate": None,
         }
         if vision_ok:
             _judge_figure(record, fig, criteria, pages, report_dir, call, ctx, language, settings, printed)
@@ -338,7 +459,35 @@ def figures_report(
         if on_figure:
             on_figure(figure_id, record)
 
+    # C (review): a table drawn as an image goes to the vision role for its kind only; it has no criteria to judge.
+    for element in elements or []:
+        if element.get("element_type") != TABLE_IMAGE_TYPE:
+            continue
+        element_id = element["element_id"]
+        if element_id in existing:
+            figures.append(existing[element_id])
+            if on_figure:
+                on_figure(element_id, existing[element_id])
+            continue
+        record = {
+            "figure_id": element_id, "page": element["page"], "rect": element["rect"], "file": element["file"],
+            "element_type": TABLE_IMAGE_TYPE, "kind": DEFAULT_KIND, "drawing_area_ratio": None,
+            "effective_dpi": None, "caption": (element.get("title") or {}).get("text"), "printed_number": None,
+            "cited_in_text": NOT_APPLICABLE, "criteria": {}, "model_image": None,
+            "title_kind_mismatch": None, "title_kind_source": None, "title_kind_candidate": None,
+            "title_grid": element.get("title_grid"), "titled": element.get("title") is not None,
+            "title_grid_reading": element.get("title_grid_reading"),
+        }
+        if vision_ok:
+            _judge_figure(record, {"file": element["file"], "criteria": {}}, [], pages, report_dir, call, ctx,
+                          language, settings, None)
+        figures.append(record)
+        if on_figure:
+            on_figure(element_id, record)
+
     report_criteria = {}
     if vision_ok:
-        report_criteria = _judge_style(figures, criteria, report_dir, call, ctx, language, settings["max_long_edge"])
-    return {"report_id": report_id, "figures": figures, "report_criteria": report_criteria}
+        figure_only = [f for f in figures if f.get("element_type") != TABLE_IMAGE_TYPE]
+        report_criteria = _judge_style(figure_only, criteria, report_dir, call, ctx, language, settings["max_long_edge"])
+    return {"report_id": report_id, "figures": figures, "report_criteria": report_criteria,
+            "vision_validated": vision_ok}

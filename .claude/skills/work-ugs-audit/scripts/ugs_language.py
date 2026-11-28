@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -12,8 +13,99 @@ if str(_LOOP_ENGINEER_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LOOP_ENGINEER_SCRIPTS))
 
 from ugs_bridge import NotRun
-from ugs_text import StepContext, fill
+from ugs_text import LanguageUndecidable, StepContext, detect_language, fill, load_hints
 from pdf_annotate import normalize
+import ugs_config
+
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+ACCEPTED_SPELLINGS_PATH = ASSETS_DIR / "accepted_spellings.json"
+LANGUAGE_HINTS_PATH = ASSETS_DIR / "language_hints.json"
+COMMENT_MIN_WORDS_KEY = "language.comment_min_words"
+# The categories table is owned by language-review (R1.x and codes); the spelling code is read from it, never written here.
+CATEGORIES_PATH = Path(__file__).resolve().parent.parent.parent / "language-review" / "assets" / "language_categories.json"
+SPELLING_LABEL = "Spelling"
+
+
+class LanguageDataError(ValueError):
+    """A language data file is missing, unreadable or lacks the entry asked for; the message names it."""
+
+
+NONE_PAGE_MODE = "none"
+SPELLING_ONLY_PAGE_MODE = "spelling_only"
+FULL_PAGE_MODE = "full"
+PAGE_MODES = (NONE_PAGE_MODE, SPELLING_ONLY_PAGE_MODE, FULL_PAGE_MODE)
+
+
+def load_accepted(language: str, path: Path = ACCEPTED_SPELLINGS_PATH) -> Dict[str, set]:
+    """
+    Purpose: Read the spellings both forms of which are correct for one language (N1), normalised as the quote check
+        normalises them, so a finding on any member of a pair is recognised.
+    Inputs:
+        language (str): the report language, a key of the file (fr, en).
+        path (Path): the accepted spellings file.
+    Outputs:
+        Dict[str, set]: each normalised spelling mapped to the normalised spellings it pairs with (N1).
+    Raises:
+        LanguageDataError: the file is unreadable, or the language has no entry or no value list (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LanguageDataError(f"cannot read {Path(path).name}: {exc}") from exc
+    entry = raw.get(language) if isinstance(raw, dict) else None
+    value = entry.get("value") if isinstance(entry, dict) else None
+    if not isinstance(value, list):
+        raise LanguageDataError(f"language '{language}' has no value list in {Path(path).name}")
+    partners: Dict[str, set] = {}
+    for pair in value:
+        if not isinstance(pair, list) or not all(isinstance(word, str) for word in pair):
+            raise LanguageDataError(f"each pair of '{language}' must be a list of strings in {Path(path).name}")
+        forms = [normalize(word).casefold() for word in pair]
+        for form in forms:
+            partners.setdefault(form, set()).update(other for other in forms if other != form)
+    return partners
+
+
+def _variant_only(quote: str, proposal: str, partners: Dict[str, set]) -> bool:
+    """
+    Purpose: Tell whether the proposal differs from the quote only by swapping accepted variants for each other (N1).
+    Inputs:
+        quote: str - the quote, normalised and case-folded.
+        proposal: str - the proposed text, normalised and case-folded.
+        partners: Dict[str, set] - each accepted spelling mapped to its partners (load_accepted).
+    Outputs:
+        bool - True when both have the same words and each differing word pairs with its counterpart.
+    Raises:
+        None.
+    """
+    quote_words = re.findall(r"\w+", quote)
+    proposal_words = re.findall(r"\w+", proposal)
+    if not quote_words or len(quote_words) != len(proposal_words):
+        return False
+    for q_word, p_word in zip(quote_words, proposal_words):
+        if q_word != p_word and p_word not in partners.get(q_word, set()):
+            return False
+    return True
+
+
+def spelling_code(path: Path = CATEGORIES_PATH) -> str:
+    """
+    Purpose: Give the code of the spelling category from the shared categories table (its English label is Spelling).
+    Inputs:
+        path (Path): the language categories file.
+    Outputs:
+        str: the code, for example SP.
+    Raises:
+        LanguageDataError: the file is unreadable or holds no entry labelled Spelling (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LanguageDataError(f"cannot read {Path(path).name}: {exc}") from exc
+    for entry in raw.get("entries", []):
+        if entry.get("label_en") == SPELLING_LABEL:
+            return entry["code"]
+    raise LanguageDataError(f"no entry labelled '{SPELLING_LABEL}' in {Path(path).name}")
 
 
 def load_table(path: Path) -> List[Dict]:
@@ -102,6 +194,9 @@ def _result(records: Dict[int, dict]) -> Dict[str, Any]:
     return {
         "annotations": annotations,
         "rejected": sum(records[number]["rejected"] for number in records),
+        "rejected_correct": sum(records[number].get("rejected_correct", 0) for number in records),
+        "dropped_scope": sum(records[number].get("dropped_scope", 0) for number in records),
+        "comment_language_replaced": sum(records[number].get("comment_language_replaced", 0) for number in records),
         "not_run": [number for number in sorted(records) if records[number]["not_run"]],
     }
 
@@ -113,7 +208,8 @@ def language_report(
     entries: List[Dict],
     language: str,
     existing: Optional[Dict[int, dict]] = None,
-    on_page: Optional[Callable[[int, Dict[str, Any]], None]] = None
+    on_page: Optional[Callable[[int, Dict[str, Any]], None]] = None,
+    page_modes: Optional[Dict[int, str]] = None
 ) -> Dict:
     """
     --------------------------------------------------------------------------
@@ -135,6 +231,9 @@ def language_report(
         existing (Dict[int, dict] | None): page number to the saved record of a page already answered; None for none
         on_page (Callable[[int, dict], None] | None): called with the page number and the partial result after
             each page sent to the model; None changes nothing
+        page_modes (Dict[int, str] | None): correction mode of a front page (N3): `none` pages are not sent,
+            `spelling_only` pages keep only the spelling findings, any other page or a page absent from the map
+            is judged in full; None changes nothing. An unknown mode is refused before any call.
 
     Outputs:
         Dict - With 'annotations', 'rejected', 'not_run'.
@@ -144,9 +243,19 @@ def language_report(
     --------------------------------------------------------------------------
     """
     records: Dict[int, dict] = dict(existing or {})
+    modes = dict(page_modes or {})
+    for page_number, mode in modes.items():
+        if mode not in PAGE_MODES:
+            raise ValueError(f"unknown language mode '{mode}' for page {page_number}")
     valid_codes = {e["code"] for e in entries}
+    spelling_value = spelling_code()
+    accepted = load_accepted(language)
     
     table_txt = table_text(entries, language)
+    # Plan 22 task 1: a comment in the other language takes the label of its code in the report language
+    label_map = {e["code"]: e.get(f"label_{language}") or e.get("label_en", "") for e in entries}
+    hints = load_hints(LANGUAGE_HINTS_PATH)
+    min_words = int(ugs_config.load(ugs_config.default_path())[COMMENT_MIN_WORDS_KEY])
     
     for i, page_text in enumerate(pages):
         page_num = i + 1
@@ -154,6 +263,9 @@ def language_report(
         if page_num in records:
             continue
         if not page_text.strip():
+            continue
+        mode = modes.get(page_num, FULL_PAGE_MODE)
+        if mode == NONE_PAGE_MODE:
             continue
             
         prompt = fill(
@@ -181,14 +293,54 @@ def language_report(
         if answer is None:
             records[page_num] = {"annotations": [], "rejected": 0, "not_run": True}
         else:
-            records[page_num] = _answer_record(answer, page_num, page_text, valid_codes)
+            records[page_num] = _answer_record(answer, page_num, page_text, valid_codes, spelling_value, accepted,
+                                               report_language=language, labels=label_map, hints=hints,
+                                               min_words=min_words)
+            if mode == SPELLING_ONLY_PAGE_MODE:
+                kept = [a for a in records[page_num]["annotations"] if a["code"] == spelling_value]
+                # M1: the findings of another code are dropped by the page's scope, and the count is kept.
+                records[page_num]["dropped_scope"] = len(records[page_num]["annotations"]) - len(kept)
+                records[page_num]["annotations"] = kept
         if on_page is not None:
             on_page(page_num, _partial(records))
         
     return _result(records)
 
 
-def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set) -> dict:
+def _comment_in_report_language(comment: str, report_language: str, hints: Dict[str, List[str]],
+                                min_words: int) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether a finding's comment is kept as written: it is kept when it is too short to judge, when the
+        detector cannot decide its language, or when it is in the report language (plan 22, R01 case 3).
+
+    Inputs:
+        comment (str): the comment as the model wrote it (proposal and reason).
+        report_language (str): the language of the report, 'fr' or 'en'.
+        hints (dict): the detector's common-word lists, from language_hints.json.
+        min_words (int): comments with fewer words are kept, never judged on a guess.
+
+    Outputs:
+        bool: True when the comment is kept.
+
+    Raises:
+        None. A comment the detector cannot decide is kept (LanguageUndecidable is caught here).
+    --------------------------------------------------------------------------
+    """
+    if len(re.findall(r"\w+", comment)) < min_words:
+        return True
+    try:
+        detected = detect_language([comment], hints)
+    except LanguageUndecidable:
+        return True
+    return detected == report_language
+
+
+def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set,
+                   spelling_code_value: Optional[str] = None, accepted: Optional[set] = None,
+                   report_language: Optional[str] = None, labels: Optional[Dict[str, str]] = None,
+                   hints: Optional[Dict[str, List[str]]] = None, min_words: int = 0) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -210,7 +362,16 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
     """
     findings = answer.get("findings", [])
     rejected = 0
+    rejected_correct = 0
+    replaced = 0
     seen = set()
+    # N1: a spelling finding is refused only when it is a variant of the same word (see _variant_only). A dict is
+    # load_accepted's output; a plain set is read as one reform pair per two members.
+    if isinstance(accepted, dict):
+        partners = accepted
+    else:
+        members = [normalize(word).casefold() for word in (accepted or ())]
+        partners = {word: set(members) - {word} for word in members}
     page_annotations = []
     
     for f in findings:
@@ -229,6 +390,14 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
         if norm_quote not in norm_page:
             rejected += 1
             continue
+
+        # N1: a spelling finding is refused when its quote is an accepted spelling (either form of a 1990 reform
+        # pair) or when its proposal equals the quote: the word is correct, so a finding on it is never a fault.
+        proposal = normalize(f.get("proposed", "")).casefold()
+        same_word = proposal == norm_quote.casefold()
+        if code == spelling_code_value and (same_word or _variant_only(norm_quote.casefold(), proposal, partners)):
+            rejected_correct += 1
+            continue
             
         key = (code, norm_quote)
         if key in seen:
@@ -242,7 +411,14 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
             comment = f"{proposed} - {reason}" if reason else proposed
         else:
             comment = reason
-            
+        # Plan 22 task 1 (R01 case 3): a comment in the other language is replaced by the label of its code
+        if report_language is not None and comment and not _comment_in_report_language(
+                comment, report_language, hints or {}, min_words):
+            if not (labels or {}).get(code):
+                raise LanguageDataError(f"no label for code '{code}' in the report language")
+            comment = labels[code]
+            replaced += 1
+
         page_annotations.append({
             "page": page_num,
             "kind": "language",
@@ -251,4 +427,5 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
             "rect": None,
             "comment": comment
         })
-    return {"annotations": page_annotations, "rejected": rejected, "not_run": False}
+    return {"annotations": page_annotations, "rejected": rejected, "rejected_correct": rejected_correct,
+            "comment_language_replaced": replaced, "not_run": False}

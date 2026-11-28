@@ -297,8 +297,8 @@ FAMILIES = [
     ("electronic architecture", "diagram", "architecture"), ("PBS", "diagram", "breakdown structure"),
     ("WBS", "diagram", "breakdown structure"), ("flowchart", "flowchart", "flowchart"),
     ("logigram", "flowchart", "logigram"), ("Gantt", "gantt", "Gantt"), ("Kanban", "other", "Kanban"),
-    ("budget table", "other", "budget"), ("budget chart", "chart", "budget"), ("S-curve", "chart", "S-curve"),
-    ("timesheet", "other", "timesheet"), ("PCB", "technical_drawing", "PCB"), ("CAD", "technical_drawing", "CAD"),
+    ("budget table", "table", "budget"), ("budget chart", "chart", "budget"), ("S-curve", "chart", "S-curve"),
+    ("timesheet", "table", "timesheet"), ("PCB", "technical_drawing", "PCB"), ("CAD", "technical_drawing", "CAD"),
     ("photo", "photo", "photo"),
 ]
 
@@ -387,6 +387,40 @@ class TestFigureFamilies(unittest.TestCase):
         data = json.loads(ugs_config.default_path().read_text(encoding="utf-8"))
         self.assertTrue(data["vision.kind_aliases"]["provenance"])
         self.assertIn("vision.kind_aliases", ugs_config.REQUIRED_KEYS)
+
+
+class TableKindAliasTest(unittest.TestCase):
+    """Review H: a table, a budget table or a timesheet is the kind table, not other (figure criteria apply to it)."""
+
+    def setUp(self):
+        self.aliases = ugs_config.load(ugs_config.default_path())["vision.kind_aliases"]
+
+    def test_table_like_words_name_the_kind_table(self):
+        for word in ("table", "budget", "budget table", "timesheet", "time sheet", "spreadsheet"):
+            self.assertEqual(vision_probe.canonical_kind(word, self.aliases), "table", word)
+
+    def test_kanban_and_screenshot_stay_other(self):
+        for word in ("kanban", "screenshot"):
+            self.assertEqual(vision_probe.canonical_kind(word, self.aliases), "other", word)
+
+
+class VisionPromptKindsTest(unittest.TestCase):
+    """Review 3: the probe prompt names the kinds of the schema, and a budget or a timesheet is a table, not other."""
+
+    PROMPT = Path(__file__).resolve().parent.parent.parent / "prompts" / "vision_probe.md"
+    SCHEMA = Path(__file__).resolve().parent.parent.parent / "prompts" / "schemas.json"
+
+    def test_the_kind_list_of_the_prompt_is_the_schema_enum(self):
+        import re
+        text = self.PROMPT.read_text(encoding="utf-8")
+        listed = re.search(r"figure_kind: the kind of the figure, one of ([^.]*)\.", text).group(1)
+        enum = json.loads(self.SCHEMA.read_text(encoding="utf-8"))["vision_probe"]["properties"]["figure_kind"]["enum"]
+        self.assertEqual([k.strip() for k in listed.split(",")], enum)
+
+    def test_a_table_budget_or_timesheet_is_not_described_as_other(self):
+        text = self.PROMPT.read_text(encoding="utf-8")
+        self.assertNotIn("other: anything else, including a table", text)
+        self.assertIn("table: a grid of rows and columns", text)
 
 
 if __name__ == "__main__":

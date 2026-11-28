@@ -452,5 +452,171 @@ class TestGapAndNumberLimits(CrossrefBase):
         self.assertTrue(raw["checks.max_number"]["provenance"])
 
 
+class TestMisplacedCitations(unittest.TestCase):
+    """N5: a numeric citation after the sentence's period is a finding; before the period it is correct."""
+
+    ABBREVIATIONS = ["et al.", "al.", "etc.", "p.", "pp.", "fig.", "vol.", "no."]
+
+    def _found(self, text):
+        return crossref_checks.misplaced_citations([text], self.ABBREVIATIONS)
+
+    def test_period_then_citation_is_found(self):
+        found = self._found("The loop is stable. [5] Then it holds.")
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["page"], 1)
+        self.assertEqual(found[0]["quote"], "stable. [5]")
+
+    def test_citation_before_period_is_ok(self):
+        self.assertEqual(self._found("The loop is stable [5]. Then it holds."), [])
+
+    def test_no_space_and_list_and_ranges_are_found(self):
+        for text in ("stable.[5]", "stable. [3, 4]", "stable. [2-4]", "stable. [2–4]"):
+            with self.subTest(text=text):
+                self.assertEqual(len(self._found(text)), 1)
+
+    def test_abbreviation_before_citation_is_ok(self):
+        self.assertEqual(self._found("As shown by Smith et al. [5] in the study."), [])
+        self.assertEqual(self._found("Such cases, etc. [5] remain open."), [])
+
+    def test_decimal_number_is_ok(self):
+        self.assertEqual(self._found("The gain was 3.5 [2] in the test."), [])
+
+    def test_quote_is_found_in_page_text(self):
+        text = "First sentence. Second one ends here. [7] Third."
+        found = self._found(text)
+        self.assertEqual(len(found), 1)
+        self.assertIn(found[0]["quote"], text)
+
+    def test_each_occurrence_is_listed_with_its_page(self):
+        found = crossref_checks.misplaced_citations(["A stable. [1]", "B ok [2].", "C stable. [3]"], self.ABBREVIATIONS)
+        self.assertEqual([(f["page"], f["quote"]) for f in found], [(1, "stable. [1]"), (3, "stable. [3]")])
+
+    def test_line_break_before_the_bracket_is_a_finding(self):
+        """F6: a citation on the next line after the period is still after the period."""
+        self.assertEqual(len(self._found("The loop is stable.\n[5] Then it holds.")), 1)
+
+    def test_long_token_without_spaces_is_fast_and_clean(self):
+        """F4: a 20000-character token with no space gives no finding, quickly (no quadratic scan)."""
+        import time
+        token = "a" * 20000
+        started = time.perf_counter()
+        found = self._found(token)
+        self.assertLess(time.perf_counter() - started, 1.0)
+        self.assertEqual(found, [])
+
+    def test_missing_language_is_named(self):
+        path = Path(tempfile.mkdtemp()) / "citation_rules.json"
+        path.write_text('{"fr": {"value": ["al."], "provenance": "t"}}', encoding="utf-8")
+        with self.assertRaises(crossref_checks.CrossrefConfigError) as ctx:
+            crossref_checks.load_citation_rules("en", path)
+        self.assertIn("en", str(ctx.exception))
+        self.assertIn("citation_rules.json", str(ctx.exception))
+
+    def test_shipped_rules_load_for_both_languages(self):
+        self.assertIn("et al.", crossref_checks.load_citation_rules("en"))
+        self.assertIn("p.", crossref_checks.load_citation_rules("fr"))
+
+
+class TestAppendixCheck(unittest.TestCase):
+    """Issue 126 plan 15 N4 and review round 1 I3: appendices listed in the contents are found after the references
+    (fictitious text, R34). The settings are the data of front_matter.json: words, plural words and the id pattern."""
+
+    SETTINGS = {"markers": ["Annexe", "Annexes", "Appendice", "Appendix", "Appendices"],
+                "plural": ["Annexes", "Appendices"], "id_pattern": r"[A-Z]{1,4}|\d{1,2}"}
+
+    def test_names_ignore_case_and_dash(self):
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40"]
+        end = ["References\nSource A.", "ANNEXE A\nPlans detailles"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["listed"], ["A"])
+        self.assertEqual(result["present"], ["A"])
+
+    def test_listed_but_missing_at_the_end(self):
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40\nAnnexe B - Tableaux ........ 44"]
+        end = ["References\nSource.", "Annexe A\nPlans"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["status"], "not_ok")
+        self.assertEqual(result["listed_missing"], ["B"])
+
+    def test_present_at_the_end_but_not_listed(self):
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40"]
+        end = ["References\nSource.", "Annexe A\nPlans", "Annexe C\nNotes"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["status"], "not_ok")
+        self.assertEqual(result["unlisted_present"], ["C"])
+
+    def test_none_listed_none_found_is_not_applicable(self):
+        result = crossref_checks.appendix_check(["Table des matieres\n1 Intro ........ 3", "References\nSource."],
+                                                [1], 2, self.SETTINGS)
+        self.assertEqual(result["status"], "not_applicable")
+
+    def test_body_mention_is_not_a_heading(self):
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40"]
+        body = ["Introduction. Voir l'annexe A pour les details."]
+        end = ["References\nSource."]
+        result = crossref_checks.appendix_check(toc + body + end, [1], 3, self.SETTINGS)
+        self.assertEqual(result["status"], "not_ok")
+        self.assertEqual(result["present"], [])
+        self.assertEqual(result["listed_missing"], ["A"])
+
+    def test_no_contents_found_is_not_applicable_with_reason(self):
+        result = crossref_checks.appendix_check(["References\nSource.", "Annexe A\nPlans"], None, 1, self.SETTINGS)
+        self.assertEqual(result["status"], "not_applicable")
+        self.assertIn("contents", result["reason"])
+
+    def test_no_reference_heading_is_not_applicable_with_reason(self):
+        result = crossref_checks.appendix_check(["Table des matieres\nAnnexe A ........ 4"], [1], None, self.SETTINGS)
+        self.assertEqual(result["status"], "not_applicable")
+        self.assertIn("reference", result["reason"])
+
+    def test_numbered_bold_heading_at_the_end_is_found(self):
+        """Regression (Issue 126, real report): the heading reads '## **11. ANNEXE A: Plans**' or '## **Annexe 1**'."""
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40\nAnnexe 1 ........ 41"]
+        end = ["## **10. References**\nSource.", "## **11. ANNEXE A: Plans**\nDetail.", "## **Annexe 1**\nNotes."]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["present"], ["A", "1"])
+        self.assertEqual(result["status"], "ok")
+
+    def test_mid_page_heading_in_a_joined_text_layer_is_found(self):
+        """Review round 1 I3 (Issue 126): the text layer is one joined line; a heading inside it, followed by a title,
+        is an appendix."""
+        toc = ["Table des matieres Annexe A - Plans ........ 40 Annexe B - Notes ........ 44"]
+        end = ["References Source. 11. ANNEXE A: Plans detailles 12. ANNEXE B : Notes sur les mesures"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["present"], ["A", "B"])
+        self.assertEqual(result["status"], "ok")
+
+    def test_a_mention_after_a_lowercase_word_is_not_a_heading(self):
+        """Review round 1 I3 (Issue 126): 'voir l'annexe A' is a mention, even in a joined line."""
+        toc = ["Table des matieres Annexe A - Plans ........ 40"]
+        end = ["References Source. Le lecteur consultera l'annexe A: Plans fictifs pour verifier."]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["present"], [])
+
+    def test_capital_voir_before_an_appendix_is_a_mention(self):
+        """Review round 2 (Issue 126): 'Voir Annexe A.' in a joined line is a mention, not a heading."""
+        toc = ["Table des matieres Annexe A - Plans ........ 40"]
+        end = ["References Source. Voir Annexe A. Les details sont fictifs."]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["present"], [])
+
+    def test_plural_marker_with_a_page_number_lists_nothing(self):
+        """Review round 1 I3 (Issue 126): 'Annexes 45' on the contents page is a page number, not an appendix id."""
+        toc = ["Table des matieres\nAnnexes 45\nAnnexe A - Plans ........ 40"]
+        end = ["References\nSource.", "Annexe A\nPlans"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["listed"], ["A"])
+        self.assertEqual(result["status"], "ok")
+
+    def test_the_id_pattern_is_read_from_the_settings(self):
+        """Review round 1 I3 (Issue 126): the id pattern is data; a letters-only pattern refuses 'Annexe 1'."""
+        settings = dict(self.SETTINGS, id_pattern=r"[A-Z]{1,4}")
+        toc = ["Table des matieres\nAnnexe 1 ........ 41"]
+        end = ["References\nSource.", "Annexe 1\nNotes"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, settings)
+        self.assertEqual(result["listed"], [])
+        self.assertEqual(result["status"], "not_applicable")
+
 if __name__ == "__main__":
     unittest.main()

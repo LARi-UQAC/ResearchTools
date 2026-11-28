@@ -72,6 +72,11 @@ there is NO fallback tag. `--role` decides which qualified tag comes back, so th
 agent stops being served the writer model. LiteLLM (`~/.litellm/ollama.yaml`) is optional
 (keep-alive / context tuning only).
 
+A long local run (the grading driver of `work-ugs-audit`, an aider night) is started as a background task and
+is never polled: no periodic status call, no sleep loop. Its end arrives as the exit notification of the task,
+or the completion marker is read once when the owner asks. Measured 2026-11-25: polling the grading driver spent
+cloud tokens until the monthly spend limit stopped the session, while the local run went on without its wrapper.
+
 Restarting the daemon (after any `OLLAMA_*` change, since it reads them once at start):
 `.\.claude\skills\opt-local-vram-llm\scripts
 estart-ollama.ps1`, which lives inside the

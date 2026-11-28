@@ -190,5 +190,38 @@ class TestBatchStats(unittest.TestCase):
     def test_cli_refuses_a_work_path_that_escapes_the_work_folder(self):
         pass # Simplified for now
 
+class TestLoopStateIntegrity(unittest.TestCase):
+    """Review round 2 F (Issue 126): a corrupt loop state is refused, never reset, and writes are atomic."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="ugs-loop-"))
+        self.state = self.tmp / "loop_state.json"
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_corrupt_loop_state_is_refused_and_left_unchanged(self):
+        self.state.write_text("{not json", encoding="utf-8")
+        with self.assertRaises(batch_stats.LoopStateError) as ctx:
+            batch_stats.next_loop(self.state, 2, False)
+        self.assertIn("loop_state.json", str(ctx.exception))
+        self.assertEqual(self.state.read_text(encoding="utf-8"), "{not json")
+
+    def test_state_that_is_not_an_object_is_refused(self):
+        self.state.write_text("[1, 2]", encoding="utf-8")
+        with self.assertRaises(batch_stats.LoopStateError):
+            batch_stats.next_loop(self.state, 2, False)
+        self.assertEqual(self.state.read_text(encoding="utf-8"), "[1, 2]")
+
+    def test_interrupted_write_keeps_the_previous_state(self):
+        self.state.write_text(json.dumps({"loop": 1}), encoding="utf-8")
+        with patch("batch_stats.os.replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                batch_stats.next_loop(self.state, 2, False)
+        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8")), {"loop": 1})
+        self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), ["loop_state.json"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -47,21 +48,24 @@ def audit_item(
         NotRun: If the model fails with an unretryable error.
         PromptError: If the audit prompt holds the language slot and no language is given.
     """
-    # Prepare evidence pages
-    evidence_pages = []
-    if record.get("evidence"):
-        for ev in record["evidence"]:
-            # A page that is not an int (null, a boolean, a string) is skipped, never passed to page_blocks.
-            page = ev.get("page") if isinstance(ev, dict) else None
-            if isinstance(page, int) and not isinstance(page, bool):
-                evidence_pages.append(page)
-        if not evidence_pages:
-            evidence_pages = select_pages(item, pages, ctx.window_tokens - ctx.reserve_tokens, ctx.count, ctx.min_word_len)
-    else:
-        evidence_pages = select_pages(item, pages, ctx.window_tokens - ctx.reserve_tokens, ctx.count, ctx.min_word_len)
-        
+    # Review round 2, item 5: the cited pages are always joined with the pages the selection keeps within the budget,
+    # so an auditor never judges a grade on the cited pages alone; each quote is paired with its element name.
+    budget = ctx.window_tokens - ctx.reserve_tokens
+    cited = []
+    for ev in record.get("evidence") or []:
+        page = ev.get("page") if isinstance(ev, dict) else None
+        if isinstance(page, int) and not isinstance(page, bool):
+            cited.append(page)
+    selected = select_pages(item, pages, budget, ctx.count, ctx.min_word_len)
+    evidence_pages = sorted(set(cited) | set(selected))
     evidence_text = page_blocks(pages, evidence_pages) if evidence_pages else ""
-    
+    quotes = []
+    for ev in record.get("evidence") or []:
+        if isinstance(ev, dict) and isinstance(ev.get("quote"), str):
+            quotes.append(f"- {ev.get('element', '(element)')} (page {ev.get('page')}): {ev['quote']}")
+    if quotes:
+        evidence_text = evidence_text + "\n\nQuotes by element:\n" + "\n".join(quotes)
+
     # The auditor judges the grade, not the bookkeeping of its validation (plan 12, R12): these keys stay in the
     # saved record, which audit_report copies, and never reach the prompt.
     record_for_prompt = {k: v for k, v in record.items()
@@ -102,6 +106,24 @@ def audit_item(
         "verdict": "not_run",
         "reason": last_error.reason if last_error else "exhausted retries"
     }
+
+def audit_fingerprint(record: Dict[str, Any]) -> str:
+    """
+    Purpose: The fingerprint of a graded record as it stood when it was audited: its score and the ids and effective
+        verdicts of its elements (plan 30, Task 1). A record whose fingerprint changed since its audit is audited again.
+    Inputs:
+        record: dict - a grade record.
+    Outputs:
+        str - a short hexadecimal digest.
+    Raises:
+        None.
+    """
+    elements = record.get("elements") or []
+    keys = [[entry.get("id"), entry.get("effective", entry.get("verdict"))] for entry in elements
+            if isinstance(entry, dict)]
+    text = json.dumps({"score": record.get("score"), "elements": keys}, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
 
 def audit_report(
     rubric: dict,
@@ -149,13 +171,20 @@ def audit_report(
             new_record["audit"] = "not_run"
             items.append(new_record)
             continue
-            
+
+        # Plan 30, Task 1: an item audited before (agree or disagree) on this same grade is not audited again; a
+        # not_run audit is retried.
+        if record.get("audit") in ("agree", "disagree") and record.get("audit_fingerprint") == audit_fingerprint(record):
+            items.append(dict(record))
+            continue
+
         # Audit
         audit_result = audit_item(item, record, pages, call, ctx, language)
         
         if audit_result["verdict"] == "agree":
             new_record = dict(record)
             new_record["audit"] = "agree"
+            new_record["audit_fingerprint"] = audit_fingerprint(record)
             items.append(new_record)
             if on_item:
                 on_item(item_id, new_record)
@@ -198,6 +227,7 @@ def audit_report(
             if audit_result_2["verdict"] == "agree":
                 new_record = dict(regraded_record)
                 new_record["audit"] = "agree"
+                new_record["audit_fingerprint"] = audit_fingerprint(regraded_record)
                 items.append(new_record)
                 if on_item:
                     on_item(item_id, new_record)
@@ -205,6 +235,7 @@ def audit_report(
                 # Disagree again
                 new_record = dict(record)
                 new_record["audit"] = "disagree"
+                new_record["audit_fingerprint"] = audit_fingerprint(record)
                 new_record["flag"] = True
                 items.append(new_record)
                 if on_item:

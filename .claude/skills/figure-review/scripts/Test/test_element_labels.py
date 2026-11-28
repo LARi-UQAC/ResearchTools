@@ -4,6 +4,7 @@ Every page is built in the test with PyMuPDF from fictitious text (R34). No netw
 Run as: python .claude/skills/figure-review/scripts/Test/test_element_labels.py
 """
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -14,6 +15,7 @@ import fitz
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import element_labels as el  # noqa: E402
+import figure_extract  # noqa: E402  (the real-data test follows the production block split)
 
 MARKERS_PATH = Path(__file__).parent.parent.parent / "assets" / "element_markers.json"
 TITLE_BOX_HEIGHT = 20
@@ -172,6 +174,420 @@ class ElementLabelsTest(unittest.TestCase):
         """An element type other than figure or table is refused, not guessed."""
         with self.assertRaises(ValueError):
             el.find_title(self._blocks(), FIGURE_RECT, "logo", self.markers)
+
+
+IMAGE_RECT = fitz.Rect(100, 100, 500, 400)
+IN_IMAGE_BAND = 0.15
+
+
+def _line(x0, y0, x1, y1, text, line_no):
+    """
+    Purpose: Build the word tuples of one OCR line, the words spread evenly over its width.
+    Inputs:
+        x0, y0, x1, y1: float - the line box.
+        text: str - the fictitious words, separated by spaces.
+        line_no: int - the line number, stored as the block and line fields of each word.
+    Outputs:
+        list[tuple] - (x0, y0, x1, y1, word, block, line, word_no) per word.
+    Raises:
+        None.
+    """
+    words = text.split()
+    step = (x1 - x0) / len(words)
+    return [(x0 + index * step, y0, x0 + (index + 1) * step, y1, word, 0, line_no, index)
+            for index, word in enumerate(words)]
+
+
+class InImageTitleTest(unittest.TestCase):
+    """
+    Purpose: A title drawn inside a raster element is found in its top or bottom band (plan 24, Task 1).
+    Details: Word boxes are fictitious tuples; no page is opened (R21).
+    """
+
+    def setUp(self):
+        """
+        Purpose: Load the shipped markers once for the class.
+        Inputs:
+            None.
+        Outputs:
+            None. Sets self.markers.
+        Raises:
+            None.
+        """
+        self.markers = el.load_markers(MARKERS_PATH)
+
+    def test_figure_title_in_the_bottom_band_is_found_centred(self):
+        """
+        Purpose: A centred line starting with a figure marker in the bottom band is the title, below.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts text, position and alignment.
+        Raises:
+            AssertionError: If the title is missed or misplaced.
+        """
+        words = _line(150, 370, 450, 382, "Figure 4 Temperature", 1)
+        found = el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, IN_IMAGE_BAND)
+        self.assertEqual(found["position"], "in_image_bottom")
+        self.assertEqual(found["alignment"], "center")
+        self.assertEqual(found["text"], "Figure 4 Temperature")
+
+    def test_table_title_in_the_top_band_is_found_left(self):
+        """
+        Purpose: A line starting with a table marker at the left of the top band is the title, above, left.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts position and alignment.
+        Raises:
+            AssertionError: If the title is missed or misplaced.
+        """
+        words = _line(100, 104, 220, 116, "Tableau 2 Budget", 1)
+        found = el.find_in_image_title(words, IMAGE_RECT, "table", self.markers, IN_IMAGE_BAND)
+        self.assertEqual(found["position"], "in_image_top")
+        self.assertEqual(found["alignment"], "left")
+
+    def test_marker_word_in_the_middle_of_the_image_is_not_a_title(self):
+        """
+        Purpose: A figure marker in the middle of the drawing, an axis label, is not a title.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts None.
+        Raises:
+            AssertionError: If the middle line is taken for a title.
+        """
+        words = _line(150, 200, 300, 212, "Figure of merit", 1)
+        self.assertIsNone(el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, IN_IMAGE_BAND))
+
+    def test_a_line_not_opening_with_a_marker_is_not_a_title(self):
+        """
+        Purpose: A bottom line that only mentions a figure later on is not a title.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts None.
+        Raises:
+            AssertionError: If the line is taken for a title.
+        """
+        words = _line(150, 370, 450, 382, "Note see Figure 4", 1)
+        self.assertIsNone(el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, IN_IMAGE_BAND))
+
+    def test_the_band_ratio_decides_the_reach_of_the_band(self):
+        """
+        Purpose: With a band of 5 percent (15 points) the bottom line at 370 is outside the band and is not found.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts None with the narrow band and a title with the wide one.
+        Raises:
+            AssertionError: If the band ratio does not change the answer.
+        """
+        words = _line(150, 370, 450, 382, "Figure 4 Temperature", 1)
+        self.assertIsNone(el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, 0.05))
+        self.assertIsNotNone(el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, IN_IMAGE_BAND))
+
+    def test_a_figure_marker_is_not_a_table_title(self):
+        """
+        Purpose: The element type picks its marker words: a Figure line is no title of a table.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts None.
+        Raises:
+            AssertionError: If the marker of the other type is accepted.
+        """
+        words = _line(150, 370, 450, 382, "Figure 4 Temperature", 1)
+        self.assertIsNone(el.find_in_image_title(words, IMAGE_RECT, "table", self.markers, IN_IMAGE_BAND))
+
+    def test_unknown_element_type_and_bad_band_are_refused(self):
+        """
+        Purpose: An unknown element type and a band outside 0 to one half are refused with ValueError.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts both refusals.
+        Raises:
+            AssertionError: If a refusal is not raised.
+        """
+        words = _line(150, 370, 450, 382, "Figure 4 Temperature", 1)
+        with self.assertRaises(ValueError):
+            el.find_in_image_title(words, IMAGE_RECT, "logo", self.markers, IN_IMAGE_BAND)
+        with self.assertRaises(ValueError):
+            el.find_in_image_title(words, IMAGE_RECT, "figure", self.markers, 0.9)
+
+
+class TextColumnAlignmentTest(unittest.TestCase):
+    """
+    Purpose: A title centred on the page text column is centred even when the figure sits off that column (plan 24,
+        Task 2). Blocks are fictitious tuples; no page is opened (R21).
+    """
+
+    def setUp(self):
+        """
+        Purpose: Load the shipped markers and a figure 100 to 200 wide, under a text column 300 to 500 wide.
+        Inputs:
+            None.
+        Outputs:
+            None. Sets self.markers, self.rect and self.column.
+        Raises:
+            None.
+        """
+        self.markers = el.load_markers(MARKERS_PATH)
+        self.rect = fitz.Rect(100, 100, 200, 300)
+        self.column = (300.0, 500.0)
+
+    def block(self, x0, x1, text="Figure 4 Temperature", y0=310):
+        """
+        Purpose: Build one title block on a fictitious line below the figure.
+        Inputs:
+            x0, x1 (float): the block extent.
+            text (str): the fictitious text.
+            y0 (float): the top of the block.
+        Outputs:
+            tuple: a text block tuple (x0, y0, x1, y1, text, block_no, block_type).
+        Raises:
+            None.
+        """
+        return (x0, y0, x1, y0 + 12, text, 0, 0)
+
+    def test_a_title_centred_on_the_column_is_center(self):
+        """
+        Purpose: A title centred on the text column (centre 400) under a figure centred at 150 is centred.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts center with the column and right without it.
+        Raises:
+            AssertionError: If the column reference is not used.
+        """
+        title = self.block(340, 460)
+        self.assertEqual(el._alignment(title, self.rect, 0.1, self.column), "center")
+        self.assertEqual(el._alignment(title, self.rect, 0.1), "right")
+
+    def test_the_figure_centre_still_decides_first(self):
+        """
+        Purpose: A title centred on the figure stays centred whatever the column.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts center.
+        Raises:
+            AssertionError: If the figure reference is lost.
+        """
+        self.assertEqual(el._alignment(self.block(120, 180), self.rect, 0.1, self.column), "center")
+
+    def test_text_column_is_the_median_of_the_body_blocks(self):
+        """
+        Purpose: Three long blocks at 300-500, 310-510 and 320-520 give the column 310 to 510; a short caption is
+            not part of it.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts the median column.
+        Raises:
+            AssertionError: If the median or the word filter is wrong.
+        """
+        long_text = " ".join(["mot"] * 8)
+        blocks = [(300, 0, 500, 9, long_text, 0, 0), (310, 0, 510, 9, long_text, 0, 0),
+                  (320, 0, 520, 9, long_text, 0, 0), (50, 0, 90, 9, "Note", 0, 0)]
+        self.assertEqual(el.text_column(blocks, self.markers), (310.0, 510.0))
+
+    def test_no_body_block_gives_no_column(self):
+        """
+        Purpose: A page with only short blocks has no column, and the rule falls back to the figure.
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts None.
+        Raises:
+            AssertionError: If a column is invented.
+        """
+        self.assertIsNone(el.text_column([(10, 0, 20, 9, "Note", 0, 0)], self.markers))
+
+    def test_the_word_count_comes_from_the_markers(self):
+        """
+        Purpose: A missing column_min_words key is a named error (R3).
+        Inputs:
+            None.
+        Outputs:
+            None. Asserts the MarkerError names the key.
+        Raises:
+            AssertionError: If the key is not required.
+        """
+        markers = dict(self.markers)
+        markers.pop("column_min_words")
+        with self.assertRaises(el.MarkerError) as raised:
+            el.text_column([], markers)
+        self.assertIn("column_min_words", str(raised.exception))
+
+
+class TitleLineAlignmentTest(unittest.TestCase):
+    """Alignment is measured on the title lines against the element edges (owner, 2026-11-27, plan 28).
+
+    The tolerance is centre_tolerance_ratio of the element width (the shipped key, element_markers.json); the plan
+    named a title_alignment_tolerance_pt key that is not in any configuration file.
+    """
+
+    RATIO = 0.1  # the shipped centre_tolerance_ratio of element_markers.json, value only for the fictitious cases
+
+    def align(self, lines, rect):
+        """Return the alignment of fictitious title lines (x0, y0, x1, y1) against an element rectangle."""
+        return el.lines_alignment(lines, rect, self.RATIO)
+
+    def test_a_two_line_left_title_whose_first_line_fills_the_width_is_left(self):
+        rect = fitz.Rect(100, 100, 500, 400)
+        lines = [(100, 420, 480, 432), (100, 436, 260, 448)]
+        self.assertEqual(self.align(lines, rect), "left")
+
+    def test_a_centred_short_title_above_a_wide_figure_is_center(self):
+        rect = fitz.Rect(100, 100, 500, 400)
+        self.assertEqual(self.align([(240, 420, 360, 432)], rect), "center")
+
+    def test_a_centred_title_on_a_narrow_element_is_center(self):
+        rect = fitz.Rect(200, 100, 400, 300)
+        self.assertEqual(self.align([(240, 320, 360, 332)], rect), "center")
+
+    def test_f11_reproduction_is_left(self):
+        # Fictitious coordinates equal to the measured ones of R01: element 85.1 to 527.5, title line 85.1 to 343.2.
+        rect = fitz.Rect(85.1, 409.0, 527.5, 697.0)
+        self.assertEqual(self.align([(85.1, 527.5, 343.2, 539.5)], rect), "left")
+
+    def test_f12_reproduction_is_center(self):
+        rect = fitz.Rect(85.1, 292.0, 527.0, 527.0)
+        self.assertEqual(self.align([(195.6, 540.0, 419.4, 552.0)], rect), "center")
+
+    def test_f10_reproduction_is_left(self):
+        rect = fitz.Rect(85.1, 84.3, 527.5, 372.4)
+        self.assertEqual(self.align([(85.1, 340.0, 342.5, 352.0)], rect), "left")
+
+    def test_a_title_that_is_neither_centred_nor_at_the_left_edge_is_right(self):
+        rect = fitz.Rect(100, 100, 500, 400)
+        self.assertEqual(self.align([(380, 420, 490, 432)], rect), "right")
+
+    def test_find_title_returns_its_rectangle_and_lines_for_elements_json(self):
+        doc = fitz.open()
+        page = doc.new_page()
+        _write_text(page, fitz.Rect(100, 402, 500, 422), "Figure 1 fictitious title", "left")
+        blocks = page.get_text("blocks")
+        line_boxes = [tuple(line["bbox"]) for block in page.get_text("dict")["blocks"]
+                      for line in block.get("lines", [])]
+        title = el.find_title(blocks, FIGURE_RECT, "figure", el.load_markers(MARKERS_PATH), None, line_boxes)
+        doc.close()
+        self.assertIsNotNone(title)
+        self.assertEqual(title["position"], "below")
+        self.assertEqual(len(title["lines"]), 1)
+        self.assertEqual(len(title["rect"]), 4)
+        self.assertEqual(title["alignment"], "left")
+
+    def test_a_line_centred_on_the_text_column_is_center(self):
+        # Review round 1, finding 2: a line centred on the text column is centred, as _alignment decides for a block.
+        rect = fitz.Rect(300, 100, 400, 300)
+        column = (72, 540)
+        self.assertEqual(el.lines_alignment([(200, 420, 412, 432)], rect, self.RATIO, column), "center")
+
+    def test_a_left_table_title_above_is_no_finding_through_the_line_path(self):
+        rect = fitz.Rect(300, 300, 400, 500)
+        column = (72, 540)
+        self.assertEqual(el.lines_alignment([(72, 200, 200, 212)], rect, self.RATIO, column), "left")
+
+    def test_the_title_lines_stop_at_the_caption_when_body_text_follows_in_the_same_block(self):
+        # Review round 1, finding 8: body text after the caption, in the same block, is not part of the title.
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_textbox(fitz.Rect(100, 402, 500, 460),
+                            "Figure 1 fictitious title.\nBody text line one of the report continues here.",
+                            fontsize=10)
+        blocks = page.get_text("blocks")
+        line_boxes = [tuple(line["bbox"]) + ("".join(s["text"] for s in line["spans"]),)
+                      for block in page.get_text("dict")["blocks"] for line in block.get("lines", [])]
+        title = el.find_title(blocks, FIGURE_RECT, "figure", el.load_markers(MARKERS_PATH), None, line_boxes)
+        doc.close()
+        self.assertIsNotNone(title)
+        self.assertEqual(len(title["lines"]), 1)
+
+    def _title_lines(self, text):
+        """Return the title lines find_title keeps for a caption written as text on a fictitious page."""
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_textbox(fitz.Rect(100, 402, 500, 470), text, fontsize=10)
+        blocks = page.get_text("blocks")
+        line_boxes = [tuple(line["bbox"]) + ("".join(s["text"] for s in line["spans"]),)
+                      for block in page.get_text("dict")["blocks"] for line in block.get("lines", [])]
+        title = el.find_title(blocks, FIGURE_RECT, "figure", el.load_markers(MARKERS_PATH), None, line_boxes)
+        doc.close()
+        return title["lines"]
+
+    def test_a_caption_with_no_final_mark_stops_at_the_vertical_gap_before_the_body(self):
+        # Review round 2, finding 5: one block holds the caption and the body; the body line sits 16 pt below a 12 pt
+        # caption line (a gap of 1.33 line heights), so the title ends with the caption. Fictitious geometry (R34).
+        block = (100, 402, 500, 442, "Figure 1 fictitious title\nBody text line one of the report.", 0, 0)
+        line_boxes = [(100, 402, 300, 414, "Figure 1 fictitious title"),
+                      (100, 430, 400, 442, "Body text line one of the report.")]
+        title = el.find_title([block], FIGURE_RECT, "figure", el.load_markers(MARKERS_PATH), None, line_boxes)
+        self.assertEqual(len(title["lines"]), 1)
+
+    def test_a_caption_that_wraps_on_a_mid_sentence_colon_keeps_both_lines(self):
+        self.assertEqual(len(self._title_lines("Figure 1 fictitious title:\nthe second line of the caption")), 2)
+
+    def test_a_sliver_at_the_right_edge_is_not_a_title_line(self):
+        # Measured on R01 F11 (prepare output): lines [528,531] then [85,343] on an element 85 to 528. The 3 pt sliver
+        # sits above the real line and is not title text, so the title is left-aligned.
+        rect = fitz.Rect(85, 409, 528, 697)
+        min_width = el._marker_value(el.load_markers(MARKERS_PATH), "title_line_min_width_pt")
+        lines = [(528, 687, 531, 697), (85, 700, 343, 712)]
+        self.assertEqual(el.lines_alignment(lines, rect, self.RATIO, None, min_width), "left")
+
+    def test_a_line_with_no_letter_or_digit_is_not_a_title_line(self):
+        block = (85, 687, 531, 712, "Figure 1 fictitious title", 0, 0)
+        line_boxes = [(528, 687, 531, 697, "|"), (85, 700, 343, 712, "Figure 1 fictitious title")]
+        title = el.find_title([block], fitz.Rect(85, 300, 528, 680), "figure", el.load_markers(MARKERS_PATH),
+                              None, line_boxes)
+        self.assertIsNotNone(title)
+        self.assertEqual(len(title["lines"]), 1)
+        self.assertEqual(title["alignment"], "left")
+
+    def test_no_lines_gives_no_line_alignment(self):
+        self.assertIsNone(el.lines_alignment([], fitz.Rect(100, 100, 500, 400), self.RATIO))
+
+
+REAL_WORK = os.environ.get("UGS_REAL_WORK")
+REAL_PDF = os.environ.get("UGS_REAL_R01")
+
+
+@unittest.skipUnless(REAL_WORK and REAL_PDF, "UGS_REAL_WORK and UGS_REAL_R01 not set: real R01 not read")
+class RealR01TitleAlignmentTest(unittest.TestCase):
+    """The owner's reading of four figure titles of R01 (ids only, no title text is printed)."""
+
+    EXPECTED = {"F10": "left", "F11": "left", "F12": "center", "F15": "center"}
+
+    def test_the_stored_prepare_output_gives_the_owner_reading(self):
+        # The production path: title.alignment as prepare wrote it to elements.json (ids only, no title text printed).
+        import json
+        elements = {e["element_id"]: e for e in json.loads(
+            (Path(REAL_WORK) / "R01" / "elements.json").read_text(encoding="utf-8"))}
+        for element_id, expected in self.EXPECTED.items():
+            self.assertEqual(elements[element_id]["title"]["alignment"], expected, element_id)
+
+    def test_find_title_on_the_page_gives_the_owner_reading(self):
+        # The same production function (find_title) on the R01 page, with the stored element rectangles.
+        import json
+        import re
+        elements = {e["element_id"]: e for e in json.loads(
+            (Path(REAL_WORK) / "R01" / "elements.json").read_text(encoding="utf-8"))}
+        markers = el.load_markers(MARKERS_PATH)
+        doc = fitz.open(REAL_PDF)
+        for element_id, expected in self.EXPECTED.items():
+            record = elements[element_id]
+            page = doc[record["page"] - 1]
+            line_boxes = [tuple(line["bbox"]) + (re.sub(r"\s+", " ", "".join(s["text"] for s in line["spans"])),)
+                          for block in page.get_text("dict")["blocks"] for line in block.get("lines", [])]
+            # The production path: figure_extract splits the title blocks of the page before find_title.
+            blocks = figure_extract._split_title_blocks(page, page.get_text("blocks"), markers)
+            title = el.find_title(blocks, fitz.Rect(record["rect"]), "figure", markers, None, line_boxes)
+            self.assertIsNotNone(title, element_id)
+            self.assertEqual(title["alignment"], expected, element_id)
+        doc.close()
 
 
 if __name__ == "__main__":

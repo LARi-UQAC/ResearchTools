@@ -8,6 +8,7 @@ You list the language errors of one page of an undergraduate report. The languag
 ## Rules
 
 - Report real errors only. Do not report a style choice or a technical term.
+- A correctly written word is never reported. Both spellings of the 1990 spelling reform are correct.
 - Quote the faulty passage word for word from the page, as short as possible (a few words).
 - Propose the corrected wording in the same language.
 - Give a short reason, one sentence.

@@ -258,7 +258,10 @@ def annotate(src: Path, items: List[Dict], dst: Path, colors: Dict[str, str], au
         placed += 1
         carried.add(group)
 
-    doc.save(dst_resolved)
+    # Plan 30, Task 1: the annotated copy is written beside its name and replaces the file only when complete.
+    temporary = dst_resolved.with_name(dst_resolved.name + ".tmp")
+    doc.save(temporary)
+    temporary.replace(dst_resolved)
     doc.close()
 
     return {

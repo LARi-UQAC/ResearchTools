@@ -713,7 +713,7 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
 
     # Compute totals
     totals = compute(rubric, grade)
-    (report_dir / "totals.json").write_text(json.dumps(totals, indent=2), encoding="utf-8")
+    _atomic_write_text(report_dir / "totals.json", json.dumps(totals, indent=2))  # plan 30: atomic step write
 
     # Read optional files
     language_path = report_dir / "language.json"
@@ -768,7 +768,7 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
         )
         annotations.extend(reference_annotations(ref_results, refs, settings["ref_comments"], language, settings["quote_chars"]))
 
-    (report_dir / "annotations.json").write_text(json.dumps(annotations, indent=2), encoding="utf-8")
+    _atomic_write_text(report_dir / "annotations.json", json.dumps(annotations, indent=2))  # plan 30: atomic
 
     # Annotate PDF
     dst_pdf = report_dir / "annotated.pdf"

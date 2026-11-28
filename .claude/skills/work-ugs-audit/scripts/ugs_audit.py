@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -106,6 +107,24 @@ def audit_item(
         "reason": last_error.reason if last_error else "exhausted retries"
     }
 
+def audit_fingerprint(record: Dict[str, Any]) -> str:
+    """
+    Purpose: The fingerprint of a graded record as it stood when it was audited: its score and the ids and effective
+        verdicts of its elements (plan 30, Task 1). A record whose fingerprint changed since its audit is audited again.
+    Inputs:
+        record: dict - a grade record.
+    Outputs:
+        str - a short hexadecimal digest.
+    Raises:
+        None.
+    """
+    elements = record.get("elements") or []
+    keys = [[entry.get("id"), entry.get("effective", entry.get("verdict"))] for entry in elements
+            if isinstance(entry, dict)]
+    text = json.dumps({"score": record.get("score"), "elements": keys}, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
 def audit_report(
     rubric: dict,
     pages: List[str],
@@ -152,13 +171,20 @@ def audit_report(
             new_record["audit"] = "not_run"
             items.append(new_record)
             continue
-            
+
+        # Plan 30, Task 1: an item audited before (agree or disagree) on this same grade is not audited again; a
+        # not_run audit is retried.
+        if record.get("audit") in ("agree", "disagree") and record.get("audit_fingerprint") == audit_fingerprint(record):
+            items.append(dict(record))
+            continue
+
         # Audit
         audit_result = audit_item(item, record, pages, call, ctx, language)
         
         if audit_result["verdict"] == "agree":
             new_record = dict(record)
             new_record["audit"] = "agree"
+            new_record["audit_fingerprint"] = audit_fingerprint(record)
             items.append(new_record)
             if on_item:
                 on_item(item_id, new_record)
@@ -201,6 +227,7 @@ def audit_report(
             if audit_result_2["verdict"] == "agree":
                 new_record = dict(regraded_record)
                 new_record["audit"] = "agree"
+                new_record["audit_fingerprint"] = audit_fingerprint(regraded_record)
                 items.append(new_record)
                 if on_item:
                     on_item(item_id, new_record)
@@ -208,6 +235,7 @@ def audit_report(
                 # Disagree again
                 new_record = dict(record)
                 new_record["audit"] = "disagree"
+                new_record["audit_fingerprint"] = audit_fingerprint(record)
                 new_record["flag"] = True
                 items.append(new_record)
                 if on_item:

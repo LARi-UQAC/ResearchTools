@@ -11,7 +11,7 @@ _LOOP_ENGINEER_SCRIPTS = _SCRIPTS_DIR.parent.parent / "loop-engineer" / "scripts
 if _LOOP_ENGINEER_SCRIPTS.exists() and str(_LOOP_ENGINEER_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LOOP_ENGINEER_SCRIPTS))
 
-from ugs_audit import audit_report, audit_item
+from ugs_audit import audit_report, audit_item, audit_fingerprint
 from ugs_bridge import NotRun
 from ugs_text import StepContext
 from ugs_grade import grade_item
@@ -344,6 +344,65 @@ def setUpModule():
 
 def tearDownModule():
     _MIN_ELEMENTS.stop()
+
+
+class Killed(Exception):
+    """Stands for a process killed in the middle of the audit (fictitious, R21)."""
+
+
+def _rated(item_id, score=8.0):
+    """Return one fictitious rated grade record that is not audited yet."""
+    return {"item_id": item_id, "status": "rated", "level": "complete_correct", "score": score, "comment": "Good",
+            "evidence": [{"page": 1, "quote": "text"}], "audit": "not_run", "flag": False}
+
+
+class AuditResumeTest(unittest.TestCase):
+    """Plan 30 Task 1: the audit resumes at the first item not audited; an agree is kept, a not_run is retried."""
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.rubric = {"assessment_type": "lab_report", "total_points": 11,
+                       "items": [{"id": "I%02d" % n, "title": "T", "max_points": 1} for n in range(1, 12)]}
+        self.pages = ["text on page 1", "text on page 2"]
+
+    def test_a_run_killed_after_four_of_eleven_items_audits_seven_on_the_rerun(self):
+        grade = {"report_id": "R01", "loop": 1, "items": [_rated("I%02d" % n, 1.0) for n in range(1, 12)]}
+        saved = {}
+
+        def on_item(item_id, record):
+            saved[item_id] = record
+
+        # First run: four agree, then the process is killed during the fifth audit.
+        first = FakeCall([{"verdict": "agree", "reason": "ok"}] * 4 + [Killed()])
+        with self.assertRaises(Killed):
+            audit_report(self.rubric, self.pages, grade, first, self.ctx, "en", "", on_item)
+        self.assertEqual(len(saved), 4)
+        # The file as the run left it: the four audited records, the others as they were graded.
+        resumed = {"report_id": "R01", "loop": 1,
+                   "items": [saved.get(item["item_id"], item) for item in grade["items"]]}
+        second = FakeCall([{"verdict": "agree", "reason": "ok"}] * 7)
+        result = audit_report(self.rubric, self.pages, resumed, second, self.ctx, "en", "")
+        self.assertEqual(len(second.prompts), 7)
+        self.assertEqual([item["audit"] for item in result["items"]], ["agree"] * 11)
+
+    def test_an_agree_is_kept_and_a_not_run_is_retried(self):
+        agreed = dict(_rated("I01"), audit="agree", audit_fingerprint=audit_fingerprint(_rated("I01")))
+        retry = dict(_rated("I02"), audit="not_run")
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        result = audit_report({"assessment_type": "lab_report", "total_points": 2, "items": [
+            {"id": "I01", "title": "T", "max_points": 1}, {"id": "I02", "title": "T", "max_points": 1}]},
+            self.pages, {"report_id": "R01", "loop": 1, "items": [agreed, retry]}, call, self.ctx, "en", "")
+        self.assertEqual(len(call.prompts), 1)
+        self.assertEqual([item["audit"] for item in result["items"]], ["agree", "agree"])
+
+    def test_a_record_whose_grade_changed_since_its_audit_is_audited_again(self):
+        audited = dict(_rated("I01", 8.0), audit="agree", audit_fingerprint=audit_fingerprint(_rated("I01", 8.0)))
+        edited = dict(audited, score=9.0)
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        audit_report({"assessment_type": "lab_report", "total_points": 1, "items": [
+            {"id": "I01", "title": "T", "max_points": 1}]},
+            self.pages, {"report_id": "R01", "loop": 1, "items": [edited]}, call, self.ctx, "en", "")
+        self.assertEqual(len(call.prompts), 1)
 
 
 if __name__ == '__main__':

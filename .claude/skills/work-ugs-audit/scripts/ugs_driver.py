@@ -766,7 +766,10 @@ def cmd_batch(args) -> int:
     if code == EXIT_REFUSAL or not line:
         raise DriverError("the batch could not be analysed")
     verdict = json.loads(line)
-    (work / f"loop-{args.loop}" / "batch.json").write_text(line, encoding="utf-8")
+    batch_path = work / f"loop-{args.loop}" / "batch.json"  # plan 30: atomic step write
+    batch_tmp = batch_path.with_name(batch_path.name + ".tmp")
+    batch_tmp.write_text(line, encoding="utf-8")
+    batch_tmp.replace(batch_path)
     _emit(verdict)
     if code != EXIT_OUT_OF_BAND:
         return EXIT_OK

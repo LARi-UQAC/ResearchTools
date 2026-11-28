@@ -8,6 +8,7 @@ report. A model that cannot run (NotRun) propagates and leaves the step open for
 marks that step blocked, stops this report only and is returned as status failed.
 """
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -199,7 +200,25 @@ def _load_json(path: Path) -> Optional[dict]:
 
 
 def _write_json(path: Path, data: Any) -> None:
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+    """
+    Purpose: Write one JSON step file atomically (plan 30, Task 1): the text goes to a temporary file beside it, which
+        replaces the file only when complete, so a crash never leaves a half-written file that blocks --continue.
+    Inputs:
+        path (Path): the file to write.
+        data (Any): the JSON document.
+    Outputs:
+        None.
+    Raises:
+        OSError: when the write or the replace fails; the temporary file is removed and the old file is kept.
+    """
+    text = json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(text, encoding="utf-8")
+    try:
+        os.replace(temporary, path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def report_language(work_dir: Path, report_id: str, pages: List[str], hints: dict) -> str:

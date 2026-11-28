@@ -92,9 +92,14 @@ hardcoded literal, it is resolved the same way local-writer/local-coder resolve 
 `claude-local`), `claude-augure`, and `claude-cloud`. Since Ollama's 2026-01-16 update exposes a
 native Anthropic-compatible `/v1/messages` endpoint, no LiteLLM proxy is needed for the local
 path: Claude Code points `ANTHROPIC_BASE_URL` straight at Ollama. `claude-augure` (added
-2026-10-15) is a third identity on the SAME shape - a different endpoint
-(`https://api.augureai.ca/v1`) and a different key (`AUGUREAI_API_KEY`) - for when the operator
-wants Claude Code billed/routed through AugureAI instead of the default Anthropic account.
+2026-10-15, reworked 2026-11-27 for Issue #112) is a third identity, for when the operator wants
+Claude Code billed through AugureAI. AugureAI serves only the OpenAI protocol (measured
+2026-11-27: `POST /v1/messages` answers 404), so `claude-augure` goes through a local LiteLLM
+proxy on `127.0.0.1`, started at logon by `scripts/local/augure/litellm-autostart.ps1 -Install`
+from the `.venv-litellm` environment. The models are listed live from Augure's MCP server by
+`scripts/local/augure/augure_models.py` and kept only when `augure-models.json` gives them the
+required 1M-token window, so today only `rosedale-1` is offered. Profiles `dev` and `chat` are
+data in `augure-profiles.json`: separating their keys later is one line there, no code change.
 Three identities sharing one save/restore mechanism (below) rather than two, so the per-shell
 bookkeeping could no longer assume only one "away" state existed at a time.
 
@@ -138,9 +143,15 @@ Three-step process, always in this order:
      reachable, when the resolver has nothing to offer and no `-Model` was given either, or
      when the resolved/given tag is not actually in `ollama list` (a reachable port is not
      proof the MODEL is there).
-   - `claude-augure` - refuses with nothing touched if `AUGUREAI_API_KEY` is unset; otherwise
-     clears any Ollama-routing vars a prior `claude-ollama` call left behind, then points at
-     AugureAI's endpoint with that key.
+   - `claude-augure [-Profile dev|chat] [-Model id]` - reads the profile's key variables at
+     USER scope (a VS Code process was measured holding a stale copy), refuses with nothing
+     touched when a key is missing, the proxy is not on `127.0.0.1` or does not answer 2xx, or no
+     listed model has the required window, then points Claude Code at the proxy with the master
+     key, `augure-<profile>/<model>` and `CLAUDE_CODE_MAX_CONTEXT_TOKENS` set to that window.
+     Measured 2026-11-27 with litellm 1.111.0: the proxy must use the `hosted_vllm` provider,
+     since `openai` sends `/v1/messages` through the Responses API and fails on Augure. An
+     upstream refusal (a quota, for instance) reaches Claude Code as an empty HTTP 500; the cause
+     is only in `~/.claude/litellm/litellm.log`.
    - `claude-cloud -SessionName <name>` - clears every local/Augure-routing env var, restores
      the caller's ORIGINAL `ANTHROPIC_API_KEY` (whatever was there before the first hop away
      from it, via either `claude-ollama` or `claude-augure` - never an intermediate value from

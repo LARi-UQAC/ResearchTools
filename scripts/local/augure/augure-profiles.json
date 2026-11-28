@@ -1,0 +1,15 @@
+{
+  "_comment": "AugureAI account profiles of claude-augure (Issue #112). Each profile names the environment VARIABLES that hold its keys, never the key values. Today dev and chat share the same two keys (owner, 2026-11-27). The day the keys separate, change ONE line here (the profile's api_key_env or mcp_key_env) and restart the proxy with litellm-autostart.ps1: no code changes.",
+  "profiles": {
+    "dev": {
+      "description": {"value": "Developer account", "provenance": "owner 2026-11-27"},
+      "api_key_env": {"value": "AUGUREAI_API_KEY", "provenance": "owner 2026-11-27: the model access key"},
+      "mcp_key_env": {"value": "AUGURE_MCP_KEY", "provenance": "owner 2026-11-27: the only MCP key, used to list the models"}
+    },
+    "chat": {
+      "description": {"value": "Paid chat subscription account", "provenance": "owner 2026-11-27"},
+      "api_key_env": {"value": "AUGUREAI_API_KEY", "provenance": "owner 2026-11-27: same key as dev for now"},
+      "mcp_key_env": {"value": "AUGURE_MCP_KEY", "provenance": "owner 2026-11-27: same MCP key as dev for now"}
+    }
+  }
+}

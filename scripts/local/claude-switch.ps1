@@ -6,9 +6,14 @@
     default Anthropic cloud.
 
 .DESCRIPTION
+    Load it with dot-sourcing (. .\scripts\local\claude-switch.ps1). Run
+    directly, it loads no function, prints the two correct lines in red and
+    exits 2, naming any argument it ignored (2026-11-28).
+
     Three dot-sourced functions: claude-ollama (alias claude-local) redirects
     Claude Code to a model served locally by Ollama, claude-augure switches to
-    the AugureAI endpoint with AUGUREAI_API_KEY, claude-cloud clears every
+    AugureAI through a local LiteLLM proxy (Issue #112: profile, keys and model
+    chosen from scripts\local\augure\), claude-cloud clears every
     redirection and returns to the default Anthropic cloud. Each function
     launches `claude` itself: normal usage is always one of the three, never
     bare `claude`, so no restore-on-exit is needed - every invocation is
@@ -68,10 +73,22 @@
 .EXAMPLE
     . .\scripts\local\claude-switch.ps1
     claude-local
-    claude-augure
+    claude-augure -Profile dev
     claude-cloud
     claude-local -Model qwen2.5-coder:7b -SessionName "PR61-local"
 #>
+
+# --- Refuse a direct run (R8, R12): nothing below would be loaded, so say so ---
+# Dot-sourced, InvocationName is '.'; run as a script it is the path. exit only
+# on the direct run, so a dot-sourced caller's shell is never closed.
+if ($MyInvocation.InvocationName -ne '.') {
+    Write-Host "claude-switch.ps1 was run, not dot-sourced: no function was loaded, so nothing was done." -ForegroundColor Red
+    Write-Host "Load it into this shell first, then run one command:" -ForegroundColor Red
+    Write-Host "  . .\scripts\local\claude-switch.ps1" -ForegroundColor Red
+    Write-Host "  claude-local   (or claude-augure, or claude-cloud)" -ForegroundColor Red
+    foreach ($ignored in $args) { Write-Host "'$ignored' was ignored." -ForegroundColor Red }
+    exit 2
+}
 
 # --- Configuration, in one place (R0) ---
 # Operator / machine choices, not GPU measurements to keep in sync like
@@ -83,7 +100,7 @@
 $script:OllamaHost = "127.0.0.1"
 $script:OllamaPort = 11434
 $script:ClientTimeoutMs = "600000"   # 10 min - slow local inference expected (see the "session" role below)
-$script:AugureBaseUrl = "https://api.augureai.ca/v1"   # supplied by the operator, 2026-10-15
+$script:AugureDataDir = Join-Path $PSScriptRoot "augure"   # settings, models and profiles of claude-augure (Issue #112)
 
 # Every variable either claude-ollama or claude-augure may set, so the SAME
 # list drives both the save and the restore (round 2, finding M1 - restoring
@@ -432,62 +449,362 @@ function claude-ollama {
     claude
 }
 
+function Read-AugureDataFile {
+    <#
+    .SYNOPSIS
+        Reads one JSON data file of the AugureAI route, from scripts\local\augure\.
+
+    Inputs:
+        Name (string): the file name.
+
+    Outputs:
+        result (PSCustomObject): the parsed document. Its entries are {value, provenance}.
+    #>
+    param([Parameter(Mandatory)][string]$Name)
+    return (Get-Content -Raw -Encoding UTF8 -Path (Join-Path $script:AugureDataDir $Name) | ConvertFrom-Json)
+}
+
+function Get-AugureEntryValue {
+    <#
+    .SYNOPSIS
+        Returns the "value" of one {value, provenance} entry, refusing a missing one by name (R3).
+
+    Inputs:
+        Container (PSCustomObject): an object of a data file (the settings, or one profile).
+        Key (string): the entry name.
+
+    Outputs:
+        result: the entry's value, as written in the file.
+
+    Raises:
+        Throws a message naming the key when the entry is absent.
+    #>
+    param([Parameter(Mandatory)]$Container, [Parameter(Mandatory)][string]$Key)
+    $property = $Container.PSObject.Properties[$Key]
+    if ($null -eq $property -or $null -eq $property.Value.PSObject.Properties['value']) {
+        throw "'$Key' is missing from the AugureAI data files"
+    }
+    return $property.Value.value
+}
+
+function ConvertTo-AugureIndex {
+    <#
+    .SYNOPSIS
+        Turns a menu answer into a zero-based index, or -1 when it is not a listed number.
+
+    .DESCRIPTION
+        A menu never guesses: an answer that is not a whole number from 1 to Count is refused
+        by the caller, not repeated and not replaced by a default.
+
+    Inputs:
+        Answer (string): the raw answer.
+        Count (int): the number of entries offered.
+
+    Outputs:
+        result (int): the zero-based index, or -1.
+    #>
+    param([AllowNull()][string]$Answer, [Parameter(Mandatory)][int]$Count)
+    $number = 0
+    if ($null -eq $Answer -or -not [int]::TryParse($Answer.Trim(), [ref]$number)) { return -1 }
+    if ($number -lt 1 -or $number -gt $Count) { return -1 }
+    return $number - 1
+}
+
+function Test-AugureProxy {
+    <#
+    .SYNOPSIS
+        One liveness request to the LiteLLM proxy, bounded by its timeout (R10).
+
+    Inputs:
+        Url (string): the liveness URL.
+        TimeoutSec (int): seconds to wait.
+
+    Outputs:
+        result (bool): $true only when the liveness route answers with a 2xx status. Any other
+        status (401, 500 and so on), a timeout or a connection failure is $false: an error
+        answer from something on the port is not the LiteLLM proxy being up (Issue #75).
+    #>
+    param([Parameter(Mandatory)][string]$Url, [Parameter(Mandatory)][int]$TimeoutSec)
+    try {
+        $answer = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec $TimeoutSec
+        $code = [int]$answer.StatusCode
+        return ($code -ge 200 -and $code -le 299)
+    } catch {
+        return $false
+    }
+}
+
+function Invoke-AugureModelList {
+    <#
+    .SYNOPSIS
+        Runs `augure_models.py list` in a child process, with the MCP key in ITS environment only.
+
+    .DESCRIPTION
+        The key is set on ProcessStartInfo.EnvironmentVariables, so it never appears on the
+        command line (visible to any process) and never in this session's environment.
+        Output is read asynchronously so a full stderr pipe cannot block the child. The wait is
+        bounded (R10).
+
+    Inputs:
+        Python (string): the interpreter, from Resolve-PythonInterpreter.
+        Arguments (string[]): the script path and its arguments; never a secret.
+        Environment (hashtable): extra child variables, here the MCP key only.
+        TimeoutMs (int): the bound on the whole child process.
+
+    Outputs:
+        result (hashtable): @{ ExitCode; TimedOut; Stdout; Stderr }. TimedOut is $true only when
+        the bound expired; a child that really exits -1 has TimedOut $false and its stderr kept.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Python,
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [Parameter(Mandatory)][hashtable]$Environment,
+        [Parameter(Mandatory)][int]$TimeoutMs
+    )
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $Python
+    $startInfo.Arguments = (@($Arguments) | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }) -join ' '
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+    foreach ($name in $Environment.Keys) { $startInfo.EnvironmentVariables[$name] = [string]$Environment[$name] }
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    # Both streams are drained asynchronously: a synchronous read blocks until the child closes
+    # the pipe, i.e. until it exits, so the bounded wait below would never be reached (R10).
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $timeout = @{ ExitCode = -1; TimedOut = $true; Stdout = ""; Stderr = "the model listing timed out" }
+    if (-not $process.WaitForExit($TimeoutMs)) {
+        # Kill the whole tree (a launcher may have spawned children holding the pipes), then fall
+        # back to the process itself. Either failing must not hide the timeout result.
+        try { & taskkill.exe /T /F /PID $process.Id *> $null } catch { }
+        try { if (-not $process.HasExited) { $process.Kill() } } catch { }
+        return $timeout
+    }
+    # The child exited, but a grandchild may still hold the pipes open. Both reads share the time
+    # left of the same bound, so the call returns within TimeoutMs whatever the pipes do (R10).
+    $remainingMs = [int][Math]::Max(0, $TimeoutMs - $clock.ElapsedMilliseconds)
+    $readsDone = [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]@($stdoutTask, $stderrTask), $remainingMs)
+    if (-not $readsDone) {
+        # The orphaned grandchild is not reachable through the dead parent's tree, so only the
+        # result is bounded here; the pipes are abandoned with the call.
+        return $timeout
+    }
+    return @{ ExitCode = $process.ExitCode; TimedOut = $false; Stdout = $stdoutTask.Result; Stderr = $stderrTask.Result }
+}
+
+function Read-AugureUserEnv {
+    <#
+    .SYNOPSIS
+        Reads one environment variable at USER scope, the only source of the AugureAI keys.
+
+    .DESCRIPTION
+        Never the process copy: a VS Code process was measured holding a stale AUGUREAI_API_KEY
+        (48 characters, the User value is 52) that AugureAI refused with 401 (Issue #112).
+
+    Inputs:
+        Name (string): the variable name.
+
+    Outputs:
+        result (string | $null): the User-scope value, or $null when unset.
+    #>
+    param([Parameter(Mandatory)][string]$Name)
+    return [Environment]::GetEnvironmentVariable($Name, 'User')
+}
+
+function Read-AugureChoice {
+    <#
+    .SYNOPSIS
+        Reads one menu answer from the operator. The only Read-Host call of the AugureAI route.
+
+    Inputs:
+        Prompt (string): the question shown.
+
+    Outputs:
+        result (string): the raw answer, validated by the caller.
+    #>
+    param([Parameter(Mandatory)][string]$Prompt)
+    return Read-Host -Prompt $Prompt
+}
+
 function claude-augure {
     <#
     .SYNOPSIS
-        Switches Claude Code to the AugureAI cloud endpoint, launching
-        `claude`.
+        Switches Claude Code to AugureAI through the local LiteLLM proxy, launching `claude`.
 
     .DESCRIPTION
-        Refuses (never launching `claude`, touching no environment variable)
-        when AUGUREAI_API_KEY is not set. Clears any Ollama-routing
-        variables a prior claude-ollama call left behind in this shell,
-        since they would otherwise conflict with Augure's own endpoint.
+        Six steps, every refusal before the first routing variable changes:
+          1. the profile: -Profile, else a numbered menu of augure-profiles.json;
+          2. the profile's keys, read at USER scope (Read-AugureUserEnv), missing or empty refused by name;
+          3. the proxy answers its liveness route, else refused naming litellm-autostart.ps1;
+          4. augure_models.py list --profile P --json, the MCP key in the child environment only;
+          5. the model: -Model must be selectable, the only selectable one is used, several are a menu;
+          6. the routing variables.
+        A menu answer that is not a listed number is refused, never repeated and never defaulted.
+
+        Separating the dev and chat keys later is ONE line of augure-profiles.json (the profile's
+        api_key_env or mcp_key_env), no code change here (owner, 2026-11-27).
 
     Inputs:
-        SessionName (string, optional): sets the terminal window title to
-            "[AUGURE] <name>" (cosmetic only).
+        Profile (string, optional): a profile name of augure-profiles.json.
+        Model (string, optional): a model id the account can use.
+        SessionName (string, optional): window title "[AUGURE] <name>" (cosmetic only).
 
     Outputs:
-        None. On success, sets ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY and
-        launches `claude`, after saving the prior environment once per shell
-        (Save-OriginalEnvOnce).
+        None. On success sets ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN (the master key),
+        ANTHROPIC_MODEL and ANTHROPIC_SMALL_FAST_MODEL (augure-<profile>/<id>),
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS (the model's window) and removes ANTHROPIC_API_KEY,
+        after saving the prior environment once per shell (Save-OriginalEnvOnce).
     #>
-    param([string]$SessionName)
+    param([string]$Profile, [string]$Model, [string]$SessionName)
 
-    if (-not $env:AUGUREAI_API_KEY) {
-        Write-Host "AUGUREAI_API_KEY is not set in the environment. Cannot switch to Augure." -ForegroundColor Red
+    try {
+        $settings = Read-AugureDataFile -Name 'augure-settings.json'
+        $profilesDoc = Read-AugureDataFile -Name 'augure-profiles.json'
+    } catch {
+        Write-Host "The AugureAI data files cannot be read: $($_.Exception.Message)" -ForegroundColor Red
+        return
+    }
+    $names = @($profilesDoc.profiles.PSObject.Properties | ForEach-Object { $_.Name })
+
+    # 1. Profile. Adding a profile, or giving one its own keys, is a data change in augure-profiles.json.
+    if (-not $Profile) {
+        Write-Host "AugureAI profile:" -ForegroundColor Magenta
+        for ($i = 0; $i -lt $names.Count; $i++) { Write-Host ("  {0}. {1}" -f ($i + 1), $names[$i]) }
+        $answer = Read-AugureChoice -Prompt "Profile number"
+        $index = ConvertTo-AugureIndex -Answer $answer -Count $names.Count
+        if ($index -lt 0) {
+            Write-Host "'$answer' is not a number between 1 and $($names.Count). Nothing was changed; run claude-augure again." -ForegroundColor Red
+            return
+        }
+        $Profile = $names[$index]
+    }
+    if ($names -notcontains $Profile) {
+        Write-Host "Unknown AugureAI profile '$Profile' (known: $($names -join ', '))." -ForegroundColor Red
         return
     }
 
-    # Save BEFORE clearing anything (code review finding, 2026-10-15): if
-    # claude-augure is the FIRST switch in this shell, Save-OriginalEnvOnce
-    # must snapshot the user's real values - calling it after the Remove-Item
-    # below would snapshot vars this very function had already deleted,
-    # and claude-cloud would then "restore" that deletion as if it were
-    # original.
+    try {
+        $profileEntry = $profilesDoc.profiles.PSObject.Properties[$Profile].Value
+        $apiKeyVar    = Get-AugureEntryValue -Container $profileEntry -Key 'api_key_env'
+        $mcpKeyVar    = Get-AugureEntryValue -Container $profileEntry -Key 'mcp_key_env'
+        $masterKeyVar = Get-AugureEntryValue -Container $settings -Key 'master_key_env'
+        $proxyHost    = Get-AugureEntryValue -Container $settings -Key 'proxy_host'
+        $proxyPort    = Get-AugureEntryValue -Container $settings -Key 'proxy_port'
+        $livenessPath = Get-AugureEntryValue -Container $settings -Key 'liveness_path'
+        $timeoutSec   = Get-AugureEntryValue -Container $settings -Key 'http_timeout_s'
+        $modelPrefix  = Get-AugureEntryValue -Container $settings -Key 'model_prefix'
+    } catch {
+        Write-Host "AugureAI settings are incomplete: $($_.Exception.Message)" -ForegroundColor Red
+        return
+    }
+
+    # 0. The proxy address, checked before any key is read or any variable is set (Issue #75).
+    #    The host rule mirrors Resolve-LitellmStartDecision in scripts\local\augure\litellm-autostart.ps1:
+    #    only 127.0.0.1. Change both together. The port must be an integer from 1 to 65535.
+    if ($proxyHost -ne '127.0.0.1') {
+        Write-Host "proxy_host is '$proxyHost' in augure-settings.json; only 127.0.0.1 is allowed (loopback only). Nothing was changed." -ForegroundColor Red
+        return
+    }
+    $portOk = ($proxyPort -is [int] -or $proxyPort -is [long]) -and ($proxyPort -ge 1) -and ($proxyPort -le 65535)
+    if (-not $portOk) {
+        Write-Host "proxy_port is '$proxyPort' in augure-settings.json; it must be an integer from 1 to 65535. Nothing was changed." -ForegroundColor Red
+        return
+    }
+
+    # 2. Keys, at USER scope. The process copy is never read.
+    $keys = [ordered]@{}
+    foreach ($var in @($apiKeyVar, $mcpKeyVar, $masterKeyVar)) {
+        $keys[$var] = Read-AugureUserEnv -Name $var
+        if ([string]::IsNullOrWhiteSpace($keys[$var])) {
+            Write-Host "$var is not set, or is empty, at the User scope. Set it, then open a new terminal." -ForegroundColor Red
+            return
+        }
+    }
+
+    # 3. The proxy must answer its liveness route before anything is redirected to it.
+    $base = "http://${proxyHost}:${proxyPort}"
+    if (-not (Test-AugureProxy -Url ($base + $livenessPath) -TimeoutSec $timeoutSec)) {
+        Write-Host "The LiteLLM proxy does not answer on $base. Start it with scripts\local\augure\litellm-autostart.ps1, then retry." -ForegroundColor Red
+        return
+    }
+
+    # 4. Live list of the models this profile may use. The MCP key travels in the child environment only.
+    $repoRoot = (Resolve-Path (Join-Path $script:AugureDataDir "..\..\..")).Path
+    $python = Resolve-PythonInterpreter -RepoRoot $repoRoot
+    if (-not $python) { return }
+    $childEnv = @{}
+    $childEnv[$mcpKeyVar] = $keys[$mcpKeyVar]
+    # One list is three MCP requests, each bounded by http_timeout_s (R10).
+    $listTimeoutMs = [int]($timeoutSec * 1000 * 3)
+    $result = Invoke-AugureModelList -Python $python `
+        -Arguments @((Join-Path $script:AugureDataDir 'augure_models.py'), 'list', '--profile', $Profile, '--json') `
+        -Environment $childEnv -TimeoutMs $listTimeoutMs
+
+    $report = $null
+    try { $report = $result.Stdout | ConvertFrom-Json } catch { $report = $null }
+    $selectable = @()
+    $refused = @()
+    if ($null -ne $report) {
+        $selectable = @($report.selectable)
+        $refused = @($report.refused)
+    }
+    if ($result.TimedOut) {
+        Write-Host "The model listing for profile ${Profile} timed out after $listTimeoutMs ms; nothing was changed." -ForegroundColor Red
+        return
+    }
+    if ($result.ExitCode -ne 0 -or $selectable.Count -eq 0) {
+        Write-Host "No model can be used with profile ${Profile}." -ForegroundColor Red
+        foreach ($item in $refused) { Write-Host "  $($item.id): $($item.reason)" -ForegroundColor Red }
+        if ($result.Stderr) { Write-Host $result.Stderr.Trim() -ForegroundColor Red }
+        return
+    }
+
+    # 5. Model: -Model must be selectable; one selectable model is used; several are a menu.
+    if ($Model) {
+        $chosen = @($selectable | Where-Object { $_.id -eq $Model })
+        if ($chosen.Count -eq 0) {
+            $why = @($refused | Where-Object { $_.id -eq $Model } | ForEach-Object { $_.reason })
+            if ($why.Count -eq 0) { $why = @('it is not in the list the account returned') }
+            Write-Host "Model '$Model' cannot be used with profile ${Profile}: $($why[0])" -ForegroundColor Red
+            return
+        }
+        $chosenModel = $chosen[0]
+    } elseif ($selectable.Count -eq 1) {
+        $chosenModel = $selectable[0]
+        Write-Host "Model: $($chosenModel.id) ($($chosenModel.context_window) tokens)" -ForegroundColor Magenta
+    } else {
+        Write-Host "Models for profile ${Profile}:" -ForegroundColor Magenta
+        for ($i = 0; $i -lt $selectable.Count; $i++) {
+            Write-Host ("  {0}. {1} ({2} tokens)" -f ($i + 1), $selectable[$i].id, $selectable[$i].context_window)
+        }
+        $answer = Read-AugureChoice -Prompt "Model number"
+        $index = ConvertTo-AugureIndex -Answer $answer -Count $selectable.Count
+        if ($index -lt 0) {
+            Write-Host "'$answer' is not a number between 1 and $($selectable.Count). Nothing was changed; run claude-augure again." -ForegroundColor Red
+            return
+        }
+        $chosenModel = $selectable[$index]
+    }
+    $modelRef = "$modelPrefix$Profile/$($chosenModel.id)"
+    $window = [int]$chosenModel.context_window
+
+    # 6. Routing. Every refusal above returned before this point.
     Save-OriginalEnvOnce
-
-    # Clear any residual local redirection: if claude-ollama ran earlier in
-    # this shell without an intervening claude-cloud, ANTHROPIC_AUTH_TOKEN/
-    # MODEL/... would still point at Ollama and conflict with Augure's own
-    # endpoint.
-    Remove-Item `
-        Env:\ANTHROPIC_AUTH_TOKEN, `
-        Env:\ANTHROPIC_MODEL, `
-        Env:\ANTHROPIC_SMALL_FAST_MODEL, `
-        Env:\API_TIMEOUT_MS, `
-        Env:\CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, `
-        Env:\CLAUDE_CODE_MAX_CONTEXT_TOKENS `
-        -ErrorAction SilentlyContinue
-
-    $env:ANTHROPIC_BASE_URL = $script:AugureBaseUrl
-    $env:ANTHROPIC_API_KEY  = $env:AUGUREAI_API_KEY
+    Remove-Item Env:\ANTHROPIC_API_KEY, Env:\API_TIMEOUT_MS, Env:\CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC -ErrorAction SilentlyContinue
+    $env:ANTHROPIC_BASE_URL         = $base
+    $env:ANTHROPIC_AUTH_TOKEN       = $keys[$masterKeyVar]
+    $env:ANTHROPIC_MODEL            = $modelRef
+    $env:ANTHROPIC_SMALL_FAST_MODEL = $modelRef
+    $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = "$window"
 
     if ($SessionName) {
         try { $Host.UI.RawUI.WindowTitle = "[AUGURE] $SessionName" } catch { }
     }
-    Write-Host "Claude Code -> Augure ($script:AugureBaseUrl)" -ForegroundColor Magenta
+    Write-Host "Claude Code -> AugureAI $modelRef through $base" -ForegroundColor Magenta
     claude
 }
 

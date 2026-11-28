@@ -181,7 +181,9 @@ Check "pip-audit is installed by the installer"  (@($tools | Where-Object { $_.S
 # failure case against a temp copy of the JSON passed with -Path (R20).
 $envs = @()
 try { $envs = @(Get-RtEnvironments -RepoRoot $RepoRoot) } catch { Write-Host "  (loader threw: $($_.Exception.Message))" -ForegroundColor Red }
-Check "the data file declares three environments: .venv-skills, .venv-docs, .venv-pdf2md" ($envs.Count -eq 3 -and $envs[0].Name -eq ".venv-skills" -and $envs[1].Name -eq ".venv-docs" -and $envs[2].Name -eq ".venv-pdf2md")
+Check "the data file declares four environments: .venv-skills, .venv-docs, .venv-pdf2md, .venv-litellm" ($envs.Count -eq 4 -and $envs[0].Name -eq ".venv-skills" -and $envs[1].Name -eq ".venv-docs" -and $envs[2].Name -eq ".venv-pdf2md" -and $envs[3].Name -eq ".venv-litellm")
+# Every requirements file of EVERY environment exists, not the skills list alone (R14).
+Check "every requirements file of every environment exists" (@($envs | ForEach-Object { $_.Requirements } | Where-Object { -not $_.Exists }).Count -eq 0)
 # D9 (owner, 2026-10-22): mineru needs gradio, every gradio caps pillow below 13.0.0, so pdf2md
 # lives in its own environment and .venv-skills can carry the fixed pillow.
 $pdfEnv = @($envs | Where-Object { $_.Name -eq ".venv-pdf2md" })
@@ -350,7 +352,7 @@ function New-StubVenv([string]$root, [string]$name) {
     Set-Content -Path (Join-Path $dir "python.exe") -Value "stub" -Encoding ASCII
 }
 function Remove-StubVenvs([string]$root) {
-    foreach ($n in @(".venv-skills", ".venv-docs", ".venv-pdf2md")) { Remove-Item (Join-Path $root $n) -Recurse -Force -ErrorAction SilentlyContinue }
+    foreach ($n in @(".venv-skills", ".venv-docs", ".venv-pdf2md", ".venv-litellm")) { Remove-Item (Join-Path $root $n) -Recurse -Force -ErrorAction SilentlyContinue }
 }
 $FreshRoot = Join-Path $Fake "fresh-root"
 foreach ($r in $allReqs) {
@@ -397,6 +399,7 @@ foreach ($r in $allReqs) {
 New-StubVenv $ReuseRoot ".venv-skills"
 New-StubVenv $ReuseRoot ".venv-docs"
 New-StubVenv $ReuseRoot ".venv-pdf2md"
+New-StubVenv $ReuseRoot ".venv-litellm"
 $reuseOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "an existing venv is reused with no base python at all" ($reuseOut -match "no base interpreter needed" -and $reuseOut -match "Would install")
 Check "the reuse preview does not say it was skipped"        ($reuseOut -notmatch "skipped")
@@ -417,6 +420,7 @@ $ignoredOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -Python $Py311 -
 New-StubVenv $ReuseRoot ".venv-skills"
 New-StubVenv $ReuseRoot ".venv-docs"
 New-StubVenv $ReuseRoot ".venv-pdf2md"
+New-StubVenv $ReuseRoot ".venv-litellm"
 $ignoredOut2 = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -Python $Py311 -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "-Python is reported ignored when the environment exists" ($ignoredOut2 -match "-Python was ignored")
 Check "(control) with no environment -Python is not reported ignored" ($ignoredOut -notmatch "was ignored")
@@ -521,15 +525,16 @@ $skPy = Join-Path $OrderRoot ".venv-skills\Scripts\python.exe"
 $dcPy = Join-Path $OrderRoot ".venv-docs\Scripts\python.exe"
 $skillReqCount = @($skillEnv[0].Requirements).Count
 $kinds = @($or.Calls | ForEach-Object {
-    if ($_.Args -match '^-m venv ') { if ($_.Args -match 'venv-docs') { "venv-docs" } elseif ($_.Args -match 'venv-pdf2md') { "venv-pdf2md" } else { "venv-skills" } }
+    if ($_.Args -match '^-m venv ') { if ($_.Args -match 'venv-docs') { "venv-docs" } elseif ($_.Args -match 'venv-pdf2md') { "venv-pdf2md" } elseif ($_.Args -match 'venv-litellm') { "venv-litellm" } else { "venv-skills" } }
     elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'rt-tools-') { "tool" }
     elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'requirements-docs') { "docs-file" }
     elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'pdf2md') { "pdf2md-file" }
+    elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'augure') { "litellm-file" }
     elseif ($_.Args -match '^-m pip install') { "skills-file" }
     elseif ($_.Args -match '^-m pip_audit') { "audit" }
     else { "other:" + $_.Args } })
-$expected = @("venv-skills", "tool", "skills-file", "venv-docs", "docs-file", "venv-pdf2md", "pdf2md-file") + @(1..($skillReqCount + 3) | ForEach-Object { "audit" })
-Check "with a recording runner the calls come in order: venv skills, tool, ONE install of the skills files, venv docs, docs file, venv pdf2md, pdf2md file, then pip_audit on every file" ($or.Code -eq 0 -and ($kinds -join ',') -eq ($expected -join ','))
+$expected = @("venv-skills", "tool", "skills-file", "venv-docs", "docs-file", "venv-pdf2md", "pdf2md-file", "venv-litellm", "litellm-file") + @(1..($skillReqCount + 4) | ForEach-Object { "audit" })
+Check "with a recording runner the calls come in order: venv skills, tool, ONE install of the skills files, venv docs, docs file, venv pdf2md, pdf2md file, venv litellm, litellm file, then pip_audit on every file" ($or.Code -eq 0 -and ($kinds -join ',') -eq ($expected -join ','))
 # pip resolves only the files one call names, so every file of an environment goes in one call:
 # file by file, a later file could move a package an earlier one pinned with a warning and exit 0.
 $skillInstall = @($or.Calls | Where-Object { $_.Exe -eq $skPy -and $_.Args -match '^-m pip install' -and $_.Args -notmatch 'rt-tools-' })
@@ -555,8 +560,9 @@ $StubRoot = New-RunRoot "two-stubs"
 New-StubVenv $StubRoot ".venv-skills"
 New-StubVenv $StubRoot ".venv-docs"
 New-StubVenv $StubRoot ".venv-pdf2md"
+New-StubVenv $StubRoot ".venv-litellm"
 $st = Invoke-Install $StubRoot @{ CandidatePaths = @() }
-Check "three stub existing environments are reused with no base interpreter and no venv call" ($st.Code -eq 0 -and @($st.Calls | Where-Object { $_.Args -match '^-m venv' }).Count -eq 0 -and $st.Text -notmatch "skipped" -and @($st.Calls | Where-Object { $_.Args -match 'requirements-docs' -and $_.Exe -like '*venv-docs*' }).Count -ge 1)
+Check "four stub existing environments are reused with no base interpreter and no venv call" ($st.Code -eq 0 -and @($st.Calls | Where-Object { $_.Args -match '^-m venv' }).Count -eq 0 -and $st.Text -notmatch "skipped" -and @($st.Calls | Where-Object { $_.Args -match 'requirements-docs' -and $_.Exe -like '*venv-docs*' }).Count -ge 1)
 
 # ------------------------------------------------------------ setup.ps1 wiring ---
 $setupText = Get-Content (Join-Path $RepoRoot "setup.ps1") -Raw -Encoding UTF8

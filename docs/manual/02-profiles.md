@@ -54,7 +54,9 @@ Set these at the Windows **User** scope (PowerShell), then restart Claude Code:
 |---|---|---|
 | `OBSIDIAN_VAULT` | the vault hooks, the vault daemon, `local-writer` | Root of your Obsidian vault. `setup.ps1` offers to set it at user scope when it is unset and never replaces an existing value |
 | `PROFESSOR_EXPERTISE_DATA` | `professor-expertise-finder` | Folder holding the location tables and batch registries. Default `~/workspace/professor-expertise` |
-| `AUGUREAI_API_KEY` | `claude-augure` in `scripts/local/claude-switch.ps1` | Key sent as `ANTHROPIC_API_KEY` when a session is routed through AugureAI, see [chapter 03](03-token-management.md) |
+| `AUGUREAI_API_KEY` | the LiteLLM proxy started by `scripts/local/augure/litellm-autostart.ps1` | AugureAI model access key, read at User scope and given to the proxy process only, see [chapter 03](03-token-management.md) |
+| `AUGURE_MCP_KEY` | `scripts/local/augure/augure_models.py`, called by `claude-augure` | Lists the AugureAI models the account can use (free MCP call) |
+| `LITELLM_MASTER_KEY` | `litellm-autostart.ps1` and `claude-augure` | Created once by `litellm-autostart.ps1 -Install`, never overwritten; the proxy refuses any request without it |
 | `FORM_SERVICE_KEY`, `FORM_SERVICE_HOST` | `deploy/form-service/` | Shared secret and public host name of the PDF-form API, see [chapter 17](17-thesistracker-integration.md) |
 | `WP_NONCE`, `WP_COOKIES`, `WP_BASE` | `wp-portfolio-sync` | WordPress cookie authentication, its cookie file and the site address, for the one-time portfolio migration |
 | `RT_PG_PASSWORD` | `rt_store.py` of the dashboard | Password of the optional PostgreSQL identity layer, read only when `observe-config.json` declares a `postgres` block |
@@ -203,6 +205,19 @@ its advisories accepted and recorded in `IMPROVEMENTS.md`.
 | ☑ | `pymupdf4llm` | pymupdf4llm | 1.27.2.3 | pdf2md `==1.27.2.3` | - | yes | AGPL-3.0 licence |
 | ☑ | `PyYAML` | yaml | 6.0.3 | pdf2md `==6.0.3` | pdf2md |  | read with yaml.safe_load only |
 <!-- python-libs:end .venv-pdf2md -->
+
+### `.venv-litellm`
+
+The interpreter of the local LiteLLM proxy that `claude-augure` goes through. AugureAI serves only
+the OpenAI protocol (measured 2026-11-27: `POST /v1/messages` answers 404), so Claude Code needs a
+proxy that translates its Anthropic requests. The owner kept it apart on 2026-11-27, because the
+proxy extra of LiteLLM brings a large web stack that no skill of `.venv-skills` uses.
+
+<!-- python-libs:begin .venv-litellm -->
+| Declared | Library | Import | Pin | Declared in | Used by | Optional | Note |
+|---|---|---|---|---|---|---|---|
+| ☑ | `litellm` | (none) | 1.111.0 | scripts/local/augure/requirements.txt `[proxy]==1.111.0` | - |  |  |
+<!-- python-libs:end .venv-litellm -->
 
 ### The form service
 

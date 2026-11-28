@@ -1,0 +1,15 @@
+{
+  "_comment": "Context window of each AugureAI model, kept by hand from Augure's own API page (Issue #112). Neither GET /v1/models nor the MCP list_models tool reports a window (measured 2026-11-27), so a model absent from 'models' is REFUSED with its reason, never accepted with a guessed window (R8). 'auto' is not entered: the page states no window for it.",
+  "source_url": {"value": "https://augureai.ca/fr/documentation/api#models", "provenance": "given by the owner 2026-11-27"},
+  "read_on": {"value": "2026-11-27", "provenance": "date the page was read"},
+  "required_window": {"unit": "tokens", "value": 1048576, "provenance": "chosen by the owner 2026-11-27: Claude Code as used here needs a 1M-token window"},
+  "models": {
+    "rosedale-1": {"context_window": {"unit": "tokens", "value": 1048576, "provenance": "Augure API page 2026-11-27: 1M, stated as 1 048 576 tokens in the chat completions section"}},
+    "ossington-5": {"context_window": {"unit": "tokens", "value": 262144, "provenance": "Augure API page 2026-11-27: 256K"}},
+    "ossington-4": {"context_window": {"unit": "tokens", "value": 262144, "provenance": "Augure API page 2026-11-27: 256K"}},
+    "ossington-4-1": {"context_window": {"unit": "tokens", "value": 262144, "provenance": "Augure API page 2026-11-27: 256K"}},
+    "tofino-3": {"context_window": {"unit": "tokens", "value": 262144, "provenance": "Augure API page 2026-11-27: 256K"}},
+    "open-glm-5-3": {"context_window": {"unit": "tokens", "value": 262144, "provenance": "Augure API page 2026-11-27: 256K, preview"}},
+    "open-qwen-3.8-flash-next": {"context_window": {"unit": "tokens", "value": 262144, "provenance": "Augure API page 2026-11-27: 256K, preview"}}
+  }
+}

@@ -14,7 +14,10 @@
     -Status     read-only report: shortcut, port owner, liveness answer, log tail.
     -DryRun     writes nothing and starts nothing; prints what it would do.
 
-    Exit codes (R12): 0 done or already running, 2 refusal (named cause), 1 failure.
+    Exit codes (R12): 0 done or already running; 2 refusal by design (bad host, port held by another
+    process, a missing key variable or settings key, a missing interpreter environment); 1 failure
+    (render-config failed, litellm.exe missing, liveness never answered, unreadable data file).
+    A refusal is an exception carrying Data['LitellmRefusal'], created by New-LitellmRefusal.
 
     Dot-sourcing: set RT_LITELLM_NO_MAIN=1 before dot-sourcing and only the functions are defined.
     The verifier scripts\test\verify-litellm-autostart.ps1 does this.
@@ -41,6 +44,23 @@ $script:LitellmBatName = 'litellm-autostart.bat'
 
 . (Join-Path $script:LitellmRepo 'scripts\lib\rt-venv.ps1')
 
+function New-LitellmRefusal {
+    <#
+    .SYNOPSIS
+        Build the exception of a refusal by design, so the entry point exits 2 (R12).
+
+    .PARAMETER Message
+        The named cause shown to the operator.
+
+    .OUTPUTS
+        System.Exception carrying Data['LitellmRefusal'] = $true. Caller throws it.
+    #>
+    param([Parameter(Mandatory = $true)][string]$Message)
+    $ex = New-Object System.InvalidOperationException $Message
+    $ex.Data['LitellmRefusal'] = $true
+    return $ex
+}
+
 function Get-LitellmSettingValue {
     <#
     .SYNOPSIS
@@ -64,14 +84,14 @@ function Get-LitellmSettingValue {
         [string]$FileName = 'augure-settings.json'
     )
     $prop = $Doc.PSObject.Properties[$Key]
-    if ($null -eq $prop) { throw "'$Key' is missing from $FileName" }
+    if ($null -eq $prop) { throw (New-LitellmRefusal "'$Key' is missing from $FileName") }
     $entry = $prop.Value
     if ($null -eq $entry -or $null -eq $entry.PSObject.Properties['value']) {
-        throw "'$Key' in $FileName must be an object with a 'value'"
+        throw (New-LitellmRefusal "'$Key' in $FileName must be an object with a 'value'")
     }
     $prov = $entry.PSObject.Properties['provenance']
     if ($null -eq $prov -or [string]::IsNullOrWhiteSpace([string]$prov.Value)) {
-        throw "'$Key' in $FileName has no provenance (R4)"
+        throw (New-LitellmRefusal "'$Key' in $FileName has no provenance (R4)")
     }
     return $entry.value
 }
@@ -146,6 +166,8 @@ function Resolve-LitellmStartDecision {
     param(
         $PortOwnerPid,
         [AllowEmptyString()][string]$PortOwnerName = '',
+        [AllowEmptyString()][string]$PortOwnerCommandLine = '',
+        [AllowEmptyString()][string]$PortOwnerParentName = '',
         [Parameter(Mandatory = $true)][object]$Settings
     )
     $proxyHost = Get-LitellmSettingValue -Doc $Settings -Key 'proxy_host'
@@ -156,7 +178,12 @@ function Resolve-LitellmStartDecision {
     if ($null -eq $PortOwnerPid) {
         return @{ Action = 'start'; Reason = "port $port is free" }
     }
-    if ($PortOwnerName -match '^litellm(\.exe)?$') {
+    # litellm.exe is a pip launcher: the socket is owned by the python it starts, so the owner is
+    # LiteLLM when its own name, its parent's name or its command line says so. Not every python.
+    $isLiteLLM = ($PortOwnerName -match '^litellm(\.exe)?$') -or
+                 ($PortOwnerParentName -match '^litellm(\.exe)?$') -or
+                 ($PortOwnerCommandLine -match 'litellm')
+    if ($isLiteLLM) {
         return @{ Action = 'running'; Reason = "LiteLLM already holds port $port (PID $PortOwnerPid)" }
     }
     return @{ Action = 'refuse'; Reason = "port $port is held by '$PortOwnerName' (PID $PortOwnerPid), not LiteLLM; refusing to start a second listener" }
@@ -176,10 +203,20 @@ function Get-LitellmPortOwner {
     param([Parameter(Mandatory = $true)][int]$Port)
     $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($null -eq $conn) { return $null }
-    $proc = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
+    $ownerPid = [int]$conn.OwningProcess
+    $proc = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
     $name = ''
     if ($null -ne $proc) { $name = [string]$proc.ProcessName }
-    return @{ Pid = [int]$conn.OwningProcess; Name = $name }
+    # The command line and the parent's name tell a LiteLLM python from an unrelated one.
+    $cmdLine = ''
+    $parentName = ''
+    $cim = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $cim) {
+        $cmdLine = [string]$cim.CommandLine
+        $parent = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $([int]$cim.ParentProcessId)" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $parent) { $parentName = [string]$parent.Name }
+    }
+    return @{ Pid = $ownerPid; Name = $name; CommandLine = $cmdLine; ParentName = $parentName }
 }
 
 function New-LitellmChildEnvironment {
@@ -216,7 +253,7 @@ function New-LitellmChildEnvironment {
     foreach ($name in $names) {
         $value = & $ReadUserVar $name
         if ([string]::IsNullOrEmpty([string]$value)) {
-            throw "$name is not set at the User scope; the proxy cannot start without it (set it, or run litellm-autostart.ps1 -Install for the master key)"
+            throw (New-LitellmRefusal "$name is not set at the User scope; the proxy cannot start without it (set it, or run litellm-autostart.ps1 -Install for the master key)")
         }
         $childEnv[$name] = [string]$value
     }
@@ -293,7 +330,7 @@ function Install-LitellmAutostart {
         [Parameter(Mandatory = $true)][scriptblock]$WriteUserVar,
         [switch]$DryRun
     )
-    if (-not (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) { throw "launcher missing: $LauncherPath" }
+    if (-not (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) { throw (New-LitellmRefusal "launcher missing: $LauncherPath") }
     $keyVar = [string](Get-LitellmSettingValue -Doc $Settings -Key 'master_key_env')
     $shortcut = Join-Path $StartupFolder $script:LitellmShortcutName
 
@@ -411,6 +448,53 @@ function Wait-LitellmLiveness {
     return $false
 }
 
+function Invoke-LitellmRenderConfig {
+    <#
+    .SYNOPSIS
+        Run augure_models.py render-config with the .venv-skills interpreter and return its exit code.
+
+    .PARAMETER Python
+        The .venv-skills python.exe.
+
+    .PARAMETER ModelsPy
+        The augure_models.py script.
+
+    .PARAMETER CfgPath
+        The proxy config file to write.
+
+    .PARAMETER DryRun
+        Pass --dry-run through.
+
+    .OUTPUTS
+        int: the exit code of render-config. Its stdout goes to the host, not the pipeline.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Python,
+        [Parameter(Mandatory = $true)][string]$ModelsPy,
+        [Parameter(Mandatory = $true)][string]$CfgPath,
+        [switch]$DryRun
+    )
+    $renderArgs = @($ModelsPy, 'render-config', '--out', $CfgPath)
+    if ($DryRun) { $renderArgs += '--dry-run' }
+    & $Python @renderArgs | Out-Host
+    return $LASTEXITCODE
+}
+
+function Initialize-LitellmLogFolder {
+    <#
+    .SYNOPSIS
+        Create the folder that holds the proxy log.
+
+    .PARAMETER LogPath
+        The log file whose parent folder is created.
+
+    .OUTPUTS
+        None. Side effect: creates the folder when absent.
+    #>
+    param([Parameter(Mandatory = $true)][string]$LogPath)
+    New-Item -ItemType Directory -Path (Split-Path $LogPath -Parent) -Force | Out-Null
+}
+
 function Invoke-LitellmLogRotation {
     <#
     .SYNOPSIS
@@ -508,21 +592,24 @@ function Start-LitellmProxy {
     $owner = Get-LitellmPortOwner -Port $port
     $ownerPid = $null
     $ownerName = ''
-    if ($null -ne $owner) { $ownerPid = $owner.Pid; $ownerName = $owner.Name }
-    $decision = Resolve-LitellmStartDecision -PortOwnerPid $ownerPid -PortOwnerName $ownerName -Settings $Settings
+    $ownerCmd = ''
+    $ownerParent = ''
+    if ($null -ne $owner) {
+        $ownerPid = $owner.Pid; $ownerName = $owner.Name
+        $ownerCmd = $owner.CommandLine; $ownerParent = $owner.ParentName
+    }
+    $decision = Resolve-LitellmStartDecision -PortOwnerPid $ownerPid -PortOwnerName $ownerName -PortOwnerCommandLine $ownerCmd -PortOwnerParentName $ownerParent -Settings $Settings
     if ($decision.Action -eq 'refuse') { Write-Host "  STOP  $($decision.Reason)"; return 2 }
     if ($decision.Action -eq 'running') { Write-Host "  $($decision.Reason). Nothing to do."; return 0 }
 
     $skills = Resolve-RtVenvPython -RepoRoot $script:LitellmRepo -VenvName '.venv-skills'
-    if ($null -eq $skills.Python) { throw $skills.Message }
+    if ($null -eq $skills.Python) { throw (New-LitellmRefusal $skills.Message) }
     $litellmPy = Resolve-RtVenvPython -RepoRoot $script:LitellmRepo -VenvName '.venv-litellm'
-    if ($null -eq $litellmPy.Python) { throw $litellmPy.Message }
+    if ($null -eq $litellmPy.Python) { throw (New-LitellmRefusal $litellmPy.Message) }
 
     $modelsPy = Join-Path $script:LitellmDir 'augure_models.py'
-    $renderArgs = @($modelsPy, 'render-config', '--out', $cfgPath)
-    if ($DryRun) { $renderArgs += '--dry-run' }
-    & $skills.Python @renderArgs
-    if ($LASTEXITCODE -ne 0) { throw "render-config failed (exit $LASTEXITCODE); see the [AUGURE] line above" }
+    $renderCode = Invoke-LitellmRenderConfig -Python $skills.Python -ModelsPy $modelsPy -CfgPath $cfgPath -DryRun:$DryRun
+    if ($renderCode -ne 0) { throw "render-config failed (exit $renderCode); see the [AUGURE] line above" }
 
     $childEnv = New-LitellmChildEnvironment -Settings $Settings -Profiles $Profiles -ReadUserVar $script:DefaultReadUserVar
     $exeDir = Split-Path $litellmPy.Python -Parent
@@ -537,12 +624,16 @@ function Start-LitellmProxy {
         return 0
     }
 
-    New-Item -ItemType Directory -Path (Split-Path $logPath -Parent) -Force | Out-Null
+    Initialize-LitellmLogFolder -LogPath $logPath
     Invoke-LitellmLogRotation -LogPath $logPath -MaxBytes $logMax
-    $proc = Start-LitellmProcess -ExePath $exe -Arguments $arguments -Environment $childEnv -LogPath $logPath
+    # The process started here is the cmd.exe wrapper; the port owner is read again after liveness.
+    $null = Start-LitellmProcess -ExePath $exe -Arguments $arguments -Environment $childEnv -LogPath $logPath
     $url = "http://{0}:{1}{2}" -f $proxyHost, $port, $liveness
     if (Wait-LitellmLiveness -Url $url -TotalTimeoutSec $startTimeout -RequestTimeoutSec $reqTimeout) {
-        Write-Host "  LiteLLM started, pid $($proc.Id), liveness answering at $url"
+        $after = Get-LitellmPortOwner -Port $port
+        $listenerPid = 'unknown'
+        if ($null -ne $after) { $listenerPid = $after.Pid }
+        Write-Host "  LiteLLM started, port owner pid $listenerPid, liveness answering at $url"
         return 0
     }
     Write-Host "  LiteLLM did not answer $url within $startTimeout s; read $logPath"
@@ -587,7 +678,8 @@ function Invoke-LitellmMain {
         return (Start-LitellmProxy -Settings $settings -Profiles $profiles -DryRun:$DryRun)
     } catch {
         Write-Host "  STOP  $($_.Exception.Message)"
-        return 2
+        if ($_.Exception.Data.Contains('LitellmRefusal')) { return 2 }
+        return 1
     }
 }
 

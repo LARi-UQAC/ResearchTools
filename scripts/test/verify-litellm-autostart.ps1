@@ -60,10 +60,49 @@ $Settings = Get-Content -LiteralPath (Join-Path $DataDir 'augure-settings.json')
 $Profiles = Get-Content -LiteralPath (Join-Path $DataDir 'augure-profiles.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 
 # ---- shadows: nothing real is reached -------------------------------------------------
-$script:FakePort = $null
+$script:PortProbes = New-Object System.Collections.ArrayList
+$script:PortProbeIndex = 0
 function Get-LitellmPortOwner {
     param([int]$Port)
-    return $script:FakePort
+    if ($script:PortProbeIndex -lt $script:PortProbes.Count) {
+        $answer = $script:PortProbes[$script:PortProbeIndex]
+        $script:PortProbeIndex++
+        return $answer
+    }
+    return $null
+}
+function Reset-PortProbes {
+    param([object[]]$Answers)
+    $script:PortProbes = New-Object System.Collections.ArrayList
+    foreach ($a in $Answers) { [void]$script:PortProbes.Add($a) }
+    $script:PortProbeIndex = 0
+}
+
+$script:RenderExit = 0
+$script:LivenessAnswer = $true
+$script:WrapperPid = 99
+$script:FakeVenvDir = ''
+function Resolve-RtVenvPython {
+    param([string]$RepoRoot, [string]$VenvName)
+    return @{ Python = (Join-Path $script:FakeVenvDir 'python.exe'); Message = '' }
+}
+function Invoke-LitellmRenderConfig {
+    param([string]$Python, [string]$ModelsPy, [string]$CfgPath, [switch]$DryRun)
+    return $script:RenderExit
+}
+function Start-LitellmProcess {
+    param([string]$ExePath, [string]$Arguments, [hashtable]$Environment, [string]$LogPath)
+    return [pscustomobject]@{ Id = $script:WrapperPid }
+}
+function Wait-LitellmLiveness {
+    param([string]$Url, [int]$TotalTimeoutSec, [int]$RequestTimeoutSec)
+    return $script:LivenessAnswer
+}
+function Initialize-LitellmLogFolder {
+    param([string]$LogPath)
+}
+function Invoke-LitellmLogRotation {
+    param([string]$LogPath, [long]$MaxBytes)
 }
 
 $script:ShortcutCalls = 0
@@ -82,6 +121,9 @@ $Tmp = Join-Path ([IO.Path]::GetTempPath()) ('litellm-verify-' + [guid]::NewGuid
 New-Item -ItemType Directory -Path $Tmp -Force | Out-Null
 $FakeBat = Join-Path $Tmp 'fixture-launcher.bat'
 Set-Content -LiteralPath $FakeBat -Value '@echo off' -Encoding ASCII
+$script:FakeVenvDir = Join-Path $Tmp 'fakevenv'
+New-Item -ItemType Directory -Path $script:FakeVenvDir -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $script:FakeVenvDir 'litellm.exe') -Value '' -Encoding ASCII
 
 function New-StartupFolder {
     $folder = Join-Path $Tmp ('startup-' + [guid]::NewGuid().ToString('N'))
@@ -101,9 +143,25 @@ try {
 } catch { Check 'port held by litellm gives running' $false $_.Exception.Message }
 
 try {
-    $d = Resolve-LitellmStartDecision -PortOwnerPid 4321 -PortOwnerName 'python' -Settings $Settings
-    Check 'port held by another name refused, PID named' (($d.Action -eq 'refuse') -and ($d.Reason -match '4321')) "got $($d.Action): $($d.Reason)"
-} catch { Check 'port held by another name refused, PID named' $false $_.Exception.Message }
+    $cmd = '"C:\venv\Scripts\python.exe" "C:\venv\Scripts\litellm.exe" --config x.yaml --port 4000'
+    $d = Resolve-LitellmStartDecision -PortOwnerPid 4321 -PortOwnerName 'python' -PortOwnerCommandLine $cmd -Settings $Settings
+    Check 'python owner whose command line holds litellm gives running' ($d.Action -eq 'running') "got $($d.Action): $($d.Reason)"
+} catch { Check 'python owner whose command line holds litellm gives running' $false $_.Exception.Message }
+
+try {
+    $d = Resolve-LitellmStartDecision -PortOwnerPid 4321 -PortOwnerName 'python' -PortOwnerCommandLine 'python.exe worker.py' -PortOwnerParentName 'explorer.exe' -Settings $Settings
+    Check 'python owner whose command line lacks litellm refused, PID named' (($d.Action -eq 'refuse') -and ($d.Reason -match '4321')) "got $($d.Action): $($d.Reason)"
+} catch { Check 'python owner whose command line lacks litellm refused, PID named' $false $_.Exception.Message }
+
+try {
+    $d = Resolve-LitellmStartDecision -PortOwnerPid 4321 -PortOwnerName 'python' -PortOwnerCommandLine 'python.exe worker.py' -PortOwnerParentName 'litellm.exe' -Settings $Settings
+    Check 'python owner whose parent is litellm.exe gives running' ($d.Action -eq 'running') "got $($d.Action): $($d.Reason)"
+} catch { Check 'python owner whose parent is litellm.exe gives running' $false $_.Exception.Message }
+
+try {
+    $d = Resolve-LitellmStartDecision -PortOwnerPid 4321 -PortOwnerName 'python' -PortOwnerCommandLine 'python.exe worker.py' -Settings $Settings
+    Check 'python owner with no litellm evidence still refused' ($d.Action -eq 'refuse') "got $($d.Action)"
+} catch { Check 'python owner with no litellm evidence still refused' $false $_.Exception.Message }
 
 try {
     $wide = $Settings | ConvertTo-Json -Depth 10 | ConvertFrom-Json
@@ -169,6 +227,44 @@ try {
     $msg = Get-ThrownMessage { Resolve-LitellmStartDecision -PortOwnerPid $null -PortOwnerName '' -Settings $broken }
     Check 'missing settings key refused, name given' ($msg -match 'proxy_port') "message: $msg"
 } catch { Check 'missing settings key refused, name given' $false $_.Exception.Message }
+
+# ---- 11a: exit codes (R12) and the PID reported on success ------------------------------
+# Plain run through Invoke-LitellmMain with every process, network and folder effect shadowed.
+# Write-Host goes to the information stream, so the captured output is read from *>&1.
+function Invoke-PlainRun {
+    param([hashtable]$Store, [object[]]$Probes, [int]$RenderExit = 0, [bool]$Liveness = $true)
+    $script:DefaultReadUserVar = { param([string]$Name) if ($Store.ContainsKey($Name)) { $Store[$Name] } else { $null } }
+    Reset-PortProbes -Answers $Probes
+    $script:RenderExit = $RenderExit
+    $script:LivenessAnswer = $Liveness
+    $collected = @(Invoke-LitellmMain *>&1)
+    $codes = @($collected | Where-Object { $_ -is [int] })
+    $code = if ($codes.Count -gt 0) { $codes[-1] } else { -1 }
+    $text = ($collected | Where-Object { $_ -isnot [int] } | Out-String)
+    return @{ Code = $code; Text = $text }
+}
+
+try {
+    $r = Invoke-PlainRun -Store @{ AUGUREAI_API_KEY = 'k-augure'; LITELLM_MASTER_KEY = 'sk-m' } -Probes @($null) -RenderExit 3
+    Check 'render-config failure exits 1, not 2' ($r.Code -eq 1) "got exit $($r.Code): $($r.Text)"
+} catch { Check 'render-config failure exits 1, not 2' $false $_.Exception.Message }
+
+try {
+    $r = Invoke-PlainRun -Store @{ LITELLM_MASTER_KEY = 'sk-m' } -Probes @($null)
+    Check 'missing key variable still exits 2' ($r.Code -eq 2) "got exit $($r.Code): $($r.Text)"
+} catch { Check 'missing key variable still exits 2' $false $_.Exception.Message }
+
+try {
+    $owner = @{ Pid = 4242; Name = 'python'; CommandLine = 'python.exe C:\venv\Scripts\litellm.exe --config x'; ParentName = '' }
+    $r = Invoke-PlainRun -Store @{ AUGUREAI_API_KEY = 'k-augure'; LITELLM_MASTER_KEY = 'sk-m' } -Probes @($null, $owner)
+    Check 'success line reports the port owner PID, not the wrapper' (($r.Code -eq 0) -and ($r.Text -match 'pid 4242') -and ($r.Text -notmatch 'pid 99')) "exit $($r.Code): $($r.Text)"
+} catch { Check 'success line reports the port owner PID, not the wrapper' $false $_.Exception.Message }
+
+try {
+    $owner = @{ Pid = 4242; Name = 'python'; CommandLine = 'python.exe C:\venv\Scripts\litellm.exe --config x'; ParentName = '' }
+    $r = Invoke-PlainRun -Store @{ AUGUREAI_API_KEY = 'k-augure'; LITELLM_MASTER_KEY = 'sk-m' } -Probes @($null, $owner) -Liveness $false
+    Check 'liveness never answering is a failure, exit 1' ($r.Code -eq 1) "got exit $($r.Code)"
+} catch { Check 'liveness never answering is a failure, exit 1' $false $_.Exception.Message }
 
 # ---- 11: the batch file -----------------------------------------------------------------
 if (Test-Path -LiteralPath $Bat -PathType Leaf) {

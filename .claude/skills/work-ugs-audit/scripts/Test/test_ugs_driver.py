@@ -171,6 +171,10 @@ class TestUgsDriver(unittest.TestCase):
         patcher = patch("ugs_driver.ugs_config.annotation_author", return_value="Fictitious Author")
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Plan 30: an unreachable model is retried after a pause of driver.unreachable_pause_s; no test waits for it.
+        sleeper = patch("ugs_driver.time.sleep")
+        sleeper.start()
+        self.addCleanup(sleeper.stop)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -853,6 +857,101 @@ class TestVisionProbeByRun(unittest.TestCase):
         self.assertTrue(reason)
         verdict = json.loads((self.work / "vision_probe.json").read_text(encoding="utf-8"))
         self.assertIs(verdict["ok"], False)
+
+
+class FlakyModel(FakeModel):
+    """Refuses the first `failures` calls as unreachable, then answers like FakeModel (fictitious, R21)."""
+
+    def __init__(self, failures):
+        super().__init__()
+        self.failures = failures
+
+    def __call__(self, kind, prompt, schema, images=None):
+        if self.failures > 0:
+            self.failures -= 1
+            self.calls.append((kind, prompt))
+            raise NotRun("unreachable", "down for a moment")
+        return super().__call__(kind, prompt, schema, images)
+
+
+class RunContinueTests(unittest.TestCase):
+    """Plan 30, Task 2: run --continue restarts with the arguments of the interrupted run; unreachable is retried."""
+
+    # The helpers of TestUgsDriver, shared without rerunning its tests.
+    drv = TestUgsDriver.drv
+    add_reports = TestUgsDriver.add_reports
+    run_loop = TestUgsDriver.run_loop
+    marker = TestUgsDriver.marker
+    marker_path = TestUgsDriver.marker_path
+
+    def setUp(self):
+        TestUgsDriver.setUp(self)
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+
+    def state_path(self):
+        return self.work / "run_state.json"
+
+    def test_continue_without_run_state_is_refused_naming_the_file(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        code, _, text = self.drv(["run", "--work", str(self.work), "--continue"])
+        self.assertEqual(code, 2)
+        self.assertIn("run_state.json", text)
+
+    def test_continue_with_steps_is_refused(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        TestUgsDriver.run_loop(self)
+        code, _, _ = self.drv(["run", "--work", str(self.work), "--continue", "--steps", "language"])
+        self.assertEqual(code, 2)
+
+    def test_continue_dry_run_prints_the_arguments_and_writes_nothing(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        TestUgsDriver.run_loop(self)
+        marker_before = self.marker_path().read_bytes()
+        code, lines, _ = self.drv(["run", "--work", str(self.work), "--continue", "--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertTrue(any(line.get("dry_run") for line in lines))
+        self.assertEqual(self.marker_path().read_bytes(), marker_before)
+
+    def test_a_run_started_with_only_and_steps_continues_exactly_those(self):
+        self.add_reports([9, 8])
+        TestUgsDriver.prepare(self)
+        TestUgsDriver.run_loop(self, extra=["--only", "R01", "--steps", "language"])
+        self.assertEqual(json.loads(self.state_path().read_text(encoding="utf-8"))["reports"], str(self.reports))
+        code, lines, _ = self.drv(["run", "--work", str(self.work), "--continue"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.marker()["reports"], ["R01"])
+        self.assertEqual({line.get("report_id") for line in lines if "report_id" in line}, {"R01"})
+
+    def test_an_unreachable_model_is_retried_twice_then_the_run_finishes(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        with patch("ugs_driver.time.sleep") as sleep:
+            code, _, _ = self.run_loop(model=FlakyModel(2))
+        self.assertEqual(code, 0)
+        self.assertEqual(self.marker()["unreachable_retries"], 2)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_an_unreachable_model_four_times_stops_after_the_configured_retries(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        with patch("ugs_driver.time.sleep") as sleep:
+            code, _, _ = self.run_loop(model=FlakyModel(4))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.marker()["unreachable_retries"], 3)
+        self.assertEqual(sleep.call_count, 3)
+
+    def test_the_continued_run_records_the_stop_it_continues_from(self):
+        self.add_reports([9])
+        TestUgsDriver.prepare(self)
+        code, _, _ = self.run_loop(model=FakeModel(fail_with=NotRun("unreachable", "down")))
+        self.assertEqual(code, 1)
+        stopped = self.marker()["stopped_at"]
+        code, _, _ = self.drv(["run", "--work", str(self.work), "--continue"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.marker()["continued_from"], stopped)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ import io
 import json
 import os
 import shutil
+import time
 import batch_stats
 import sys
 from datetime import datetime, timezone
@@ -55,6 +56,7 @@ SCHEMA_NAMES = ["rubric", "grade_item", "audit_item", "language", "figure", "fig
 STEP_KIND = {"grade": "grader", "language": "grader", "figures": "vision", "audit": "auditor"}
 TEXT_RUBRIC_SUFFIXES = (".md", ".txt", ".pdf")
 REQUIRED_CONFIG_KEYS = [
+    "driver.unreachable_retries", "driver.unreachable_pause_s",
     "roles.grader", "roles.auditor", "roles.vision", "driver.reply_reserve_tokens", "driver.request_timeout_s",
     "driver.audit_retries", "driver.max_image_bytes", "driver.image_tokens_fallback",
     "grade.invalid_answer_retries", "select.min_word_len", "references.quote_chars", "references.url_timeout_s",
@@ -458,7 +460,9 @@ def _calibration_note(work: Path, loop: int, prompts: Dict[str, str]) -> str:
 
 
 RUN_DONE_NAME = "run_done.json"
-RUN_DONE_KEYS = ("loop", "exit_code", "reports", "open_steps", "blocked_steps", "stopped_at")
+RUN_DONE_KEYS = ("loop", "exit_code", "reports", "open_steps", "blocked_steps", "stopped_at", "unreachable_retries",
+                 "continued_from")
+RUN_STATE_NAME = "run_state.json"  # plan 30: the arguments of the run, read back by --continue
 
 
 def write_run_done(work: Path, record: Dict[str, Any]) -> Path:
@@ -633,6 +637,46 @@ def run_vision_probe(work: Path, call_usage=None) -> Tuple[str, str]:
     return "failed", str(answer.get("kind") or "not_ok")
 
 
+def _read_run_state(work: Path) -> Dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the arguments of the interrupted run from run_state.json (plan 30, Task 2).
+    Inputs:
+        work (Path): the work folder.
+    Outputs:
+        saved (dict): loop, only, steps and reports.
+    Raises:
+        DriverError: naming the file when it is absent or does not hold the four arguments.
+    --------------------------------------------------------------------------
+    """
+    path = work / RUN_STATE_NAME
+    if not path.is_file():
+        raise DriverError(f"no {RUN_STATE_NAME} in the work folder: start the run once without --continue")
+    saved = _read_json(path, RUN_STATE_NAME)
+    if not isinstance(saved, dict) or any(key not in saved for key in ("loop", "only", "steps", "reports")):
+        raise DriverError(f"{RUN_STATE_NAME} does not hold the arguments of a run")
+    return saved
+
+
+def _previous_stop(work: Path) -> Optional[Dict[str, Any]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The stopped_at of the completion marker of the previous run, read before a new run removes the marker.
+    Inputs:
+        work (Path): the work folder.
+    Outputs:
+        stop (dict | None): the stop of the previous run, or None when there was none or no marker.
+    --------------------------------------------------------------------------
+    """
+    try:
+        marker = json.loads((work.resolve() / RUN_DONE_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return marker.get("stopped_at") if isinstance(marker, dict) else None
+
+
 def cmd_run(args, call, fetch, window, count) -> int:
     """
     --------------------------------------------------------------------------
@@ -656,9 +700,22 @@ def cmd_run(args, call, fetch, window, count) -> int:
         DriverError: a refusal.
     --------------------------------------------------------------------------
     """
-    only_steps = parse_steps(getattr(args, "steps", None))  # F5: refused before any folder or file is touched
+    if not getattr(args, "continue_run", False):
+        parse_steps(getattr(args, "steps", None))  # F5: refused before any folder or file is touched
     config = _load_config()
     work = _work_dir(Path(args.work))
+    if getattr(args, "continue_run", False):
+        given = [name for name, value in (("--loop", args.loop), ("--only", args.only), ("--steps", args.steps),
+                                          ("--reports", args.reports)) if value is not None]
+        if given:
+            raise DriverError("--continue cannot be combined with " + ", ".join(given))
+        saved = _read_run_state(work)
+        args.loop, args.only, args.steps, args.reports = saved["loop"], saved["only"], saved["steps"], saved["reports"]
+    elif args.reports is None:
+        raise DriverError("run needs --reports (or --continue after a run)")
+    if args.loop is None:
+        args.loop = 1
+    only_steps = parse_steps(getattr(args, "steps", None))  # F5: refused before any folder or file is touched
     reports = Path(args.reports).resolve()
     try:
         report_prepare._check_work_dir(reports, work)
@@ -672,7 +729,9 @@ def cmd_run(args, call, fetch, window, count) -> int:
     if any(report_id not in ids for report_id in wanted):
         raise DriverError("unknown report id")
     if args.dry_run:
-        _emit({"dry_run": True, "step": "run", "loop": current, "reports": len(wanted)})
+        _emit({"dry_run": True, "step": "run", "loop": current, "reports": len(wanted), "only": args.only,
+               "steps": args.steps, "continue": bool(getattr(args, "continue_run", False)),
+               "reports_folder": str(args.reports)})
         return EXIT_OK
     rubric = _read_json(work / "rubric.json", "rubric")
     # Plan 22 task 3: the real run probes the vision role itself before the figures step; injected calls (tests)
@@ -697,13 +756,30 @@ def cmd_run(args, call, fetch, window, count) -> int:
         batch_stats.write_json_atomic(state, {"loop": current})
     calls = {step: (lambda prompt, schema, images=None, kind=kind: model_call(kind, prompt, schema, images))
              for step, kind in STEP_KIND.items()}
+    # Plan 30: the arguments of this run are saved before the first step, so --continue can read them back.
+    batch_stats.write_json_atomic(work / RUN_STATE_NAME, {"loop": current, "only": args.only, "steps": args.steps,
+                                                          "reports": args.reports, "started": _stamp()})
     record = {"loop": current, "exit_code": EXIT_OK, "reports": list(wanted), "open_steps": 0,
-              "blocked_steps": 0, "stopped_at": None, **record_probe}
+              "blocked_steps": 0, "stopped_at": None, "unreachable_retries": 0,
+              "continued_from": getattr(args, "continued_from", None), **record_probe}
     try:
         for report_id in wanted:
             try:
-                result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services, note,
-                                    fetch, on_step=lambda name: active.update(step=name), only_steps=only_steps)
+                while True:  # Plan 30: an unreachable model is retried a bounded number of times, from the ledger
+                    try:
+                        result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services,
+                                            note, fetch, on_step=lambda name: active.update(step=name),
+                                            only_steps=only_steps)
+                        break
+                    except NotRun as error:
+                        if (error.kind == "unreachable"
+                                and record["unreachable_retries"] < config["driver.unreachable_retries"]):
+                            # Recorded in the completion marker (unreachable_retries), not as a line: the step lines of a
+                            # run keep their exact form.
+                            record["unreachable_retries"] += 1
+                            time.sleep(config["driver.unreachable_pause_s"])
+                            continue
+                        raise
             except NotRun as error:
                 step = _stopped_step(work / "ledger.md", report_id, active["step"])
                 _emit({"report_id": report_id, "step": step, "status": "not_run", "kind": error.kind})
@@ -805,11 +881,13 @@ def _parser() -> argparse.ArgumentParser:
     prep.add_argument("--work", default=None)
     run = sub.add_parser("run")
     run.add_argument("--work", required=True)
-    run.add_argument("--reports", required=True)
-    run.add_argument("--loop", type=int, default=1)
+    run.add_argument("--reports", default=None, help="required unless --continue")
+    run.add_argument("--loop", type=int, default=None)
     run.add_argument("--resume", action="store_true", help="accepted for clarity: a run always resumes from the ledger")
     run.add_argument("--only", default=None)
     run.add_argument("--steps", default=None, help="comma list of steps to run, for example language,figures")
+    run.add_argument("--continue", dest="continue_run", action="store_true",
+                     help="restart at the most recent state, with the arguments saved in run_state.json")
     batch = sub.add_parser("batch")
     batch.add_argument("--work", required=True)
     batch.add_argument("--loop", type=int, required=True)
@@ -847,6 +925,9 @@ def main(argv: Optional[List[str]] = None, *, call: Optional[Callable] = None, f
     if not args.command:
         _parser().print_help()
         return EXIT_REFUSAL
+    if args.command == "run":
+        # Plan 30: the stop of the run being continued is read before its marker is removed.
+        args.continued_from = _previous_stop(Path(args.work))
     if args.command == "run" and not args.dry_run:
         # G: a marker present means this run ended. It is removed before any refusal can be raised, so no refused
         # run leaves the outcome of an earlier one behind. Review 5: a marker that cannot be removed is a named

@@ -142,6 +142,7 @@ text is recorded. `rt-observe` shows them as the steps of the role's lane.
 |---|---|
 | `prepare --reports DIR --rubric FILE --type T` | ids and pages of every PDF, takes the rubric as written (JSON is validated, a Markdown or text grid with numbered sections is split by the code and every section keeps its exact text, an unnumbered or PDF rubric is restructured by the model, which may not remove a line), writes the rubric, its Markdown and the ledger. There is no confirmation step |
 | `run --work DIR --reports DIR [--loop N] [--resume] [--only R01] [--steps a,b]` | runs the steps of every report in id order, resumable; `--steps` runs only the named steps (an unknown or empty list is refused before any write) |
+| `run --work DIR --continue` | after a crash or a reboot: restarts the stopped run at its most recent state, with the arguments saved in `run_state.json` (plan 30). Refused with `--loop`, `--only`, `--steps` or `--reports`, and without that file; the audit resumes at the first item not audited, and an unreachable model is retried by the driver itself (`driver.unreachable_retries`, `driver.unreachable_pause_s`) |
 | `batch --work DIR --loop N [--allow-third]` | spread of the totals against the calibration targets, opens the next loop when out of band |
 | `status --work DIR` | ledger counts and the first open step |
 

@@ -117,6 +117,14 @@
     "value": 600,
     "provenance": "starting value, adjustable by the professor (seconds per bridge call, a local model is slow)"
   },
+  "driver.unreachable_retries": {
+    "value": 3,
+    "provenance": "owner 2026-11-27, plan 30: how many times one run restarts a step after the model answered unreachable; each restart costs only the item in progress"
+  },
+  "driver.unreachable_pause_s": {
+    "value": 60,
+    "provenance": "owner 2026-11-27, plan 30: the pause before a restart after an unreachable model, in seconds, so the model server can come back"
+  },
   "driver.count_timeout_s": {
     "value": 1200,
     "provenance": "measured prefill of about 130 tokens per second, so 1200 seconds covers about 150000 tokens, adjustable by the professor"

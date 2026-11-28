@@ -145,6 +145,13 @@ text is recorded. `rt-observe` shows them as the steps of the role's lane.
 | `run --work DIR --continue` | after a crash or a reboot: restarts the stopped run at its most recent state, with the arguments saved in `run_state.json` (plan 30). Refused with `--loop`, `--only`, `--steps` or `--reports`, and without that file; the audit resumes at the first item not audited, and an unreachable model is retried by the driver itself (`driver.unreachable_retries`, `driver.unreachable_pause_s`) |
 | `batch --work DIR --loop N [--allow-third]` | spread of the totals against the calibration targets, opens the next loop when out of band |
 | `status --work DIR` | ledger counts and the first open step |
+| `auto --reports DIR [--work DIR] [--type T] [--rubric FILE] [--ignore-gpu]` | the whole folder in one command (owner, 2026-11-28): checks the graphics card (another program than the model server is a refusal unless `--ignore-gpu`), prepares a new work folder (`--type` required then; the rubric defaults to `auto.rubric_name` in the reports folder), runs every report of the current loop, runs `batch`, then prints one `summary` line per report (total, maximum, percent, items not run). The same command resumes after a crash or a reboot. A batch out of band opens the next loop and stops; run the command again for that loop |
+
+From `cmd`, the launcher `scripts/report-ugs-correction.bat` holds no logic: it finds the interpreter (this clone's `.venv-skills`, else the main clone's, never PATH) and calls `auto`:
+
+```bat
+report-ugs-correction "C:\path\to\reports" --work "C:\path\to\reports\_correction3"
+```
 
 Exit codes: 0 done, 1 a model step could not run (stop, resume later), 2 refusal, 3 batch out of band. Each `run` also writes `run_done.json` in the work folder when it ends (keys: `loop`, `exit_code`, `reports`, `open_steps`, `blocked_steps`, `stopped_at`), so a stopped session reads the outcome once. A third
 loop needs `--allow-third` after the professor's answer.

@@ -954,5 +954,160 @@ class RunContinueTests(unittest.TestCase):
         self.assertEqual(self.marker()["continued_from"], stopped)
 
 
+IN_BAND = [9, 8.5, 9.5, 8.8, 9, 8.8, 9.5, 8.5]  # the in-band batch of test_batch_in_band_exits_0_and_writes_batch_json
+
+
+class AutoCommandTests(unittest.TestCase):
+    """The auto subcommand (owner, 2026-11-28): prepare when needed, run every report, batch, summary, one line."""
+
+    drv = TestUgsDriver.drv
+    add_reports = TestUgsDriver.add_reports
+
+    def setUp(self):
+        TestUgsDriver.setUp(self)
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+        gpu = patch("ugs_driver.gpu_busy", return_value=[])
+        self.gpu = gpu.start()
+        self.addCleanup(gpu.stop)
+
+    def auto(self, extra=(), model=None):
+        return self.drv(["auto", "--reports", str(self.reports), "--rubric", str(self.rubric_file),
+                         "--type", "lab_report", *extra], model=model)
+
+    def test_a_new_folder_is_prepared_graded_and_summarised(self):
+        self.add_reports(IN_BAND)
+        code, lines, _ = self.auto()
+        self.assertEqual(code, 0)
+        self.assertTrue((self.work / "rubric.json").is_file())
+        summary = [line for line in lines if line.get("step") == "summary"]
+        self.assertEqual(sorted(line["report_id"] for line in summary), ["R0%d" % n for n in range(1, 9)])
+        self.assertTrue(all("total" in line and "percent" in line for line in summary))
+        text = (self.work / "ledger.md").read_text(encoding="utf-8")
+        self.assertEqual(ugs_driver.ledger_counts(text)["open"], 0)
+        self.assertTrue((self.work / "loop-1" / "batch.json").is_file())
+
+    def test_a_second_auto_makes_no_model_call(self):
+        self.add_reports(IN_BAND)
+        self.auto()
+        self.model.calls.clear()
+        code, _, _ = self.auto()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.model.calls, [])
+
+    def test_a_stopped_run_is_resumed_by_the_same_command(self):
+        self.add_reports(IN_BAND)
+        code, _, _ = self.auto(model=FlakyModel(failures=20))
+        self.assertEqual(code, 1)
+        code, _, _ = self.auto()
+        self.assertEqual(code, 0)
+        text = (self.work / "ledger.md").read_text(encoding="utf-8")
+        self.assertEqual(ugs_driver.ledger_counts(text)["open"], 0)
+
+    def test_a_new_folder_without_type_is_refused_and_nothing_is_written(self):
+        self.add_reports([9])
+        code, _, text = self.drv(["auto", "--reports", str(self.reports), "--rubric", str(self.rubric_file)])
+        self.assertEqual(code, 2)
+        self.assertIn("--type", text)
+        self.assertFalse(self.work.exists())
+
+    def test_a_missing_default_rubric_is_refused_naming_the_file(self):
+        self.add_reports([9])
+        code, _, text = self.drv(["auto", "--reports", str(self.reports), "--type", "lab_report"])
+        self.assertEqual(code, 2)
+        self.assertIn(ugs_driver._load_config()["auto.rubric_name"], text)
+
+    def test_a_busy_gpu_stops_before_anything_and_ignore_gpu_goes_on(self):
+        self.add_reports(IN_BAND)
+        self.gpu.return_value = ["python.exe"]
+        code, _, text = self.auto()
+        self.assertEqual(code, 2)
+        self.assertIn("python.exe", text)
+        self.assertIn("--ignore-gpu", text)
+        self.assertFalse(self.work.exists())
+        code, _, _ = self.auto(extra=["--ignore-gpu"])
+        self.assertEqual(code, 0)
+
+    def test_dry_run_writes_nothing(self):
+        self.add_reports([9])
+        code, lines, _ = self.auto(extra=["--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertTrue(any(line.get("dry_run") for line in lines))
+        self.assertFalse(self.work.exists())
+
+
+@unittest.skipUnless(os.name == "nt", "the launcher is a Windows batch file")
+class LauncherTests(unittest.TestCase):
+    """report-ugs-correction.bat holds no logic: it finds the interpreter and calls auto (R37: never PATH)."""
+
+    BAT = Path(__file__).resolve().parent.parent / "report-ugs-correction.bat"
+
+    def launch(self, *args):
+        import subprocess
+        # A .bat given as argv[0] runs through cmd with its own quoting; "cmd /c" would strip the outer quotes of a
+        # path holding a space (the clone path has one).
+        return subprocess.run([str(self.BAT), *args], capture_output=True, text=True, timeout=120)
+
+    def test_no_argument_prints_the_usage_and_exits_2(self):
+        done = self.launch()
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("Usage", done.stdout)
+
+    def test_a_dry_run_reaches_auto_and_writes_nothing(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(tmp, ignore_errors=True))
+        reports = tmp / "fictitious reports"
+        reports.mkdir()
+        rubric = tmp / "rubric.json"
+        rubric.write_text(json.dumps(RUBRIC), encoding="utf-8")
+        import subprocess
+        root = self.BAT.parents[4]
+        common = subprocess.run(["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                capture_output=True, text=True, timeout=30).stdout.strip()
+        candidates = [root / ".venv-skills" / "Scripts" / "python.exe"]
+        if common:
+            candidates.append(Path(common).parent / ".venv-skills" / "Scripts" / "python.exe")
+        if not any(path.is_file() for path in candidates):  # skipped only when no interpreter exists at all
+            self.skipTest("no .venv-skills in this clone or its main clone")
+        done = self.launch(str(reports), "--rubric", str(rubric), "--type", "lab_report", "--ignore-gpu", "--dry-run")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn('"step": "auto"', done.stdout)
+        self.assertFalse((reports / ugs_driver.WORK_FOLDER_NAME).exists())
+
+    def test_the_launcher_holds_no_logic_and_never_uses_path(self):
+        text = self.BAT.read_text(encoding="utf-8")
+        self.assertIn("ugs_driver.py\" auto", text)
+        self.assertNotIn("where python", text.lower())
+        for word in ("prepare", " batch", "--continue"):
+            self.assertNotIn(word, text.split("rem", 1)[0])
+
+
+class GpuBusyTests(unittest.TestCase):
+    """gpu_busy reads nvidia-smi through an injected runner (R21): other programs only, by file name."""
+
+    class Done:
+        def __init__(self, stdout, returncode=0):
+            self.stdout, self.returncode = stdout, returncode
+
+    def test_the_model_server_is_allowed_and_another_program_is_named(self):
+        output = "11, C:\\Fict\\ollama.exe\n12, C:\\Fict\\llama-server.exe\n13, C:\\Other\\python.exe\n"
+        busy = ugs_driver.gpu_busy(run=lambda *a, **k: self.Done(output),
+                                   allowed=["ollama.exe", "llama-server.exe"], timeout=5)
+        self.assertEqual(busy, ["python.exe"])
+
+    def test_no_program_gives_an_empty_list(self):
+        busy = ugs_driver.gpu_busy(run=lambda *a, **k: self.Done(""), allowed=["ollama.exe"], timeout=5)
+        self.assertEqual(busy, [])
+
+    def test_no_nvidia_smi_or_a_timeout_gives_none(self):
+        def missing(*a, **k):
+            raise FileNotFoundError("nvidia-smi")
+
+        def slow(*a, **k):
+            raise ugs_driver.subprocess.TimeoutExpired("nvidia-smi", 5)
+        self.assertIsNone(ugs_driver.gpu_busy(run=missing, allowed=[], timeout=5))
+        self.assertIsNone(ugs_driver.gpu_busy(run=slow, allowed=[], timeout=5))
+        self.assertIsNone(ugs_driver.gpu_busy(run=lambda *a, **k: self.Done("", 9), allowed=[], timeout=5))
+
+
 if __name__ == "__main__":
     unittest.main()

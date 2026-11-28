@@ -14,6 +14,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import time
 import batch_stats
 import sys
@@ -860,6 +861,130 @@ def cmd_batch(args) -> int:
     return EXIT_OUT_OF_BAND
 
 
+def gpu_busy(run: Callable = subprocess.run, allowed: Optional[List[str]] = None,
+             timeout: float = 10) -> Optional[List[str]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Name the programs, other than the model server, that hold memory on the graphics card.
+
+    Details:
+        Reads `nvidia-smi --query-compute-apps=pid,process_name`. Only the file name of each program is kept, never
+        its folder (a path can name a person). Measured 2026-11-27: a second program on the 6 GB card made the model
+        server run out of memory while it loaded.
+
+    Inputs:
+        run (Callable): the subprocess runner, injected by the tests (R21).
+        allowed (list[str] | None): the program file names of the model server, compared without case.
+        timeout (float): the bound of the nvidia-smi call, in seconds (R10).
+
+    Outputs:
+        list[str] | None: the other programs (sorted, no duplicate), [] when none, None when nvidia-smi is absent,
+            failed or timed out.
+    --------------------------------------------------------------------------
+    """
+    keep = {name.lower() for name in (allowed or [])}
+    try:
+        done = run(["nvidia-smi", "--query-compute-apps=pid,process_name", "--format=csv,noheader"],
+                   capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    names = set()
+    for line in (done.stdout or "").splitlines():
+        parts = line.split(",", 1)
+        if len(parts) != 2 or not parts[1].strip():
+            continue
+        name = parts[1].strip().replace("\\", "/").rsplit("/", 1)[-1]
+        if name.lower() not in keep:
+            names.add(name)
+    return sorted(names)
+
+
+def _report_totals(work: Path, loop: int) -> List[Dict[str, Any]]:
+    """One summary record per report id of the work folder: total, maximum, percent and completeness of its totals."""
+    ids = _read_json(work / report_prepare.IDS_FILE_NAME, "id map")
+    records = []
+    for report_id in sorted(ids):
+        path = work / f"loop-{loop}" / report_id / "totals.json"
+        totals = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        records.append({"step": "summary", "report_id": report_id, "total": totals.get("total"),
+                        "max": totals.get("max_rated"), "percent": totals.get("percent"),
+                        "complete": totals.get("complete", False), "not_run": totals.get("not_run", [])})
+    return records
+
+
+def cmd_auto(args, call, fetch, window, count) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Grade a whole reports folder with one command: prepare when needed, run every report, analyse the batch and
+        print one summary line per report (owner, 2026-11-28).
+
+    Details:
+        The same command restarts after a crash or a reboot: the run resumes from the ledger and only the item in
+        progress is redone. The graphics card is checked first; another program on it is a refusal unless
+        --ignore-gpu. A prepared work folder is never prepared again. A batch out of band (exit 3) opens the next loop
+        and stops: the next loop is started by running the command again.
+
+    Inputs:
+        args (Namespace): `reports`, `rubric`, `type`, `work`, `ignore_gpu`, `dry_run`.
+        call, fetch, window, count: injected (tests), or None.
+
+    Outputs:
+        code (int): the code of the run when it did not finish (1), else the code of the batch (0 or 3).
+
+    Raises:
+        DriverError: a refusal (no reports folder, no rubric, no type for a new folder, a busy card).
+    --------------------------------------------------------------------------
+    """
+    config = _load_config()
+    for key in ("auto.rubric_name", "auto.gpu_allowed_processes", "auto.gpu_check_timeout_s"):
+        if key not in config:
+            raise DriverError(f"missing configuration key: {key}")
+    reports = Path(args.reports).resolve()
+    if not reports.is_dir():
+        raise DriverError("reports folder not found")
+    work = Path(args.work).resolve() if args.work else reports / WORK_FOLDER_NAME
+    prepared = (work / "rubric.json").is_file() and (work / "ledger.md").is_file()
+    if not prepared:
+        rubric = Path(args.rubric) if args.rubric else reports / config["auto.rubric_name"]
+        if not rubric.is_file():
+            raise DriverError(f"no rubric: put {config['auto.rubric_name']} in the reports folder or pass --rubric")
+        if not args.type:
+            raise DriverError("a new work folder needs --type (" + ", ".join(_assessment_types()) + ")")
+    if not args.ignore_gpu:
+        busy = gpu_busy(allowed=config["auto.gpu_allowed_processes"], timeout=config["auto.gpu_check_timeout_s"])
+        if busy is None:
+            _emit({"step": "gpu_check", "status": "skipped", "reason": "nvidia-smi did not answer"})
+        elif busy:
+            raise DriverError("the graphics card is used by another program: " + ", ".join(busy)
+                              + " (close it, or pass --ignore-gpu)")
+    if args.dry_run:
+        _emit({"dry_run": True, "step": "auto", "prepare": not prepared, "work_folder": work.name})
+        return EXIT_OK
+    if not prepared:
+        code = cmd_prepare(argparse.Namespace(reports=str(reports), rubric=str(rubric), type=args.type,
+                                              work=str(work), dry_run=False), call, window, count)
+        if code != EXIT_OK:
+            return code
+    loop = _current_loop(_work_dir(work))
+    previous = _previous_stop(work)
+    (work / RUN_DONE_NAME).unlink(missing_ok=True)
+    code = cmd_run(argparse.Namespace(work=str(work), reports=str(reports), loop=loop, only=None, steps=None,
+                                      continue_run=False, dry_run=False, continued_from=previous),
+                   call, fetch, window, count)
+    if code != EXIT_OK:
+        _emit({"step": "auto", "status": "stopped", "exit_code": code,
+               "next": "run the same command again to resume where it stopped"})
+        return code
+    code = cmd_batch(argparse.Namespace(work=str(work), loop=loop, allow_third=False, dry_run=False))
+    for record in _report_totals(work, loop):
+        _emit(record)
+    return code
+
+
 def cmd_status(args) -> int:
     """One line: the ledger counts and the first open step, as labels and numbers."""
     work = _work_dir(Path(args.work))
@@ -894,7 +1019,13 @@ def _parser() -> argparse.ArgumentParser:
     batch.add_argument("--allow-third", action="store_true")
     status = sub.add_parser("status")
     status.add_argument("--work", required=True)
-    for command in (prep, run, batch, status):
+    auto = sub.add_parser("auto", help="prepare when needed, grade every report, batch and summary; rerun to resume")
+    auto.add_argument("--reports", required=True)
+    auto.add_argument("--rubric", default=None, help="default: auto.rubric_name in the reports folder")
+    auto.add_argument("--type", default=None, help="required for a new work folder")
+    auto.add_argument("--work", default=None)
+    auto.add_argument("--ignore-gpu", action="store_true", help="go on when another program holds the graphics card")
+    for command in (prep, run, batch, status, auto):
         command.add_argument("--dry-run", action="store_true")
         command.add_argument("--json", action="store_true", help="the output is always JSON lines")
     return parser
@@ -942,6 +1073,8 @@ def main(argv: Optional[List[str]] = None, *, call: Optional[Callable] = None, f
             return cmd_prepare(args, call, window, count)
         if args.command == "run":
             return cmd_run(args, call, fetch, window, count)
+        if args.command == "auto":
+            return cmd_auto(args, call, fetch, window, count)
         return cmd_batch(args) if args.command == "batch" else cmd_status(args)
     except DriverError as error:
         _emit({"status": "refused", "error": str(error)})

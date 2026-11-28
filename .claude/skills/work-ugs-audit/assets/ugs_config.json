@@ -121,6 +121,18 @@
     "value": 3,
     "provenance": "owner 2026-11-27, plan 30: how many times one run restarts a step after the model answered unreachable; each restart costs only the item in progress"
   },
+  "auto.rubric_name": {
+    "value": "grille_correction.md",
+    "provenance": "owner 2026-11-28: the file name of the professor's rubric in the reports folder, used by auto when --rubric is not given"
+  },
+  "auto.gpu_allowed_processes": {
+    "value": ["ollama.exe", "llama-server.exe", "ollama", "llama-server"],
+    "provenance": "measured 2026-11-27 on this machine: the model server runs as these programs; any other program holding the card made llama-server run out of memory"
+  },
+  "auto.gpu_check_timeout_s": {
+    "value": 10,
+    "provenance": "chosen by the session 2026-11-28 under the owner's delegation: nvidia-smi answers in well under a second, 10 s bounds a hung driver (R10)"
+  },
   "driver.unreachable_pause_s": {
     "value": 60,
     "provenance": "owner 2026-11-27, plan 30: the pause before a restart after an unreachable model, in seconds, so the model server can come back"

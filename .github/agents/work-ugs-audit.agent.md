@@ -64,6 +64,10 @@ Any other end (killed, crashed, no marker): report the last JSON line, and start
 the same kind is reported, not retried. If the exit notification never arrives, the professor asks and you read the
 marker once.
 
+After a crash, a reboot or a stop of the model server, restart the stopped run with `ugs_driver.py run --work WORK --continue`
+(not a new `run` with the arguments again): it reuses the arguments saved in `run_state.json`, and the grading and the audit
+resume at the first item not done.
+
 **Step 4 - Batch.** Run `ugs_driver.py batch --work WORK --loop N`. Present the verdict from the
 numbers only (mean, spread, the band, the reasons). In band, or out of band (exit 3), the grades of every
 section are written and you report them: you do not wait. When it is out of band, name the three options as

@@ -90,9 +90,26 @@ function Invoke-LitellmRenderConfig {
     param([string]$Python, [string]$ModelsPy, [string]$CfgPath, [switch]$DryRun)
     return $script:RenderExit
 }
+$script:StartCount = 0
 function Start-LitellmProcess {
     param([string]$ExePath, [string]$Arguments, [hashtable]$Environment, [string]$LogPath)
+    $script:StartCount++
     return [pscustomobject]@{ Id = $script:WrapperPid }
+}
+$script:SettingsForRun = $null
+function Read-LitellmJson {
+    param([string]$Path)
+    if ($Path -like '*augure-settings.json') {
+        if ($null -ne $script:SettingsForRun) { return $script:SettingsForRun }
+        return $Settings
+    }
+    return $Profiles
+}
+$script:StatusAlive = $true
+function Invoke-WebRequest {
+    param([string]$Uri, [switch]$UseBasicParsing, [int]$TimeoutSec)
+    if ($script:StatusAlive) { return [pscustomobject]@{ StatusCode = 200 } }
+    throw 'not answering (shadowed)'
 }
 function Wait-LitellmLiveness {
     param([string]$Url, [int]$TotalTimeoutSec, [int]$RequestTimeoutSec)
@@ -124,6 +141,8 @@ Set-Content -LiteralPath $FakeBat -Value '@echo off' -Encoding ASCII
 $script:FakeVenvDir = Join-Path $Tmp 'fakevenv'
 New-Item -ItemType Directory -Path $script:FakeVenvDir -Force | Out-Null
 Set-Content -LiteralPath (Join-Path $script:FakeVenvDir 'litellm.exe') -Value '' -Encoding ASCII
+$script:FakeExe = Join-Path $script:FakeVenvDir 'litellm.exe'
+$OwnCmd = '"' + $script:FakeExe + '" --config x.yaml --port 4000'
 
 function New-StartupFolder {
     $folder = Join-Path $Tmp ('startup-' + [guid]::NewGuid().ToString('N'))
@@ -132,36 +151,31 @@ function New-StartupFolder {
 }
 
 # ---- 1-4: decisions ---------------------------------------------------------------------
-try {
-    $d = Resolve-LitellmStartDecision -PortOwnerPid $null -PortOwnerName '' -Settings $Settings
-    Check 'free port gives start' ($d.Action -eq 'start') "got $($d.Action)"
-} catch { Check 'free port gives start' $false $_.Exception.Message }
+$T0 = Get-Date '2026-11-27T10:00:00'
+$T1 = $T0.AddMinutes(5)
+function Invoke-DecisionCase {
+    # Defaults: a python owner (pid 4321) that is not LiteLLM, against this repo's litellm.exe.
+    param([string]$Name, [hashtable]$Case, [string]$Expect, [string]$ReasonPattern = '')
+    $full = @{ PortOwnerPid = 4321; PortOwnerName = 'python'; PortOwnerCommandLine = 'python.exe worker.py'; LitellmExe = $script:FakeExe }
+    foreach ($k in $Case.Keys) { $full[$k] = $Case[$k] }
+    try {
+        $d = Resolve-LitellmStartDecision @full -Settings $Settings
+        $ok = ($d.Action -eq $Expect) -and (($ReasonPattern -eq '') -or ($d.Reason -match $ReasonPattern))
+        Check $Name $ok "got $($d.Action): $($d.Reason)"
+    } catch { Check $Name $false $_.Exception.Message }
+}
 
-try {
-    $d = Resolve-LitellmStartDecision -PortOwnerPid 1234 -PortOwnerName 'litellm' -Settings $Settings
-    Check 'port held by litellm gives running' ($d.Action -eq 'running') "got $($d.Action)"
-} catch { Check 'port held by litellm gives running' $false $_.Exception.Message }
-
-try {
-    $cmd = '"C:\venv\Scripts\python.exe" "C:\venv\Scripts\litellm.exe" --config x.yaml --port 4000'
-    $d = Resolve-LitellmStartDecision -PortOwnerPid 4321 -PortOwnerName 'python' -PortOwnerCommandLine $cmd -Settings $Settings
-    Check 'python owner whose command line holds litellm gives running' ($d.Action -eq 'running') "got $($d.Action): $($d.Reason)"
-} catch { Check 'python owner whose command line holds litellm gives running' $false $_.Exception.Message }
-
-try {
-    $d = Resolve-LitellmStartDecision -PortOwnerPid 4321 -PortOwnerName 'python' -PortOwnerCommandLine 'python.exe worker.py' -PortOwnerParentName 'explorer.exe' -Settings $Settings
-    Check 'python owner whose command line lacks litellm refused, PID named' (($d.Action -eq 'refuse') -and ($d.Reason -match '4321')) "got $($d.Action): $($d.Reason)"
-} catch { Check 'python owner whose command line lacks litellm refused, PID named' $false $_.Exception.Message }
-
-try {
-    $d = Resolve-LitellmStartDecision -PortOwnerPid 4321 -PortOwnerName 'python' -PortOwnerCommandLine 'python.exe worker.py' -PortOwnerParentName 'litellm.exe' -Settings $Settings
-    Check 'python owner whose parent is litellm.exe gives running' ($d.Action -eq 'running') "got $($d.Action): $($d.Reason)"
-} catch { Check 'python owner whose parent is litellm.exe gives running' $false $_.Exception.Message }
-
-try {
-    $d = Resolve-LitellmStartDecision -PortOwnerPid 4321 -PortOwnerName 'python' -PortOwnerCommandLine 'python.exe worker.py' -Settings $Settings
-    Check 'python owner with no litellm evidence still refused' ($d.Action -eq 'refuse') "got $($d.Action)"
-} catch { Check 'python owner with no litellm evidence still refused' $false $_.Exception.Message }
+Invoke-DecisionCase 'free port gives start' @{ PortOwnerPid = $null; LitellmExe = $script:FakeExe } 'start'
+Invoke-DecisionCase 'port held by a bare process named litellm, no path, refused' @{ PortOwnerPid = 1234; PortOwnerName = 'litellm'; LitellmExe = $script:FakeExe } 'refuse'
+Invoke-DecisionCase 'python running this repo litellm gives running' (@{ PortOwnerCommandLine = $OwnCmd }) 'running'
+Invoke-DecisionCase 'node server from litellm-dashboard refused, PID named' @{ PortOwnerPid = 5555; PortOwnerName = 'node'; PortOwnerCommandLine = 'node C:\dev\litellm-dashboard\server.js'; LitellmExe = $script:FakeExe } 'refuse' '5555'
+Invoke-DecisionCase 'python running a different venv litellm refused' @{ PortOwnerPid = 4321; PortOwnerName = 'python'; PortOwnerCommandLine = '"C:\other\.venv-litellm\Scripts\python.exe" "C:\other\.venv-litellm\Scripts\litellm.exe" --port 4000'; LitellmExe = $script:FakeExe } 'refuse'
+Invoke-DecisionCase 'python with no litellm evidence refused, PID named' (@{ PortOwnerCommandLine = 'python.exe worker.py' }) 'refuse' '4321'
+Invoke-DecisionCase 'parent at exact path created before child gives running' (@{ PortOwnerCommandLine = 'python.exe worker.py'; PortOwnerCreated = $T1; PortOwnerParentPath = $script:FakeExe; PortOwnerParentCreated = $T0 }) 'running'
+Invoke-DecisionCase 'parent at exact path created at the same time as child gives running' (@{ PortOwnerCommandLine = 'python.exe worker.py'; PortOwnerCreated = $T0; PortOwnerParentPath = $script:FakeExe; PortOwnerParentCreated = $T0 }) 'running'
+Invoke-DecisionCase 'parent at exact path created AFTER child refused (reused PID)' (@{ PortOwnerCommandLine = 'python.exe worker.py'; PortOwnerCreated = $T0; PortOwnerParentPath = $script:FakeExe; PortOwnerParentCreated = $T1 }) 'refuse'
+Invoke-DecisionCase 'parent named litellm.exe at another path refused' (@{ PortOwnerCommandLine = 'python.exe worker.py'; PortOwnerCreated = $T1; PortOwnerParentPath = 'C:\other\litellm.exe'; PortOwnerParentCreated = $T0 }) 'refuse'
+Invoke-DecisionCase 'parent at exact path with unknown creation time refused' (@{ PortOwnerCommandLine = 'python.exe worker.py'; PortOwnerCreated = $T1; PortOwnerParentPath = $script:FakeExe; PortOwnerParentCreated = $null }) 'refuse'
 
 try {
     $wide = $Settings | ConvertTo-Json -Depth 10 | ConvertFrom-Json
@@ -169,6 +183,13 @@ try {
     $d = Resolve-LitellmStartDecision -PortOwnerPid $null -PortOwnerName '' -Settings $wide
     Check 'host 0.0.0.0 refused' ($d.Action -eq 'refuse') "got $($d.Action)"
 } catch { Check 'host 0.0.0.0 refused' $false $_.Exception.Message }
+
+try {
+    $badPort = $Settings | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+    $badPort.proxy_port.value = '4000x'
+    $msg = Get-ThrownMessage { Resolve-LitellmStartDecision -PortOwnerPid $null -PortOwnerName '' -LitellmExe $script:FakeExe -Settings $badPort }
+    Check 'proxy_port 4000x refused by name' ($msg -match 'proxy_port') "message: $msg"
+} catch { Check 'proxy_port 4000x refused by name' $false $_.Exception.Message }
 
 # ---- 5-6: child environment -------------------------------------------------------------
 try {
@@ -237,11 +258,12 @@ function Invoke-PlainRun {
     Reset-PortProbes -Answers $Probes
     $script:RenderExit = $RenderExit
     $script:LivenessAnswer = $Liveness
+    $script:StartCount = 0
     $collected = @(Invoke-LitellmMain *>&1)
     $codes = @($collected | Where-Object { $_ -is [int] })
     $code = if ($codes.Count -gt 0) { $codes[-1] } else { -1 }
     $text = ($collected | Where-Object { $_ -isnot [int] } | Out-String)
-    return @{ Code = $code; Text = $text }
+    return @{ Code = $code; Text = $text; Starts = $script:StartCount }
 }
 
 try {
@@ -265,6 +287,43 @@ try {
     $r = Invoke-PlainRun -Store @{ AUGUREAI_API_KEY = 'k-augure'; LITELLM_MASTER_KEY = 'sk-m' } -Probes @($null, $owner) -Liveness $false
     Check 'liveness never answering is a failure, exit 1' ($r.Code -eq 1) "got exit $($r.Code)"
 } catch { Check 'liveness never answering is a failure, exit 1' $false $_.Exception.Message }
+
+# ---- 11b: owners that must be refused or accepted by the plain run (review round 2) ------
+try {
+    $nodeOwner = @{ Pid = 5555; Name = 'node'; CommandLine = 'node C:\dev\litellm-dashboard\server.js'; ParentPath = ''; Created = $T1; ParentCreated = $null }
+    $r = Invoke-PlainRun -Store @{ AUGUREAI_API_KEY = 'k-augure'; LITELLM_MASTER_KEY = 'sk-m' } -Probes @($nodeOwner)
+    Check 'plain run refuses a litellm-dashboard node owner: exit 2, nothing started' (($r.Code -eq 2) -and ($r.Starts -eq 0)) "exit $($r.Code), starts $($r.Starts): $($r.Text)"
+} catch { Check 'plain run refuses a litellm-dashboard node owner: exit 2, nothing started' $false $_.Exception.Message }
+
+try {
+    $ownOwner = @{ Pid = 4321; Name = 'python'; CommandLine = $OwnCmd; ParentPath = ''; Created = $T1; ParentCreated = $null }
+    $r = Invoke-PlainRun -Store @{ AUGUREAI_API_KEY = 'k-augure'; LITELLM_MASTER_KEY = 'sk-m' } -Probes @($ownOwner)
+    Check 'plain run on this repo litellm owner: exit 0, nothing started' (($r.Code -eq 0) -and ($r.Starts -eq 0)) "exit $($r.Code), starts $($r.Starts): $($r.Text)"
+} catch { Check 'plain run on this repo litellm owner: exit 0, nothing started' $false $_.Exception.Message }
+
+try {
+    $script:SettingsForRun = $Settings | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+    $script:SettingsForRun.proxy_port.value = '4000x'
+    $r = Invoke-PlainRun -Store @{ AUGUREAI_API_KEY = 'k-augure'; LITELLM_MASTER_KEY = 'sk-m' } -Probes @($null)
+    $script:SettingsForRun = $null
+    Check 'proxy_port 4000x exits 2 and starts nothing' (($r.Code -eq 2) -and ($r.Starts -eq 0)) "exit $($r.Code), starts $($r.Starts): $($r.Text)"
+} catch { $script:SettingsForRun = $null; Check 'proxy_port 4000x exits 2 and starts nothing' $false $_.Exception.Message }
+
+# ---- 11c: -Status names the owner (review round 2) ----------------------------------------
+try {
+    $script:StatusAlive = $true
+    $ownOwner = @{ Pid = 4321; Name = 'python'; CommandLine = $OwnCmd; ParentPath = ''; Created = $T1; ParentCreated = $null }
+    Reset-PortProbes -Answers @($ownOwner)
+    $statusText = (Invoke-LitellmMain -Status *>&1 | Out-String)
+    Check '-Status says the owner is this LiteLLM when running' ($statusText -match 'this LiteLLM') "text: $statusText"
+} catch { Check '-Status says the owner is this LiteLLM when running' $false $_.Exception.Message }
+
+try {
+    $nodeOwner = @{ Pid = 5555; Name = 'node'; CommandLine = 'node C:\dev\litellm-dashboard\server.js'; ParentPath = ''; Created = $T1; ParentCreated = $null }
+    Reset-PortProbes -Answers @($nodeOwner)
+    $statusText = (Invoke-LitellmMain -Status *>&1 | Out-String)
+    Check '-Status says a foreign owner is NOT this LiteLLM' ($statusText -match 'NOT this LiteLLM') "text: $statusText"
+} catch { Check '-Status says a foreign owner is NOT this LiteLLM' $false $_.Exception.Message }
 
 # ---- 11: the batch file -----------------------------------------------------------------
 if (Test-Path -LiteralPath $Bat -PathType Leaf) {

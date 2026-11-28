@@ -14,9 +14,14 @@
     -Status     read-only report: shortcut, port owner, liveness answer, log tail.
     -DryRun     writes nothing and starts nothing; prints what it would do.
 
-    Exit codes (R12): 0 done or already running; 2 refusal by design (bad host, port held by another
-    process, a missing key variable or settings key, a missing interpreter environment); 1 failure
-    (render-config failed, litellm.exe missing, liveness never answered, unreadable data file).
+    Exit codes (R12), each case stated once:
+      0  done, already running, or started.
+      2  refusal by design: proxy_host not 127.0.0.1; proxy_port not an integer 1..65535; a settings
+         or profile key missing; a key variable unset at User scope; a port held by a process that
+         is not this repository's LiteLLM (its PID is named); a missing interpreter environment;
+         a missing launcher for -Install.
+      1  failure: render-config failed; litellm.exe missing; liveness never answered; a data file
+         missing or unreadable.
     A refusal is an exception carrying Data['LitellmRefusal'], created by New-LitellmRefusal.
 
     Dot-sourcing: set RT_LITELLM_NO_MAIN=1 before dot-sourcing and only the functions are defined.
@@ -96,6 +101,71 @@ function Get-LitellmSettingValue {
     return $entry.value
 }
 
+function Get-LitellmPort {
+    <#
+    .SYNOPSIS
+        Return proxy_port as an integer 1..65535, refusing anything else (R12: a bad value is exit 2).
+
+    .PARAMETER Settings
+        The parsed augure-settings.json.
+
+    .OUTPUTS
+        int. Throws a refusal naming proxy_port when the value is not an integer in range.
+    #>
+    param([Parameter(Mandatory = $true)][object]$Settings)
+    $text = [string](Get-LitellmSettingValue -Doc $Settings -Key 'proxy_port')
+    $n = 0
+    if (($text -notmatch '^\d{1,5}$') -or (-not [int]::TryParse($text, [ref]$n)) -or ($n -lt 1) -or ($n -gt 65535)) {
+        throw (New-LitellmRefusal "'proxy_port' in augure-settings.json must be an integer 1..65535 (got '$text')")
+    }
+    return $n
+}
+
+function Test-LitellmOwnership {
+    <#
+    .SYNOPSIS
+        Tell whether a port owner is this repository's LiteLLM proxy, by its command line or by its parent.
+
+    .PARAMETER CommandLine
+        The owner's command line ('' when unknown).
+
+    .PARAMETER Created
+        The owner's creation time, or $null when unknown.
+
+    .PARAMETER ParentPath
+        The executable path of the owner's parent ('' when unknown).
+
+    .PARAMETER ParentCreated
+        The parent's creation time, or $null when unknown.
+
+    .PARAMETER LitellmExe
+        The full path of this repository's .venv-litellm litellm.exe ('' when unknown).
+
+    .OUTPUTS
+        hashtable with Owned (bool) and Via ('command line', 'parent' or '').
+        A command line counts when it runs LitellmExe as a whole path. A parent counts when its path
+        is LitellmExe exactly and it was created no later than the owner (a reused parent PID fails).
+    #>
+    param(
+        [AllowEmptyString()][string]$CommandLine = '',
+        $Created = $null,
+        [AllowEmptyString()][string]$ParentPath = '',
+        $ParentCreated = $null,
+        [AllowEmptyString()][string]$LitellmExe = ''
+    )
+    if ([string]::IsNullOrEmpty($LitellmExe)) { return @{ Owned = $false; Via = '' } }
+    $exe = [IO.Path]::GetFullPath($LitellmExe)
+    $pattern = '(?i)' + [regex]::Escape($exe) + '(?=["\s]|$)'
+    if ($CommandLine -match $pattern) { return @{ Owned = $true; Via = 'command line' } }
+    if (-not [string]::IsNullOrEmpty($ParentPath)) {
+        $parentFull = [IO.Path]::GetFullPath($ParentPath)
+        if (($parentFull -ieq $exe) -and ($null -ne $Created) -and ($null -ne $ParentCreated) -and ([datetime]$ParentCreated -le [datetime]$Created)) {
+            return @{ Owned = $true; Via = 'parent' }
+        }
+    }
+    return @{ Owned = $false; Via = '' }
+}
+
 function Read-LitellmJson {
     <#
     .SYNOPSIS
@@ -167,24 +237,26 @@ function Resolve-LitellmStartDecision {
         $PortOwnerPid,
         [AllowEmptyString()][string]$PortOwnerName = '',
         [AllowEmptyString()][string]$PortOwnerCommandLine = '',
-        [AllowEmptyString()][string]$PortOwnerParentName = '',
+        $PortOwnerCreated = $null,
+        [AllowEmptyString()][string]$PortOwnerParentPath = '',
+        $PortOwnerParentCreated = $null,
+        [AllowEmptyString()][string]$LitellmExe = '',
         [Parameter(Mandatory = $true)][object]$Settings
     )
     $proxyHost = Get-LitellmSettingValue -Doc $Settings -Key 'proxy_host'
-    $port = Get-LitellmSettingValue -Doc $Settings -Key 'proxy_port'
+    $port = Get-LitellmPort -Settings $Settings
     if ($proxyHost -ne '127.0.0.1') {
         return @{ Action = 'refuse'; Reason = "proxy_host is '$proxyHost' in augure-settings.json; only 127.0.0.1 is allowed (loopback only)" }
     }
     if ($null -eq $PortOwnerPid) {
         return @{ Action = 'start'; Reason = "port $port is free" }
     }
-    # litellm.exe is a pip launcher: the socket is owned by the python it starts, so the owner is
-    # LiteLLM when its own name, its parent's name or its command line says so. Not every python.
-    $isLiteLLM = ($PortOwnerName -match '^litellm(\.exe)?$') -or
-                 ($PortOwnerParentName -match '^litellm(\.exe)?$') -or
-                 ($PortOwnerCommandLine -match 'litellm')
-    if ($isLiteLLM) {
-        return @{ Action = 'running'; Reason = "LiteLLM already holds port $port (PID $PortOwnerPid)" }
+    # litellm.exe is a pip launcher: the socket belongs to the python it starts. That python is
+    # LiteLLM only when it runs this repository's litellm.exe, or its parent is that exact file and
+    # was created no later than it (a reused parent PID is refused). A name or a word is not proof.
+    $own = Test-LitellmOwnership -CommandLine $PortOwnerCommandLine -Created $PortOwnerCreated -ParentPath $PortOwnerParentPath -ParentCreated $PortOwnerParentCreated -LitellmExe $LitellmExe
+    if ($own.Owned) {
+        return @{ Action = 'running'; Reason = "LiteLLM already holds port $port (PID $PortOwnerPid, matched by its $($own.Via))" }
     }
     return @{ Action = 'refuse'; Reason = "port $port is held by '$PortOwnerName' (PID $PortOwnerPid), not LiteLLM; refusing to start a second listener" }
 }
@@ -207,16 +279,46 @@ function Get-LitellmPortOwner {
     $proc = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
     $name = ''
     if ($null -ne $proc) { $name = [string]$proc.ProcessName }
-    # The command line and the parent's name tell a LiteLLM python from an unrelated one.
+    # The command line, the creation times and the parent's path tell a LiteLLM python from another.
     $cmdLine = ''
-    $parentName = ''
+    $created = $null
+    $parentPath = ''
+    $parentCreated = $null
     $cim = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($null -ne $cim) {
         $cmdLine = [string]$cim.CommandLine
+        $created = $cim.CreationDate
         $parent = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $([int]$cim.ParentProcessId)" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($null -ne $parent) { $parentName = [string]$parent.Name }
+        if ($null -ne $parent) {
+            $parentPath = [string]$parent.ExecutablePath
+            $parentCreated = $parent.CreationDate
+        }
     }
-    return @{ Pid = $ownerPid; Name = $name; CommandLine = $cmdLine; ParentName = $parentName }
+    return @{ Pid = $ownerPid; Name = $name; CommandLine = $cmdLine; Created = $created; ParentPath = $parentPath; ParentCreated = $parentCreated }
+}
+
+function Get-LitellmDecisionFromOwner {
+    <#
+    .SYNOPSIS
+        Apply Resolve-LitellmStartDecision to the owner record of Get-LitellmPortOwner (or to a free port).
+
+    .PARAMETER Owner
+        The owner hashtable, or $null when the port is free.
+
+    .PARAMETER LitellmExe
+        The full path of this repository's litellm.exe.
+
+    .PARAMETER Settings
+        The parsed augure-settings.json.
+
+    .OUTPUTS
+        The decision hashtable (Action, Reason).
+    #>
+    param($Owner, [string]$LitellmExe, [Parameter(Mandatory = $true)][object]$Settings)
+    if ($null -eq $Owner) {
+        return (Resolve-LitellmStartDecision -PortOwnerPid $null -LitellmExe $LitellmExe -Settings $Settings)
+    }
+    return (Resolve-LitellmStartDecision -PortOwnerPid $Owner.Pid -PortOwnerName $Owner.Name -PortOwnerCommandLine $Owner.CommandLine -PortOwnerCreated $Owner.Created -PortOwnerParentPath $Owner.ParentPath -PortOwnerParentCreated $Owner.ParentCreated -LitellmExe $LitellmExe -Settings $Settings)
 }
 
 function New-LitellmChildEnvironment {
@@ -531,7 +633,7 @@ function Show-LitellmStatus {
         None. Writes to the host only.
     #>
     param([Parameter(Mandatory = $true)][object]$Settings, [Parameter(Mandatory = $true)][string]$StartupFolder)
-    $port = [int](Get-LitellmSettingValue -Doc $Settings -Key 'proxy_port')
+    $port = Get-LitellmPort -Settings $Settings
     $proxyHost = [string](Get-LitellmSettingValue -Doc $Settings -Key 'proxy_host')
     $liveness = [string](Get-LitellmSettingValue -Doc $Settings -Key 'liveness_path')
     $timeout = [int](Get-LitellmSettingValue -Doc $Settings -Key 'http_timeout_s')
@@ -541,9 +643,16 @@ function Show-LitellmStatus {
     Write-Host "=== LiteLLM proxy ==="
     if (Test-Path -LiteralPath $shortcut) { Write-Host "  at login  : installed ($shortcut)" }
     else { Write-Host "  at login  : not installed; run with -Install" }
+    $litellmExe = ''
+    $litellmPy = Resolve-RtVenvPython -RepoRoot $script:LitellmRepo -VenvName '.venv-litellm'
+    if ($null -ne $litellmPy.Python) { $litellmExe = Join-Path (Split-Path $litellmPy.Python -Parent) 'litellm.exe' }
     $owner = Get-LitellmPortOwner -Port $port
     if ($null -eq $owner) { Write-Host "  port $port : free" }
-    else { Write-Host "  port $port : held by '$($owner.Name)' (PID $($owner.Pid))" }
+    else {
+        $verdict = Get-LitellmDecisionFromOwner -Owner $owner -LitellmExe $litellmExe -Settings $Settings
+        $who = if ($verdict.Action -eq 'running') { 'this LiteLLM' } else { 'NOT this LiteLLM (a plain run refuses it)' }
+        Write-Host "  port $port : held by '$($owner.Name)' (PID $($owner.Pid)): $who"
+    }
     $ok = $false
     try {
         $r = Invoke-WebRequest -Uri ("http://{0}:{1}{2}" -f $proxyHost, $port, $liveness) -UseBasicParsing -TimeoutSec $timeout
@@ -580,7 +689,7 @@ function Start-LitellmProxy {
         [Parameter(Mandatory = $true)][object]$Profiles,
         [switch]$DryRun
     )
-    $port = [int](Get-LitellmSettingValue -Doc $Settings -Key 'proxy_port')
+    $port = Get-LitellmPort -Settings $Settings
     $proxyHost = [string](Get-LitellmSettingValue -Doc $Settings -Key 'proxy_host')
     $liveness = [string](Get-LitellmSettingValue -Doc $Settings -Key 'liveness_path')
     $startTimeout = [int](Get-LitellmSettingValue -Doc $Settings -Key 'proxy_start_timeout_s')
@@ -589,31 +698,24 @@ function Start-LitellmProxy {
     $logPath = Expand-LitellmHome (Get-LitellmSettingValue -Doc $Settings -Key 'log_path')
     $logMax = [long](Get-LitellmSettingValue -Doc $Settings -Key 'log_max_bytes')
 
+    $litellmPy = Resolve-RtVenvPython -RepoRoot $script:LitellmRepo -VenvName '.venv-litellm'
+    if ($null -eq $litellmPy.Python) { throw (New-LitellmRefusal $litellmPy.Message) }
+    $exe = Join-Path (Split-Path $litellmPy.Python -Parent) 'litellm.exe'
+
     $owner = Get-LitellmPortOwner -Port $port
-    $ownerPid = $null
-    $ownerName = ''
-    $ownerCmd = ''
-    $ownerParent = ''
-    if ($null -ne $owner) {
-        $ownerPid = $owner.Pid; $ownerName = $owner.Name
-        $ownerCmd = $owner.CommandLine; $ownerParent = $owner.ParentName
-    }
-    $decision = Resolve-LitellmStartDecision -PortOwnerPid $ownerPid -PortOwnerName $ownerName -PortOwnerCommandLine $ownerCmd -PortOwnerParentName $ownerParent -Settings $Settings
+    $decision = Get-LitellmDecisionFromOwner -Owner $owner -LitellmExe $exe -Settings $Settings
     if ($decision.Action -eq 'refuse') { Write-Host "  STOP  $($decision.Reason)"; return 2 }
     if ($decision.Action -eq 'running') { Write-Host "  $($decision.Reason). Nothing to do."; return 0 }
 
     $skills = Resolve-RtVenvPython -RepoRoot $script:LitellmRepo -VenvName '.venv-skills'
     if ($null -eq $skills.Python) { throw (New-LitellmRefusal $skills.Message) }
-    $litellmPy = Resolve-RtVenvPython -RepoRoot $script:LitellmRepo -VenvName '.venv-litellm'
-    if ($null -eq $litellmPy.Python) { throw (New-LitellmRefusal $litellmPy.Message) }
 
     $modelsPy = Join-Path $script:LitellmDir 'augure_models.py'
     $renderCode = Invoke-LitellmRenderConfig -Python $skills.Python -ModelsPy $modelsPy -CfgPath $cfgPath -DryRun:$DryRun
     if ($renderCode -ne 0) { throw "render-config failed (exit $renderCode); see the [AUGURE] line above" }
 
     $childEnv = New-LitellmChildEnvironment -Settings $Settings -Profiles $Profiles -ReadUserVar $script:DefaultReadUserVar
-    $exeDir = Split-Path $litellmPy.Python -Parent
-    $exe = Join-Path $exeDir 'litellm.exe'
+    $exeDir = Split-Path $exe -Parent
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
         throw "litellm.exe missing in $exeDir; rebuild the environment with setup.ps1 -InstallPython"
     }

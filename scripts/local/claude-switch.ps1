@@ -536,7 +536,8 @@ function Invoke-AugureModelList {
         TimeoutMs (int): the bound on the whole child process.
 
     Outputs:
-        result (hashtable): @{ ExitCode; Stdout; Stderr }. ExitCode is -1 on timeout.
+        result (hashtable): @{ ExitCode; TimedOut; Stdout; Stderr }. TimedOut is $true only when
+        the bound expired; a child that really exits -1 has TimedOut $false and its stderr kept.
     #>
     param(
         [Parameter(Mandatory)][string]$Python,
@@ -558,15 +559,25 @@ function Invoke-AugureModelList {
     # the pipe, i.e. until it exits, so the bounded wait below would never be reached (R10).
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $timeout = @{ ExitCode = -1; TimedOut = $true; Stdout = ""; Stderr = "the model listing timed out" }
     if (-not $process.WaitForExit($TimeoutMs)) {
         # Kill the whole tree (a launcher may have spawned children holding the pipes), then fall
         # back to the process itself. Either failing must not hide the timeout result.
         try { & taskkill.exe /T /F /PID $process.Id *> $null } catch { }
         try { if (-not $process.HasExited) { $process.Kill() } } catch { }
-        return @{ ExitCode = -1; Stdout = ""; Stderr = "the model listing timed out" }
+        return $timeout
     }
-    $process.WaitForExit()
-    return @{ ExitCode = $process.ExitCode; Stdout = $stdoutTask.Result; Stderr = $stderrTask.Result }
+    # The child exited, but a grandchild may still hold the pipes open. Both reads share the time
+    # left of the same bound, so the call returns within TimeoutMs whatever the pipes do (R10).
+    $remainingMs = [int][Math]::Max(0, $TimeoutMs - $clock.ElapsedMilliseconds)
+    $readsDone = [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]@($stdoutTask, $stderrTask), $remainingMs)
+    if (-not $readsDone) {
+        # The orphaned grandchild is not reachable through the dead parent's tree, so only the
+        # result is bounded here; the pipes are abandoned with the call.
+        return $timeout
+    }
+    return @{ ExitCode = $process.ExitCode; TimedOut = $false; Stdout = $stdoutTask.Result; Stderr = $stderrTask.Result }
 }
 
 function Read-AugureUserEnv {
@@ -725,7 +736,7 @@ function claude-augure {
         $selectable = @($report.selectable)
         $refused = @($report.refused)
     }
-    if ($result.ExitCode -eq -1) {
+    if ($result.TimedOut) {
         Write-Host "The model listing for profile ${Profile} timed out after $listTimeoutMs ms; nothing was changed." -ForegroundColor Red
         return
     }

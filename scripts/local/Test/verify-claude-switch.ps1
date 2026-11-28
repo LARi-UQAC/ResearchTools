@@ -56,9 +56,9 @@ $RoutingVars = @(
     "ANTHROPIC_SMALL_FAST_MODEL", "API_TIMEOUT_MS",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ANTHROPIC_API_KEY", "AUGUREAI_API_KEY",
     "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
-    # The claude-augure checks read these from the process environment on some paths
-    # (Issue #112). A shell that has them set at User scope would make the MCP-key check
-    # depend on the machine (R21), so they are snapshotted, cleared and restored too.
+    # claude-augure never reads or writes these from the session: the keys come from USER scope
+    # (Issue #112). They are snapshotted, cleared and restored so a shell that has them set
+    # does not make the checks depend on the machine (R21).
     "AUGURE_MCP_KEY", "LITELLM_MASTER_KEY"
 )
 
@@ -193,7 +193,7 @@ try {
         param([Parameter(Mandatory)][string]$Python, [Parameter(Mandatory)][string[]]$Arguments,
               [Parameter(Mandatory)][hashtable]$Environment, [Parameter(Mandatory)][int]$TimeoutMs)
         $script:AugurePyCall = @{ Python = $Python; Arguments = @($Arguments); Environment = $Environment }
-        return @{ ExitCode = $script:AugurePyExit; Stdout = $script:AugurePyStdout; Stderr = "" }
+        return @{ ExitCode = $script:AugurePyExit; Stdout = $script:AugurePyStdout; Stderr = $script:AugurePyStderr; TimedOut = $script:AugurePyTimedOut }
     }
     # Fictitious listing: rosedale-1 and ossington-5 are the two ids of the live account (2026-11-27);
     # rosedale-2 is a fictitious second selectable id used only for the model menu.
@@ -214,6 +214,8 @@ try {
         $script:AugureChoice = "1"
         $script:AugureMenuAsked = 0
         $script:AugurePyExit = 0
+        $script:AugurePyStderr = ""
+        $script:AugurePyTimedOut = $false
         $script:AugurePyCall = $null
         $script:AugurePyStdout = New-AugureReport -Selectable @(@{ id = "rosedale-1"; context_window = 1048576 }) -Refused @(@{ id = "ossington-5"; reason = "context window 262144 is below the required 1048576 (augure-models.json)" })
     }
@@ -591,13 +593,16 @@ try {
     Check "MCP key handed to the child environment under its name" ($null -ne $childEnvMap -and $childEnvMap["AUGURE_MCP_KEY"] -eq "user-mcp-key")
     Check "MCP key never placed in the session environment" (-not (Test-Path Env:\AUGURE_MCP_KEY))
 
-    # 10m2. a value already present in the session is left exactly as it was: claude-augure
-    #       must neither overwrite nor remove it. Planted here so the check does not depend
-    #       on what the machine's shell inherited.
+    # 10m2. the child receives the USER-scope MCP key, never a value planted in this session.
+    #       The session copy is planted with a different value; the User reader (the fixture)
+    #       returns "user-mcp-key". A production that read $env:AUGURE_MCP_KEY would hand the
+    #       planted value to the child and fail here. The session copy must also survive untouched.
     Clear-SwitchEnv; Set-AugureFixture
     $env:AUGURE_MCP_KEY = "planted-session-mcp-value"
     $null = & { claude-augure -Profile dev } *>&1
-    Check "pre-existing AUGURE_MCP_KEY unchanged after claude-augure" ($env:AUGURE_MCP_KEY -eq "planted-session-mcp-value")
+    $plantedChildEnv = Get-AugurePyField 'Environment'
+    Check "child receives the USER MCP key, not the planted session value" ($null -ne $plantedChildEnv -and $plantedChildEnv["AUGURE_MCP_KEY"] -eq "user-mcp-key")
+    Check "planted session AUGURE_MCP_KEY is left exactly as it was" ($env:AUGURE_MCP_KEY -eq "planted-session-mcp-value")
     Remove-Item Env:\AUGURE_MCP_KEY -ErrorAction SilentlyContinue
 
     # --- 6e. Issue #75: the proxy address is refused unless loopback, the port is an integer 1..65535,
@@ -678,22 +683,40 @@ try {
     # nothing (R10). Before the fix, stderr was read synchronously, so the call blocked
     # until the child exited and the timeout never fired. The whole call runs in a job with
     # an outer bound so a regression fails here instead of hanging the verifier.
+    # Each case runs in a job with an outer bound, so a regression (a blocked read) fails the
+    # check instead of hanging the verifier. case: hang = child never exits; exit = child exits
+    # -1 quickly with stderr; grand = child exits at once but a grandchild keeps stdout open.
     $marker = "augure-timeout-" + [guid]::NewGuid().ToString("N")
     $psExe  = (Get-Process -Id $PID).Path
-    $job = Start-Job -ScriptBlock {
-        param($script, $exe, $marker)
-        . $script
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $r = Invoke-AugureModelList -Python $exe `
-            -Arguments @('-NoProfile', '-Command', "Start-Sleep 60 #$marker") `
-            -Environment @{} -TimeoutMs 2000
-        [pscustomobject]@{ Ms = $sw.ElapsedMilliseconds; ExitCode = $r.ExitCode; Stderr = $r.Stderr }
-    } -ArgumentList $ScriptUnderTest, $psExe, $marker
+    function Start-ListingCase([string]$Case, [string]$Exe) {
+        $job = Start-Job -ScriptBlock {
+            param($script, $exe, $case, $marker)
+            . $script
+            # grand: the outer child starts a grandchild that inherits its stdout and exits at
+            # once. The grandchild's command line carries the marker, so it can be found and killed.
+            $gc = "-NoProfile -Command Start-Sleep 30 #$marker"
+            $outer = '$p = New-Object System.Diagnostics.ProcessStartInfo; $p.FileName = "powershell.exe"; $p.Arguments = ''' + $gc + '''; $p.UseShellExecute = $false; [void][System.Diagnostics.Process]::Start($p)'
+            $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($outer))
+            $childArgs = switch ($case) {
+                'hang'  { @('-NoProfile', '-Command', "Start-Sleep 60 #$marker") }
+                'exit'  { @('-NoProfile', '-Command', "[Console]::Error.Write('real-failure-text'); exit -1") }
+                'grand' { @('-NoProfile', '-EncodedCommand', $encoded) }
+            }
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            $r = Invoke-AugureModelList -Python $exe -Arguments $childArgs -Environment @{} -TimeoutMs 2000
+            [pscustomobject]@{ Ms = $sw.ElapsedMilliseconds; ExitCode = $r.ExitCode; Stderr = $r.Stderr; TimedOut = $r.TimedOut }
+        } -ArgumentList $ScriptUnderTest, $Exe, $Case, $marker
+        return $job
+    }
+
+    # hang: a child that never exits is a timeout, and is killed.
+    $job = Start-ListingCase -Case 'hang' -Exe $psExe
     $finished = Wait-Job $job -Timeout 15
     if ($finished) {
         $out = Receive-Job $job
         Check "hung model listing returns within 10 s" ($out.Ms -lt 10000)
         Check "hung model listing reports a timeout (exit -1)" ($out.ExitCode -eq -1)
+        Check "hung model listing sets TimedOut" ($out.TimedOut -eq $true)
         Check "hung model listing names the timeout" ($out.Stderr -match 'timed out')
     } else {
         Check "hung model listing returns within 15 s (outer bound)" $false
@@ -704,6 +727,53 @@ try {
     $survivors = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$marker*" })
     Check "timed-out child process is no longer running" ($survivors.Count -eq 0)
     foreach ($p in $survivors) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+
+    # exit: a child that really exits -1 is a failure with its stderr, NOT a timeout.
+    $job = Start-ListingCase -Case 'exit' -Exe $psExe
+    $finished = Wait-Job $job -Timeout 15
+    if ($finished) {
+        $out = Receive-Job $job
+        Check "a child exiting -1 quickly is not reported as a timeout" ($out.TimedOut -eq $false)
+        Check "a child exiting -1 keeps exit code -1" ($out.ExitCode -eq -1)
+        Check "a child exiting -1 returns its stderr" ($out.Stderr -match 'real-failure-text')
+    } else {
+        Check "a child exiting -1 returns within 15 s (outer bound)" $false
+        Stop-Job $job
+    }
+    Remove-Job $job -Force
+
+    # grand: the child exits at once, but a grandchild keeps stdout open. The call must return
+    # within the bound with TimedOut, and the grandchild must be the one holding the pipe.
+    $job = Start-ListingCase -Case 'grand' -Exe $psExe
+    $finished = Wait-Job $job -Timeout 15
+    if ($finished) {
+        $out = Receive-Job $job
+        Check "a grandchild holding stdout returns within 10 s" ($out.Ms -lt 10000)
+        Check "a grandchild holding stdout sets TimedOut" ($out.TimedOut -eq $true)
+    } else {
+        Check "a grandchild holding stdout returns within 15 s (outer bound)" $false
+        Stop-Job $job
+    }
+    Remove-Job $job -Force
+    Start-Sleep -Milliseconds 500
+    $grandchildren = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$marker*" })
+    Check "the grandchild holding the pipe was really running" ($grandchildren.Count -gt 0)
+    foreach ($p in $grandchildren) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+
+    # claude-augure branches on TimedOut: a real -1 exit prints its stderr and starts nothing.
+    Clear-SwitchEnv; Set-AugureFixture
+    $script:AugurePyExit = -1
+    $script:AugurePyStderr = "real-failure-text"
+    $script:claudeCallCount = 0
+    $said = (& { claude-augure -Profile dev } *>&1 | Out-String)
+    Check "claude-augure prints the stderr of a real -1 exit" ($said -match "real-failure-text")
+    Check "claude-augure does not call a real -1 exit a timeout" ($said -notmatch "timed out")
+    Check "claude-augure starts nothing on a real -1 exit" ($script:claudeCallCount -eq 0)
+    Clear-SwitchEnv; Set-AugureFixture
+    $script:AugurePyExit = -1
+    $script:AugurePyTimedOut = $true
+    $said = (& { claude-augure -Profile dev } *>&1 | Out-String)
+    Check "claude-augure reports TimedOut as a timeout" ($said -match "timed out")
 } finally {
     Restore-RealEnv $realEnv
 }

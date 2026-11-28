@@ -554,13 +554,19 @@ function Invoke-AugureModelList {
     foreach ($name in $Environment.Keys) { $startInfo.EnvironmentVariables[$name] = [string]$Environment[$name] }
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
+    # Both streams are drained asynchronously: a synchronous read blocks until the child closes
+    # the pipe, i.e. until it exits, so the bounded wait below would never be reached (R10).
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderr = $process.StandardError.ReadToEnd()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit($TimeoutMs)) {
-        $process.Kill()
+        # Kill the whole tree (a launcher may have spawned children holding the pipes), then fall
+        # back to the process itself. Either failing must not hide the timeout result.
+        try { & taskkill.exe /T /F /PID $process.Id *> $null } catch { }
+        try { if (-not $process.HasExited) { $process.Kill() } } catch { }
         return @{ ExitCode = -1; Stdout = ""; Stderr = "the model listing timed out" }
     }
-    return @{ ExitCode = $process.ExitCode; Stdout = $stdoutTask.Result; Stderr = $stderr }
+    $process.WaitForExit()
+    return @{ ExitCode = $process.ExitCode; Stdout = $stdoutTask.Result; Stderr = $stderrTask.Result }
 }
 
 function Read-AugureUserEnv {
@@ -718,6 +724,10 @@ function claude-augure {
     if ($null -ne $report) {
         $selectable = @($report.selectable)
         $refused = @($report.refused)
+    }
+    if ($result.ExitCode -eq -1) {
+        Write-Host "The model listing for profile ${Profile} timed out after $listTimeoutMs ms; nothing was changed." -ForegroundColor Red
+        return
     }
     if ($result.ExitCode -ne 0 -or $selectable.Count -eq 0) {
         Write-Host "No model can be used with profile ${Profile}." -ForegroundColor Red

@@ -55,7 +55,11 @@ $RoutingVars = @(
     "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL",
     "ANTHROPIC_SMALL_FAST_MODEL", "API_TIMEOUT_MS",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ANTHROPIC_API_KEY", "AUGUREAI_API_KEY",
-    "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+    # The claude-augure checks read these from the process environment on some paths
+    # (Issue #112). A shell that has them set at User scope would make the MCP-key check
+    # depend on the machine (R21), so they are snapshotted, cleared and restored too.
+    "AUGURE_MCP_KEY", "LITELLM_MASTER_KEY"
 )
 
 function Clear-SwitchEnv {
@@ -98,6 +102,12 @@ if (-not (Test-Path $ScriptUnderTest)) {
 }
 
 $realEnv = Save-RealEnv
+# Clear the augure-dependent variables AFTER the snapshot, so the run starts from a known
+# state whatever this shell inherited. Restore-RealEnv in the finally block puts the
+# caller's values back exactly, absent ones included.
+foreach ($name in @("AUGURE_MCP_KEY", "LITELLM_MASTER_KEY", "AUGUREAI_API_KEY")) {
+    Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
+}
 try {
     . $ScriptUnderTest
 
@@ -581,6 +591,15 @@ try {
     Check "MCP key handed to the child environment under its name" ($null -ne $childEnvMap -and $childEnvMap["AUGURE_MCP_KEY"] -eq "user-mcp-key")
     Check "MCP key never placed in the session environment" (-not (Test-Path Env:\AUGURE_MCP_KEY))
 
+    # 10m2. a value already present in the session is left exactly as it was: claude-augure
+    #       must neither overwrite nor remove it. Planted here so the check does not depend
+    #       on what the machine's shell inherited.
+    Clear-SwitchEnv; Set-AugureFixture
+    $env:AUGURE_MCP_KEY = "planted-session-mcp-value"
+    $null = & { claude-augure -Profile dev } *>&1
+    Check "pre-existing AUGURE_MCP_KEY unchanged after claude-augure" ($env:AUGURE_MCP_KEY -eq "planted-session-mcp-value")
+    Remove-Item Env:\AUGURE_MCP_KEY -ErrorAction SilentlyContinue
+
     # --- 6e. Issue #75: the proxy address is refused unless loopback, the port is an integer 1..65535,
     #         and the liveness route must answer 2xx. Nothing is redirected on a refusal. ---
     $script:SettingsOverride = @{}
@@ -654,6 +673,37 @@ try {
     Check "claude-augure proceeds on a 200 liveness answer" ($script:claudeCallCount -eq 1)
 
     Clear-SwitchEnv
+
+    # Invoke-AugureModelList must be bounded even when the child never exits and writes
+    # nothing (R10). Before the fix, stderr was read synchronously, so the call blocked
+    # until the child exited and the timeout never fired. The whole call runs in a job with
+    # an outer bound so a regression fails here instead of hanging the verifier.
+    $marker = "augure-timeout-" + [guid]::NewGuid().ToString("N")
+    $psExe  = (Get-Process -Id $PID).Path
+    $job = Start-Job -ScriptBlock {
+        param($script, $exe, $marker)
+        . $script
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $r = Invoke-AugureModelList -Python $exe `
+            -Arguments @('-NoProfile', '-Command', "Start-Sleep 60 #$marker") `
+            -Environment @{} -TimeoutMs 2000
+        [pscustomobject]@{ Ms = $sw.ElapsedMilliseconds; ExitCode = $r.ExitCode; Stderr = $r.Stderr }
+    } -ArgumentList $ScriptUnderTest, $psExe, $marker
+    $finished = Wait-Job $job -Timeout 15
+    if ($finished) {
+        $out = Receive-Job $job
+        Check "hung model listing returns within 10 s" ($out.Ms -lt 10000)
+        Check "hung model listing reports a timeout (exit -1)" ($out.ExitCode -eq -1)
+        Check "hung model listing names the timeout" ($out.Stderr -match 'timed out')
+    } else {
+        Check "hung model listing returns within 15 s (outer bound)" $false
+        Stop-Job $job
+    }
+    Remove-Job $job -Force
+    Start-Sleep -Milliseconds 500
+    $survivors = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$marker*" })
+    Check "timed-out child process is no longer running" ($survivors.Count -eq 0)
+    foreach ($p in $survivors) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
 } finally {
     Restore-RealEnv $realEnv
 }

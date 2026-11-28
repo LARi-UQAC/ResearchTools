@@ -35,7 +35,7 @@ PROFILES_FILE = "augure-profiles.json"
 SETTINGS_KEYS = (
     "mcp_url", "mcp_protocol_version", "mcp_list_tool", "api_base", "proxy_host", "proxy_port",
     "liveness_path", "http_timeout_s", "proxy_start_timeout_s", "master_key_env", "config_path",
-    "log_path", "log_max_bytes", "model_prefix",
+    "log_path", "log_max_bytes", "model_prefix", "litellm_provider",
 )
 SESSION_HEADER = "Mcp-Session-Id"
 
@@ -474,6 +474,9 @@ def render_config(profiles, settings):
     """
     Purpose:
         Build the LiteLLM proxy config: one wildcard model per profile, master key by reference.
+        The provider prefix of each wildcard is litellm_provider from the settings, not a literal:
+        the 'openai' provider routes /v1/messages through the Responses API and fails on Augure
+        (measured 2026-11-27), so the shipped value is 'hosted_vllm' (chat/completions).
 
     Inputs:
         profiles (dict): the loaded augure-profiles.json document (top key "profiles").
@@ -481,21 +484,22 @@ def render_config(profiles, settings):
 
     Outputs:
         dict: {"model_list": [...], "general_settings": {"master_key": "os.environ/<var>"}}, with no
-        key value in it (only variable names).
+        key value in it (only variable names). Each litellm_params.model is "<provider>/*".
 
     Raises:
-        ConfigError: a required settings or profile entry is missing.
+        ConfigError: a required settings or profile entry is missing (named).
     """
     prefix = _entry(settings, "model_prefix", SETTINGS_FILE)
     api_base = _entry(settings, "api_base", SETTINGS_FILE)
     master_var = _entry(settings, "master_key_env", SETTINGS_FILE)
+    provider = _entry(settings, "litellm_provider", SETTINGS_FILE)
     model_list = []
     for name, body in _plain(profiles, "profiles", PROFILES_FILE).items():
         api_key_var = _entry(body, "api_key_env", PROFILES_FILE)
         model_list.append({
             "model_name": f"{prefix}{name}/*",
             "litellm_params": {
-                "model": "openai/*",
+                "model": f"{provider}/*",
                 "api_base": api_base,
                 "api_key": f"os.environ/{api_key_var}",
             },

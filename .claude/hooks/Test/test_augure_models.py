@@ -347,10 +347,27 @@ class TestRenderConfig(unittest.TestCase):
         self.assertEqual(names, ["augure-dev/*", "augure-chat/*"])
         for entry in cfg["model_list"]:
             params = entry["litellm_params"]
-            self.assertEqual(params["model"], "openai/*")
+            self.assertEqual(params["model"], "hosted_vllm/*")
             self.assertEqual(params["api_base"], "https://api.augureai.ca/v1")
             self.assertEqual(params["api_key"], "os.environ/AUGUREAI_API_KEY")
         self.assertEqual(cfg["general_settings"]["master_key"], "os.environ/LITELLM_MASTER_KEY")
+
+    def test_render_config_provider_read_from_settings_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = copy_data_dir(tmp, edit_settings=lambda s: s.__setitem__(
+                "litellm_provider", {"value": "other_provider", "provenance": "test"}))
+            settings = AM.load_settings(d / "augure-settings.json")
+            cfg = AM.render_config(self.profiles, settings)
+            for entry in cfg["model_list"]:
+                self.assertEqual(entry["litellm_params"]["model"], "other_provider/*")
+
+    def test_render_config_missing_provider_names_key(self):
+        settings = dict(self.settings)
+        settings.pop("litellm_provider")
+        with self.assertRaises(AM.ConfigError) as ctx:
+            AM.render_config(self.profiles, settings)
+        self.assertIn("litellm_provider", str(ctx.exception))
+        self.assertIn("augure-settings.json", str(ctx.exception))
 
     def test_render_config_carries_no_key_value(self):
         cfg = AM.render_config(self.profiles, self.settings)

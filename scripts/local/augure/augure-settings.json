@@ -6,12 +6,13 @@
   "api_base": {"value": "https://api.augureai.ca/v1", "provenance": "https://augureai.ca/fr/documentation/api, read 2026-11-27: SDK base URL; GET /models answered 200 the same day"},
   "proxy_host": {"value": "127.0.0.1", "provenance": "spec 2026-11-27: loopback only, any other value is refused"},
   "proxy_port": {"value": 4000, "provenance": "LiteLLM's documented default port, found free on 2026-11-27 (no listener); confirmed by the plan 1 spike"},
-  "liveness_path": {"value": "/health/liveliness", "provenance": "LiteLLM proxy liveness route, to be confirmed by the plan 1 spike against the pinned version"},
+  "liveness_path": {"value": "/health/liveliness", "provenance": "measured 2026-11-27 against litellm 1.111.0: answered 200 \"I'm alive!\" about 8 to 18 s after start"},
   "http_timeout_s": {"unit": "seconds", "value": 20, "provenance": "proposal of the session 2026-11-27 for one MCP or liveness request; the 2026-11-27 probes answered in under 2 s"},
   "proxy_start_timeout_s": {"unit": "seconds", "value": 60, "provenance": "proposal of the session 2026-11-27: how long the launcher waits for the liveness route after starting the proxy"},
   "master_key_env": {"value": "LITELLM_MASTER_KEY", "provenance": "spec 2026-11-27: User-scope variable created add-only by litellm-autostart.ps1 -Install"},
   "config_path": {"value": "~/.claude/litellm/config.yaml", "provenance": "spec 2026-11-27: rendered, never committed, must resolve inside ~/.claude (R24)"},
   "log_path": {"value": "~/.claude/litellm/litellm.log", "provenance": "spec 2026-11-27, same folder as the rendered config"},
   "log_max_bytes": {"unit": "bytes", "value": 5242880, "provenance": "proposal of the session 2026-11-27: 5 MiB, rotated once, like vault-daemon-autostart.ps1"},
+  "litellm_provider": {"value": "hosted_vllm", "provenance": "measured 2026-11-27 with litellm 1.111.0: the 'openai' provider sent /v1/messages through the OpenAI Responses API and failed on Augure's event stream (JSONDecodeError, HTTP 500); 'hosted_vllm' uses chat/completions and returned 200, streaming and tool_use included"},
   "model_prefix": {"value": "augure-", "provenance": "spec 2026-11-27: LiteLLM model_name is <prefix><profile>/<model id>"}
 }
